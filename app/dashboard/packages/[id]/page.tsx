@@ -54,6 +54,18 @@ type BookingRecord = {
   numberOfPilgrims?: number
   totalAmount?: number | string
   amountPaid?: number | string
+  packageCost?: number | string
+  totalAmountPayable?: number | string
+  totalPaid?: number | string
+  totalOutstanding?: number | string
+  paymentBreakdown?: {
+    packageCost?: number
+    totalAmountPayable?: number
+    totalPaid?: number
+    totalOutstanding?: number
+    registration?: { status?: string }
+    finalBalance?: { status?: string }
+  }
   status?: string
 }
 
@@ -145,7 +157,7 @@ export default function PackageDetailPage() {
 
   const stats = useMemo(() => {
     const totalPilgrims = bookings.reduce((sum, b) => sum + Number(b.numberOfPilgrims || 1), 0)
-    const totalRevenue = bookings.reduce((sum, b) => sum + Number(b.amountPaid || 0), 0)
+    const totalRevenue = bookings.reduce((sum, b) => sum + Number(b.paymentBreakdown?.totalPaid ?? b.totalPaid ?? b.amountPaid ?? 0), 0)
     return { totalBookings: bookings.length, totalPilgrims, totalRevenue }
   }, [bookings])
 
@@ -359,9 +371,9 @@ export default function PackageDetailPage() {
                 </tr>
               ) : (
                 bookings.map((booking) => {
-                  const total = Number(booking.totalAmount || 0)
-                  const paid = Number(booking.amountPaid || 0)
-                  const balance = total - paid
+                  const total = Number(booking.paymentBreakdown?.totalAmountPayable ?? booking.totalAmountPayable ?? booking.totalAmount ?? 0)
+                  const paid = Number(booking.paymentBreakdown?.totalPaid ?? booking.totalPaid ?? booking.amountPaid ?? 0)
+                  const balance = Number(booking.paymentBreakdown?.totalOutstanding ?? booking.totalOutstanding ?? total - paid)
                   const isPaid = booking.status === "PAID" || balance <= 0
 
                   return (
@@ -375,7 +387,7 @@ export default function PackageDetailPage() {
                       <td className="px-5 py-4">
                         <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.04em] ${isPaid ? "bg-[#eaf9f3] text-[#0c6b50] border border-[#cfeee0]" : "bg-[#fff6dc] text-[#8a6500] border border-[#f1e0a9]"}`}>
                           {isPaid ? <CheckCircle2 className="size-3.5" /> : <Clock className="size-3.5" />}
-                          {isPaid ? "Paid" : "Pending"}
+                          {isPaid ? "Paid" : booking.paymentBreakdown?.finalBalance?.status?.replaceAll("_", " ") || "Pending"}
                         </span>
                       </td>
                     </tr>

@@ -43,7 +43,10 @@ type BookingRecord = {
   bookingRef?: string
   status?: string
   totalPrice?: number | string
+  totalPayable?: number | string
   amountPaid?: number | string
+  registrationPaid?: number | string
+  packagePaid?: number | string
   createdAt?: string
   packageName?: string
   destination?: string
@@ -190,7 +193,10 @@ export default function CustomerDetailPage() {
           bookingRef: pick(booking?.bookingRef, booking?.reference, booking?.booking_reference),
           status: pick(booking?.status, booking?.bookingStatus),
           totalPrice: pick(booking?.totalPrice, booking?.total_price, booking?.amount, booking?.finalAmount),
-          amountPaid: pick(booking?.amountPaid, booking?.amount_paid, booking?.paidAmount),
+          amountPaid: pick(booking?.paymentBreakdown?.totalPaid, booking?.totalPaid, booking?.amountPaid, booking?.amount_paid, booking?.paidAmount),
+          totalPayable: pick(booking?.paymentBreakdown?.totalAmountPayable, booking?.totalAmountPayable, booking?.totalAmount),
+          registrationPaid: pick(booking?.paymentBreakdown?.registration?.paid, booking?.registrationAmountPaid),
+          packagePaid: pick(booking?.paymentBreakdown?.packageAmountPaid, booking?.packageAmountPaid),
           createdAt: pick(booking?.createdAt, booking?.created_at, booking?.bookingDate),
           packageName: pick(booking?.packageName, booking?.package_name, booking?.tourName),
           destination: pick(booking?.destination, booking?.city, booking?.packageDestination),
@@ -216,7 +222,7 @@ export default function CustomerDetailPage() {
 
   const summary = useMemo(() => {
     const totalBookings = bookings.length
-    const totalValue = bookings.reduce((sum, booking) => sum + Number(booking.totalPrice ?? 0), 0)
+    const totalValue = bookings.reduce((sum, booking) => sum + Number(booking.totalPayable ?? booking.totalPrice ?? 0), 0)
     const paidValue = bookings.reduce((sum, booking) => sum + Number(booking.amountPaid ?? 0), 0)
     return {
       totalBookings,
@@ -395,7 +401,7 @@ export default function CustomerDetailPage() {
                             <td className="px-4 py-3 text-[#49615b]">{booking.packageName || "Package"}</td>
                             <td className="px-4 py-3 text-[#49615b]">{booking.destination || "—"}</td>
                             <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${statusTone(booking.status)}`}>{booking.status || "Unknown"}</span></td>
-                            <td className="px-4 py-3 font-bold text-[#17201c]">{formatCurrency(booking.totalPrice)}</td>
+                            <td className="px-4 py-3 font-bold text-[#17201c]">{formatCurrency(booking.totalPayable ?? booking.totalPrice)}</td>
                           </tr>
                         ))
                       )}

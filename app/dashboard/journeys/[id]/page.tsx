@@ -34,6 +34,10 @@ type BookingRecord = {
   operatorName?: string
   totalAmount?: number | string
   amountPaid?: number | string
+  totalAmountPayable?: number | string
+  totalPaid?: number | string
+  totalOutstanding?: number | string
+  paymentBreakdown?: { totalAmountPayable?: number; totalPaid?: number; totalOutstanding?: number }
   status?: string
   currentJourneyStage?: string
   stageEnteredAt?: string
@@ -73,13 +77,23 @@ type PaymentEvent = {
 
 type PaymentBreakdown = {
   numberOfPilgrims?: number
-  registrationFeeAmount: number
-  registrationAmountPaid: number
-  basePackageAmount: number
-  discountAmount: number
-  packageAmountPaid: number
-  totalAmount: number
-  amountPaid: number
+  registrationFeeAmount?: number
+  registrationAmountPaid?: number
+  basePackageAmount?: number
+  discountAmount?: number
+  packageAmountPaid?: number
+  totalAmount?: number
+  amountPaid?: number
+  packageCost?: number
+  registrationFee?: number
+  totalAmountPayable?: number
+  totalPaid?: number
+  totalOutstanding?: number
+  paymentBreakdown?: {
+    registration?: { amount: number; paid: number; balance: number; status: string }
+    initialPayment?: { amount: number; paid: number; balance: number; status: string }
+    finalBalance?: { amount: number; paid: number; balance: number; status: string }
+  }
   payments: PaymentEvent[]
 }
 
@@ -191,15 +205,24 @@ function PaymentsTab({ data, loading }: { data: PaymentBreakdown | null; loading
     )
   }
 
-  const packageBalance = Math.max(data.basePackageAmount - data.discountAmount, 0)
+  const packageCost = Number(data.packageCost ?? Math.max(Number(data.basePackageAmount || 0) - Number(data.discountAmount || 0), 0))
+  const registration = data.paymentBreakdown?.registration
+  const initialPayment = data.paymentBreakdown?.initialPayment
+  const finalBalance = data.paymentBreakdown?.finalBalance
+  const registrationTotal = Number(registration?.amount ?? data.registrationFee ?? data.registrationFeeAmount ?? 0)
+  const registrationPaid = Number(registration?.paid ?? data.registrationAmountPaid ?? 0)
+  const packagePaid = Number(data.packageAmountPaid ?? 0)
+  const totalPayable = Number(data.totalAmountPayable ?? Number(data.totalAmount || 0))
+  const totalPaid = Number(data.totalPaid ?? data.amountPaid ?? registrationPaid + packagePaid)
   const events = [...data.payments].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <PaymentSummaryTile label="Registration fee" paid={data.registrationAmountPaid} total={data.registrationFeeAmount} />
-        <PaymentSummaryTile label="Package balance" paid={data.packageAmountPaid} total={packageBalance} />
-        <PaymentSummaryTile label="Total booking value" paid={data.amountPaid} total={data.totalAmount} />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PaymentSummaryTile label="Registration fee" paid={registrationPaid} total={registrationTotal} />
+        <PaymentSummaryTile label="Initial payment" paid={Number(initialPayment?.paid ?? Math.min(packagePaid, packageCost))} total={Number(initialPayment?.amount ?? packageCost)} />
+        <PaymentSummaryTile label="Final balance" paid={Number(finalBalance?.paid ?? Math.max(packagePaid - packageCost, 0))} total={Number(finalBalance?.amount ?? 0)} />
+        <PaymentSummaryTile label="Total payable" paid={totalPaid} total={totalPayable} />
       </div>
 
       {typeof data.numberOfPilgrims === "number" && (
@@ -566,7 +589,7 @@ export default function JourneyDetailPage() {
 
   const balance = useMemo(() => {
     if (!booking) return 0
-    return Number(booking.totalAmount || 0) - Number(booking.amountPaid || 0)
+    return Number(booking.paymentBreakdown?.totalOutstanding ?? booking.totalOutstanding ?? Number(booking.totalAmountPayable ?? booking.totalAmount ?? 0) - Number(booking.totalPaid ?? booking.amountPaid ?? 0))
   }, [booking])
 
   if (loading) {
@@ -628,7 +651,7 @@ export default function JourneyDetailPage() {
             <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">Total amount</span>
             <Banknote className="size-4 text-[#8a6500]" />
           </div>
-          <p className="mt-4 text-2xl font-bold text-[#17201c]">{formatNaira(booking.totalAmount)}</p>
+          <p className="mt-4 text-2xl font-bold text-[#17201c]">{formatNaira(booking.paymentBreakdown?.totalAmountPayable ?? booking.totalAmountPayable ?? booking.totalAmount)}</p>
         </div>
         <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
           <div className="flex items-center justify-between gap-3">

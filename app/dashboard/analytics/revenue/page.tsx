@@ -16,10 +16,13 @@ const rangeOptions = [
 
 type RevenueStats = {
   bookingValue?: number
+  packageValue?: number
   collectedRevenue?: number
   registrationRevenue?: number
   packageRevenue?: number
   outstandingRevenue?: number
+  packageOutstanding?: number
+  registrationOutstanding?: number
   totalBookings?: number
   trendingPackages?: Array<{ title?: string; bookingCount?: number; revenue?: number }>
   topOperators?: Array<{ companyName?: string; bookingCount?: number; revenue?: number }>
@@ -62,15 +65,15 @@ export default function RevenueAnalyticsPage() {
     gcTime: 10 * 60_000,
   })
 
-  const total = Number(stats?.bookingValue ?? 0)
-  const collected = Number(stats?.collectedRevenue ?? 0)
+  const total = Number(stats?.packageValue ?? stats?.bookingValue ?? 0)
+  const collected = Number(stats?.packageRevenue ?? stats?.collectedRevenue ?? 0)
   const registration = Number(stats?.registrationRevenue ?? 0)
   const packageRevenue = Number(stats?.packageRevenue ?? 0)
-  const outstanding = Number(stats?.outstandingRevenue ?? 0)
+  const outstanding = Number(stats?.packageOutstanding ?? stats?.outstandingRevenue ?? 0)
   const collectionRate = total > 0 ? Math.round((collected / total) * 100) : 0
   const metricCards: Array<{ label: string; value: string; note: string; Icon: LucideIcon; tone: string }> = [
     { label: "Collected revenue", value: money(collected), note: "Actually paid across bookings", Icon: Wallet, tone: "text-[#0c6b50]" },
-    { label: "Total booking value", value: money(total), note: "Gross value in the period", Icon: CircleDollarSign, tone: "text-[#0f74c1]" },
+    { label: "Package value", value: money(total), note: "Registration fees excluded", Icon: CircleDollarSign, tone: "text-[#0f74c1]" },
     { label: "Outstanding balance", value: money(outstanding), note: "Still owed by pilgrims", Icon: AlertCircle, tone: "text-[#a43229]" },
     { label: "Collection rate", value: `${collectionRate}%`, note: `${number(stats?.totalBookings)} bookings in period`, Icon: TrendingUp, tone: "text-[#8a6500]" },
   ]
@@ -113,12 +116,12 @@ export default function RevenueAnalyticsPage() {
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
               <h2 className="font-brand flex items-center gap-2 text-lg font-bold text-[#17201c]"><Banknote className="size-4 text-[#0d7d5f]" /> Payment composition</h2>
-              <p className="mt-1 text-xs text-[#7b8580]">Collected registration and package payments compared with the original booking value.</p>
+              <p className="mt-1 text-xs text-[#7b8580]">Package payments are shown separately from registration fees, which are not part of package cost.</p>
               <div className="mt-6 h-4 overflow-hidden rounded-full bg-[#edf1ef]">
-                <div className="flex h-full"><div className="bg-[#0d7d5f]" style={{ width: `${total ? Math.min((registration / total) * 100, 100) : 0}%` }} /><div className="bg-[#0f74c1]" style={{ width: `${total ? Math.min((packageRevenue / total) * 100, 100) : 0}%` }} /><div className="bg-[#e8e2d0]" style={{ width: `${total ? Math.min((outstanding / total) * 100, 100) : 0}%` }} /></div>
+                <div className="flex h-full"><div className="bg-[#0f74c1]" style={{ width: `${total ? Math.min((packageRevenue / total) * 100, 100) : 0}%` }} /><div className="bg-[#e8e2d0]" style={{ width: `${total ? Math.min((outstanding / total) * 100, 100) : 0}%` }} /></div>
               </div>
               <div className="mt-5 grid gap-4 sm:grid-cols-3">
-                {[["Registration", registration, "bg-[#0d7d5f]"], ["Package payments", packageRevenue, "bg-[#0f74c1]"], ["Outstanding", outstanding, "bg-[#e8e2d0]"]].map(([label, value, tone]) => <div key={String(label)}><span className={`inline-block size-2.5 rounded-full ${tone}`} /><p className="mt-2 font-bold text-[#17201c]">{money(Number(value))}</p><p className="text-xs text-[#7b8580]">{label}</p></div>)}
+                {[['Package payments', packageRevenue, 'bg-[#0f74c1]'], ['Package outstanding', outstanding, 'bg-[#e8e2d0]'], ['Registration fees', registration, 'bg-[#0d7d5f]']].map(([label, value, tone]) => <div key={String(label)}><span className={`inline-block size-2.5 rounded-full ${tone}`} /><p className="mt-2 font-bold text-[#17201c]">{money(Number(value))}</p><p className="text-xs text-[#7b8580]">{label}</p></div>)}
               </div>
             </section>
             <section className="rounded-2xl border border-[#dbe2de] bg-[#071e16] p-5 text-white shadow-sm">

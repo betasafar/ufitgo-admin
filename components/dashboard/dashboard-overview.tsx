@@ -69,7 +69,7 @@ function executiveView(data: Record<string, any>, name: string): DashboardView {
     metrics: [
       { label: "Total bookings", value: number(data.totalBookings), description: "Bookings in the selected reporting period", icon: Plane, tone: "green" },
       { label: "Active packages", value: number(data.totalPackages), description: "Bookable inventory across operators", icon: Package, tone: "gold" },
-      { label: "Collected revenue", value: money(data.collectedRevenue), description: `${money(data.outstandingRevenue)} remains outstanding`, icon: CircleDollarSign, tone: "blue" },
+      { label: "Package revenue", value: money(data.packageRevenue ?? data.collectedRevenue), description: `${money(data.packageOutstanding ?? data.outstandingRevenue)} package balance remains outstanding`, icon: CircleDollarSign, tone: "blue" },
       { label: "Verified operators", value: number(data.totalOperators), description: "Approved partners on the platform", icon: ShieldCheck, tone: "green" },
     ],
     primaryTitle: "Top operators",

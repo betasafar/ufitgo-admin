@@ -27,6 +27,9 @@ type PaymentTransaction = {
   provider?: string
   status: "success" | "pending" | "failed" | string
   created_at: string
+  booking_id?: string
+  payment_stage?: string
+  payment_stages?: string[]
 }
 type GatewayStatus = { name: string; status: string; uptime: number }
 type PaymentMetrics = { settled: number; pending: number; failed: number; gateways: GatewayStatus[] }
@@ -130,7 +133,9 @@ export default function PaymentsPage() {
       return (
         tx.client_reference?.toLowerCase().includes(term) ||
         tx.provider_ref?.toLowerCase().includes(term) ||
-        tx.id?.toLowerCase().includes(term)
+        tx.id?.toLowerCase().includes(term) ||
+        tx.booking_id?.toLowerCase().includes(term) ||
+        tx.payment_stage?.toLowerCase().includes(term)
       )
     })
   }, [transactions, search, statusFilter])
@@ -279,6 +284,7 @@ export default function PaymentsPage() {
                 <thead className="bg-[#f7f9f8] text-[10px] uppercase tracking-[0.12em] text-[#7b8580]">
                   <tr>
                     <th className="px-5 py-3 font-bold">Product</th>
+                    <th className="px-5 py-3 font-bold">Booking / stage</th>
                     <th className="px-5 py-3 font-bold">Reference</th>
                     <th className="px-5 py-3 font-bold">Amount</th>
                     <th className="px-5 py-3 font-bold">Provider</th>
@@ -287,13 +293,14 @@ export default function PaymentsPage() {
                 </thead>
                 <tbody className="divide-y divide-[#edf1ef]">
                   {transactionsLoading ? (
-                    <tr><td colSpan={5} className="px-5 py-14 text-center text-sm text-[#7b8580]">Loading transactions…</td></tr>
+                    <tr><td colSpan={6} className="px-5 py-14 text-center text-sm text-[#7b8580]">Loading transactions…</td></tr>
                   ) : pagedTransactions.length === 0 ? (
-                    <tr><td colSpan={5} className="px-5 py-14 text-center text-sm text-[#7b8580]">No transactions found.</td></tr>
+                    <tr><td colSpan={6} className="px-5 py-14 text-center text-sm text-[#7b8580]">No transactions found.</td></tr>
                   ) : (
                     pagedTransactions.map((tx) => (
                       <tr key={tx.id} className="hover:bg-[#f7faf9]">
                         <td className="px-5 py-4 font-semibold text-[#17201c]">{clientName(tx.client_id)}</td>
+                        <td className="px-5 py-4"><span className="font-semibold text-[#17201c]">{tx.booking_id ? `BKG-${tx.booking_id}` : "—"}</span><span className="mt-1 block text-xs capitalize text-[#68716d]">{(tx.payment_stage || tx.payment_stages?.[0] || "Unclassified").replaceAll("_", " ")}</span></td>
                         <td className="px-5 py-4 font-mono text-xs text-[#68716d]">{tx.client_reference || "—"}</td>
                         <td className="px-5 py-4 font-bold text-[#17201c]">₦{Number(tx.amount).toLocaleString("en-NG")}</td>
                         <td className="px-5 py-4 text-xs font-bold uppercase tracking-[0.06em] text-[#68716d]">{tx.provider || "—"}</td>
