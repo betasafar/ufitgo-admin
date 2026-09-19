@@ -4,6 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useRouter } from "next/navigation"
 import { SessionTimeoutDialog } from "@/components/auth/session-timeout-dialog"
 import { logoutCurrentSession, refreshAccessToken, touchCurrentSession } from "@/lib/auth/session-client"
+import type { AdminProfile } from "@/lib/auth/types"
+import { hasAllPermissions, hasAnyPermission, type Permission } from "@/lib/rbac/permissions"
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000
 const WARNING_MS = 2 * 60 * 1000
@@ -12,12 +14,14 @@ const REFRESH_INTERVAL_MS = 10 * 60 * 1000
 const ACTIVITY_EVENTS = ["pointerdown", "keydown", "scroll", "touchstart"] as const
 
 interface SessionContextValue {
+  admin: AdminProfile
+  can: (permissions: readonly Permission[], mode?: "all" | "any") => boolean
   logout: () => Promise<void>
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null)
 
-export function SessionProvider({ children }: { children: ReactNode }) {
+export function SessionProvider({ children, initialAdmin }: { children: ReactNode; initialAdmin: AdminProfile }) {
   const router = useRouter()
   const lastActivity = useRef(Date.now())
   const lastHeartbeat = useRef(0)
@@ -119,7 +123,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [finishLogout])
 
   return (
-    <SessionContext.Provider value={{ logout: finishLogout }}>
+    <SessionContext.Provider value={{
+      admin: initialAdmin,
+      can: (permissions, mode = "all") => mode === "all"
+        ? hasAllPermissions(initialAdmin, permissions)
+        : hasAnyPermission(initialAdmin, permissions),
+      logout: finishLogout,
+    }}>
       {children}
       <SessionTimeoutDialog
         open={warningOpen}
