@@ -262,6 +262,7 @@ export default function PackageDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/dashboard/packages/${id}/edit`} className="inline-flex items-center gap-2 rounded-lg border border-[#d9dfdc] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">Edit package</Link>
           <button type="button" onClick={() => void toggleStatus()} disabled={statusSaving} className="inline-flex items-center gap-2 rounded-lg border border-[#d9dfdc] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0] disabled:opacity-50">
             {statusSaving ? <Loader2 className="size-4 animate-spin" /> : null}
             {isActive ? "Deactivate" : "Activate"}

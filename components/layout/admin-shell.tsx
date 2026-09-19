@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   ChevronDown,
   ChevronRight,
@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   UserRound,
   X,
+  Search,
 } from "lucide-react"
 import { BrandMark } from "@/components/brand/brand-mark"
 import { useAdminSession } from "@/components/auth/session-provider"
@@ -131,11 +132,29 @@ function UserMenu() {
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [desktopCollapsed, setDesktopCollapsed] = useState(false)
+  const [bookingSearch, setBookingSearch] = useState("")
+  const [bookingResults, setBookingResults] = useState<any[]>([])
+  const [bookingSearching, setBookingSearching] = useState(false)
   const currentPage = findNavigationItem(pathname)
 
   useEffect(() => setMobileOpen(false), [pathname])
+
+  useEffect(() => {
+    const query = bookingSearch.trim()
+    if (!query) { setBookingResults([]); return undefined }
+    const timer = window.setTimeout(async () => {
+      setBookingSearching(true)
+      try {
+        const response = await fetch(`/api/admin/bookings/search?q=${encodeURIComponent(query)}`, { cache: "no-store" })
+        const payload = await response.json().catch(() => null)
+        setBookingResults(Array.isArray(payload?.data) ? payload.data : [])
+      } catch { setBookingResults([]) } finally { setBookingSearching(false) }
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [bookingSearch])
 
   const sidebar = (compact: boolean) => (
     <div className="flex h-full flex-col bg-[#071e16] px-3 py-5 text-white">
@@ -154,6 +173,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <button type="button" aria-label={mobileOpen ? "Close navigation" : "Open navigation"} onClick={() => setMobileOpen((open) => !open)} className="grid size-10 place-items-center rounded-lg border border-[#d9dfdc] text-[#35443e] hover:bg-[#edf3f0] lg:hidden">{mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}</button>
           <button type="button" aria-label={desktopCollapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => setDesktopCollapsed((collapsed) => !collapsed)} className="hidden size-9 place-items-center rounded-lg text-[#66716c] hover:bg-[#edf3f0] lg:grid">{desktopCollapsed ? <PanelLeftOpen className="size-[18px]" /> : <PanelLeftClose className="size-[18px]" />}</button>
           <div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-[#89918d]">Admin workspace</p><h1 className="truncate text-base font-bold text-[#17201c]">{currentPage?.label || "UfitGo Admin"}</h1></div>
+          <div className="relative hidden min-w-0 max-w-md flex-1 xl:block"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8b9490]" /><input value={bookingSearch} onChange={(event) => setBookingSearch(event.target.value)} placeholder="Search booking ID or applicant" className="h-10 w-full rounded-lg border border-[#d9dfdc] bg-[#f7faf9] pl-9 pr-3 text-sm outline-none focus:border-[#0d7d5f]" />{bookingSearch && <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-xl border border-[#d9dfdc] bg-white shadow-xl">{bookingSearching ? <p className="p-4 text-sm text-[#68716d]">Searching…</p> : bookingResults.length ? bookingResults.map((booking) => <button key={booking.id} type="button" onClick={() => { setBookingSearch(""); router.push(`/dashboard/journeys/${booking.id}`) }} className="flex w-full items-center justify-between gap-3 border-b border-[#edf1ef] px-4 py-3 text-left last:border-0 hover:bg-[#f7faf9]"><span><span className="block text-sm font-semibold text-[#17201c]">{booking.bookingRef || `Booking #${booking.id}`}</span><span className="block text-xs text-[#68716d]">{booking.pilgrimName || "Applicant"}</span></span><span className="text-xs font-bold text-[#0d7d5f]">Open</span></button>) : <p className="p-4 text-sm text-[#68716d]">No bookings found.</p>}</div>}</div>
           <UserMenu />
         </header>
         <div>{children}</div>

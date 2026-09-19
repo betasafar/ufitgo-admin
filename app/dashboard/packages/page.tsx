@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { AppSelect } from "@/components/ui/app-select"
 import { PaginationBar } from "@/components/ui/pagination-bar"
-import { Banknote, Calendar, Package as PackageIcon, Search, TicketPercent, Users } from "lucide-react"
+import { Banknote, Calendar, Package as PackageIcon, Plus, Search, TicketPercent, Users } from "lucide-react"
 
 type PackageRecord = {
   id?: string | number
@@ -174,6 +174,7 @@ export default function PackagesPage() {
         <button type="button" onClick={() => void refetch()} className="inline-flex items-center justify-center rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">
           Refresh
         </button>
+          <button type="button" onClick={() => window.location.assign("/dashboard/packages/create")} className="inline-flex items-center gap-2 rounded-lg bg-[#0d7d5f] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#0b6b51]"><Plus className="size-4" /> Create package</button>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-3">
