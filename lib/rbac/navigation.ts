@@ -47,9 +47,9 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     icon: BarChart3,
     permissions: ["analytics.read"],
     items: [
-      { label: "Revenue", href: "/dashboard/analytics/revenue", icon: Banknote, permissions: ["analytics.read"] },
-      { label: "Bookings", href: "/dashboard/analytics/bookings", icon: BriefcaseBusiness, permissions: ["analytics.read"] },
-      { label: "Lima demand", href: "/dashboard/analytics/advisor-demand", icon: Activity, permissions: ["analytics.read"] },
+      { label: "Revenue", href: "/dashboard/analytics/revenue", icon: Banknote, permissions: ["analytics.read"], available: true },
+      { label: "Bookings", href: "/dashboard/analytics/bookings", icon: BriefcaseBusiness, permissions: ["analytics.read"], available: true },
+      { label: "Lima demand", href: "/dashboard/analytics/advisor-demand", icon: Activity, permissions: ["analytics.read"], available: true },
     ],
   },
   {
@@ -58,10 +58,10 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     permissions: ["users.manage", "operators.manage", "packages.manage", "bookings.manage", "journeys.manage"],
     mode: "any",
     items: [
-      { label: "Customers", href: "/dashboard/customers", icon: Users, permissions: ["users.manage"] },
-      { label: "Operators", href: "/dashboard/operators", icon: BriefcaseBusiness, permissions: ["operators.manage"] },
-      { label: "Packages", href: "/dashboard/packages", icon: Package, permissions: ["packages.manage"] },
-      { label: "Journey tracker", href: "/dashboard/journeys", icon: Map, permissions: ["journeys.manage"] },
+      { label: "Customers", href: "/dashboard/customers", icon: Users, permissions: ["users.manage"], available: true },
+      { label: "Partners", href: "/dashboard/operators", icon: BriefcaseBusiness, permissions: ["operators.manage"], available: true },
+      { label: "Packages", href: "/dashboard/packages", icon: Package, permissions: ["packages.manage"], available: true },
+      { label: "Journey tracker", href: "/dashboard/journeys", icon: Map, permissions: ["journeys.manage"], available: true },
     ],
   },
   {
@@ -70,8 +70,8 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     permissions: ["payments.read", "settlements.manage", "commissions.manage", "reconciliation.manage"],
     mode: "any",
     items: [
-      { label: "Payments", href: "/dashboard/payments", icon: CreditCard, permissions: ["payments.read"] },
-      { label: "Commissions", href: "/dashboard/commissions", icon: Banknote, permissions: ["commissions.manage"] },
+      { label: "Payments", href: "/dashboard/payments", icon: CreditCard, permissions: ["payments.read"], available: true },
+      { label: "Commissions", href: "/dashboard/commissions", icon: Banknote, permissions: ["commissions.manage"], available: true },
     ],
   },
   {
@@ -80,8 +80,8 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     permissions: ["kyc.manage", "kyb.manage", "compliance.manage"],
     mode: "any",
     items: [
-      { label: "Verifications", href: "/dashboard/verifications", icon: ShieldCheck, permissions: ["kyc.manage"] },
-      { label: "Audit logs", href: "/dashboard/audit-logs", icon: Activity, permissions: ["compliance.manage"] },
+      { label: "Verifications", href: "/dashboard/verifications", icon: ShieldCheck, permissions: ["kyc.manage"], available: true },
+      { label: "Audit logs", href: "/dashboard/audit-logs", icon: Activity, permissions: ["kyc.manage"], available: true },
     ],
   },
   {
@@ -90,8 +90,8 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     permissions: ["referrals.manage", "marketing.manage", "extensions.manage"],
     mode: "any",
     items: [
-      { label: "Referrals", href: "/dashboard/referrals", icon: Gift, permissions: ["referrals.manage"] },
-      { label: "Sponsored ads", href: "/dashboard/ads", icon: Megaphone, permissions: ["marketing.manage"] },
+      { label: "Referrals", href: "/dashboard/referrals", icon: Gift, permissions: ["referrals.manage"], available: true },
+      { label: "Sponsored ads", href: "/dashboard/ads", icon: Megaphone, permissions: ["marketing.manage"], available: true },
     ],
   },
   {
@@ -101,8 +101,8 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     mode: "any",
     items: [
       { label: "Platform admins", href: "/dashboard/admins", icon: ShieldCheck, permissions: ["settings.manage"], available: true },
-      { label: "Lima learning", href: "/dashboard/lima-guidance", icon: BookOpenCheck, permissions: ["settings.manage"] },
-      { label: "Settings", href: "/dashboard/settings", icon: Settings, permissions: ["settings.manage"] },
+      { label: "Lima learning", href: "/dashboard/lima-guidance", icon: BookOpenCheck, permissions: ["settings.manage"], available: true },
+      { label: "Settings", href: "/dashboard/settings", icon: Settings, permissions: ["settings.manage"], available: true },
     ],
   },
 ]

@@ -32,7 +32,7 @@ function validateLogin(values: LoginFormState): LoginErrors {
 
 export function LoginForm() {
   const router = useRouter()
-  const [values, setValues] = useState<LoginFormState>({ email: "", password: "", rememberMe: false })
+  const [values, setValues] = useState<LoginFormState>({ email: "admin@ufitgo.com", password: "admin123", rememberMe: false })
   const [errors, setErrors] = useState<LoginErrors>({})
   const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)

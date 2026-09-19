@@ -1,9 +1,12 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import {
+  ArrowRight,
   AlertTriangle,
   Banknote,
+  BarChart3,
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
@@ -19,6 +22,7 @@ import {
 import { useAdminSession } from "@/components/auth/session-provider"
 import { DashboardEmpty, DashboardError, DashboardLoading } from "@/components/dashboard/dashboard-states"
 import { MetricCard, type MetricTone } from "@/components/dashboard/metric-card"
+import { cn } from "@/lib/utils"
 
 interface MetricDefinition {
   label: string
@@ -162,25 +166,63 @@ function endpointForRole(role: string) {
   return "/api/admin/stats/operations"
 }
 
-function SummaryPanel({ title, items }: { title: string; items: SummaryItem[] }) {
+function PerformancePanel({ metrics }: { metrics: MetricDefinition[] }) {
   return (
-    <section className="min-w-0 rounded-xl border border-[#dbe2de] bg-white p-5 sm:p-6">
-      <h2 className="font-brand text-xl font-bold text-[#17201c]">{title}</h2>
-      <div className="mt-5 divide-y divide-[#edf1ef]">
-        {items.map((item) => (
-          <div key={item.id} className="flex items-start justify-between gap-4 py-4 first:pt-0 last:pb-0">
-            <div className="min-w-0"><p className="truncate text-sm font-bold capitalize text-[#26332e]">{item.label}</p><p className="mt-1 text-xs leading-5 text-[#7b8580]">{item.detail}</p></div>
-            <span className="shrink-0 rounded-md bg-[#edf3f0] px-2.5 py-1 text-xs font-bold text-[#476157]">{item.value}</span>
-          </div>
-        ))}
-        {!items.length && <p className="py-8 text-center text-sm text-[#87908c]">No items require attention.</p>}
+    <section className="min-w-0 rounded-lg border border-[#dbe2de] bg-white p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div><h2 className="font-brand text-xl font-bold text-[#17201c]">Performance snapshot</h2><p className="mt-1 text-xs text-[#7b8580]">Current headline indicators from live platform records</p></div>
+        <BarChart3 className="size-5 text-[#07845f]" />
+      </div>
+      <div className="mt-6 grid grid-cols-1 overflow-hidden rounded-lg border border-[#e4e9e6] sm:grid-cols-2">
+        {metrics.map((metric) => {
+          const Icon = metric.icon
+          return (
+            <div key={metric.label} className="flex min-w-0 items-start gap-4 border-b border-[#e4e9e6] p-4 last:border-b-0 sm:[&:nth-child(odd)]:border-r sm:[&:nth-last-child(-n+2)]:border-b-0">
+              <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[#edf5f1] text-[#07845f]"><Icon className="size-4" /></span>
+              <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.08em] text-[#78817d]">{metric.label}</p><strong className="mt-1 block truncate text-xl text-[#17201c]">{metric.value}</strong><p className="mt-1 text-xs leading-5 text-[#87908c]">{metric.description}</p></div>
+            </div>
+          )
+        })}
       </div>
     </section>
   )
 }
 
+function PriorityPanel({ title, items }: { title: string; items: SummaryItem[] }) {
+  return (
+    <section className="min-w-0 rounded-lg border border-[#dbe2de] bg-white">
+      <div className="flex items-center justify-between border-b border-[#edf1ef] px-5 py-4"><h2 className="font-brand text-lg font-bold text-[#17201c]">{title}</h2><span className="rounded-full bg-[#fff1d0] px-2 py-1 text-[10px] font-bold uppercase text-[#8a6500]">{items.length} items</span></div>
+      <div className="divide-y divide-[#edf1ef] px-5">
+        {items.slice(0, 5).map((item, index) => (
+          <div key={item.id} className="flex items-start gap-3 py-4">
+            <span className={cn("mt-1 size-2 shrink-0 rounded-full", index === 0 ? "bg-[#dc3f35]" : index === 1 ? "bg-[#e2b316]" : "bg-[#3478c5]")} />
+            <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold capitalize text-[#26332e]">{item.label}</p><p className="mt-1 text-xs leading-5 text-[#7b8580]">{item.detail}</p></div>
+            <span className="shrink-0 text-xs font-bold text-[#52625b]">{item.value}</span>
+          </div>
+        ))}
+        {!items.length && <p className="py-10 text-center text-sm text-[#87908c]">Nothing currently needs attention.</p>}
+      </div>
+    </section>
+  )
+}
+
+function SummaryTable({ title, items }: { title: string; items: SummaryItem[] }) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-[#dbe2de] bg-white">
+      <div className="border-b border-[#edf1ef] px-5 py-4 sm:px-6"><h2 className="font-brand text-lg font-bold text-[#17201c]">{title}</h2><p className="mt-1 text-xs text-[#7b8580]">Current operational breakdown</p></div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-left text-sm">
+          <thead className="bg-[#f7f9f8] text-[10px] uppercase tracking-[0.12em] text-[#7b8580]"><tr><th className="px-6 py-3 font-bold">Item</th><th className="px-6 py-3 font-bold">Context</th><th className="px-6 py-3 text-right font-bold">Value</th></tr></thead>
+          <tbody className="divide-y divide-[#edf1ef]">{items.map((item) => <tr key={item.id}><td className="px-6 py-4 font-bold capitalize text-[#26332e]">{item.label}</td><td className="px-6 py-4 text-[#78817d]">{item.detail}</td><td className="px-6 py-4 text-right font-bold text-[#17201c]">{item.value}</td></tr>)}</tbody>
+        </table>
+      </div>
+      {!items.length && <p className="py-10 text-center text-sm text-[#87908c]">No detailed records available.</p>}
+    </section>
+  )
+}
+
 export function DashboardOverview() {
-  const { admin } = useAdminSession()
+  const { admin, can } = useAdminSession()
   const [data, setData] = useState<Record<string, any> | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
@@ -216,24 +258,35 @@ export function DashboardOverview() {
   }
 
   return (
-    <div className="space-y-7">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <div className="space-y-6">
+      <header className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#07845f]">{view.eyebrow}</p>
           <h1 className="font-brand mt-2 text-3xl font-bold tracking-tight text-[#17201c] sm:text-4xl">{view.title}</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#68716d]">{view.description}</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">{view.description}</p>
+          <p className="mt-2 inline-flex items-center gap-2 text-xs font-medium text-[#8a928e]"><CalendarDays className="size-3.5" /> {new Intl.DateTimeFormat("en-NG", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date())}</p>
         </div>
-        <div className="inline-flex items-center gap-2 self-start rounded-lg border border-[#d9dfdc] bg-white px-3 py-2 text-xs font-semibold text-[#64706b] sm:self-auto"><CalendarDays className="size-4 text-[#07845f]" /> Live operational data</div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/dashboard/sessions" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#cbd5d0] bg-white px-4 text-sm font-bold text-[#405149] hover:bg-[#edf3f0]">Active sessions</Link>
+          {can(["settings.manage"]) && <Link href="/dashboard/admins" className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#e5b814] px-4 text-sm font-bold text-[#282410] hover:bg-[#d2a70f]">Manage admins <ArrowRight className="size-4" /></Link>}
+        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {view.metrics.map((metric) => <MetricCard key={metric.label} {...metric} />)}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <SummaryPanel title={view.primaryTitle} items={view.primary} />
-        <SummaryPanel title={view.secondaryTitle} items={view.secondary} />
+      <section className="flex flex-col gap-4 rounded-lg border border-[#d9dfdc] bg-[#10271e] px-5 py-5 text-white sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex items-start gap-4"><span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#e5b814] text-[#302a0a]"><CheckCircle2 className="size-5" /></span><div><h2 className="font-brand text-lg font-bold">Operational data connected</h2><p className="mt-1 text-sm text-white/60">Dashboard summaries are synchronized with the UfitGo admin APIs.</p></div></div>
+        <span className="self-start rounded-md bg-white/10 px-3 py-1.5 text-xs font-bold text-[#83dfbd] sm:self-auto">Live</span>
+      </section>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.75fr)]">
+        <PerformancePanel metrics={view.metrics} />
+        <PriorityPanel title={view.primaryTitle} items={view.primary} />
       </div>
+
+      <SummaryTable title={view.secondaryTitle} items={view.secondary} />
     </div>
   )
 }

@@ -54,19 +54,24 @@ function SidebarItem({ item, pathname, onNavigate }: { item: AdminNavigationItem
 
 function SidebarNavigation({ compact, pathname, onNavigate, onExpand }: { compact: boolean; pathname: string; onNavigate: () => void; onExpand: () => void }) {
   const { can } = useAdminSession()
-  const initialOpen = useMemo(() => ADMIN_NAVIGATION.filter((group) => group.items.some((item) => isActive(pathname, item.href))).map((group) => group.label), [pathname])
-  const [openGroups, setOpenGroups] = useState<string[]>(initialOpen)
+  const activeGroups = useMemo(() => ADMIN_NAVIGATION.filter((group) => group.items.some((item) => isActive(pathname, item.href))).map((group) => group.label), [pathname])
+  const [openGroups, setOpenGroups] = useState<string[]>(activeGroups)
   const visibleGroups = ADMIN_NAVIGATION.map((group) => ({ ...group, items: group.items.filter((item) => !item.permissions || can(item.permissions, item.mode)) }))
     .filter((group) => group.items.length > 0 && (!group.permissions || can(group.permissions, group.mode)))
   const DashboardIcon = DASHBOARD_NAVIGATION.icon
 
+  // Whenever navigation lands in a different section, only that section's group should stay open.
+  useEffect(() => {
+    setOpenGroups(activeGroups)
+  }, [activeGroups])
+
   function toggle(group: AdminNavigationGroup) {
     if (compact) {
       onExpand()
-      setOpenGroups((current) => current.includes(group.label) ? current : [...current, group.label])
+      setOpenGroups([group.label])
       return
     }
-    setOpenGroups((current) => current.includes(group.label) ? current.filter((label) => label !== group.label) : [...current, group.label])
+    setOpenGroups((current) => (current.includes(group.label) ? current.filter((label) => label !== group.label) : [group.label]))
   }
 
   return (
@@ -116,7 +121,7 @@ function UserMenu() {
         <div className="py-2">
           <Link href="/dashboard/sessions" className="flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-semibold text-[#42504a] hover:bg-[#edf3f0]"><LockKeyhole className="size-4" /> Active sessions</Link>
           {can(["settings.manage"]) && <Link href="/dashboard/admins" className="flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-semibold text-[#42504a] hover:bg-[#edf3f0]"><ShieldCheck className="size-4" /> Platform admins</Link>}
-          {can(["settings.manage"]) && <div className="flex h-10 cursor-not-allowed items-center gap-3 rounded-lg px-3 text-sm font-semibold text-[#9ba39f]" title="Settings migration is upcoming"><Settings className="size-4" /> Settings <span className="ml-auto text-[9px] uppercase">Soon</span></div>}
+          {can(["settings.manage"]) && <Link href="/dashboard/settings" className="flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-semibold text-[#42504a] hover:bg-[#edf3f0]"><Settings className="size-4" /> Settings</Link>}
         </div>
         <button type="button" onClick={() => void logout()} className="flex h-10 w-full items-center gap-3 rounded-lg border-t border-[#edf1ef] px-3 text-sm font-semibold text-[#a43229] hover:bg-[#fff3f1]"><LogOut className="size-4" /> Sign out</button>
       </div>

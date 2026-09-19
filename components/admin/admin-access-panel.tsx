@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CircleAlert, LoaderCircle, Pencil, Plus, Power, ShieldCheck, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { AppSelect } from "@/components/ui/app-select"
 import { PermissionGate } from "@/components/auth/permission-gate"
 import { ADMIN_ROLES, PERMISSION_GROUPS, ROLE_DEFAULT_PERMISSIONS, type AdminRole, type Permission } from "@/lib/rbac/permissions"
 import type { AdminProfile } from "@/lib/auth/types"
@@ -95,7 +96,14 @@ export function AdminAccessPanel() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-xs font-bold uppercase tracking-wider text-[#68716d]">Name<Input value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} className="mt-2 h-11 bg-white" /></label>
             <label className="text-xs font-bold uppercase tracking-wider text-[#68716d]">Email<Input type="email" value={editor.email} onChange={(event) => setEditor({ ...editor, email: event.target.value })} className="mt-2 h-11 bg-white" /></label>
-            <label className="text-xs font-bold uppercase tracking-wider text-[#68716d] sm:col-span-2">Role<select value={editor.role} onChange={(event) => setRole(event.target.value as AdminRole)} className="mt-2 h-11 w-full rounded-lg border border-[#d9dfdc] bg-white px-3 text-sm">{(catalogQuery.data?.roles || ADMIN_ROLES).map((role) => <option key={role}>{role}</option>)}</select></label>
+            <label className="text-xs font-bold uppercase tracking-wider text-[#68716d] sm:col-span-2">Role
+              <AppSelect
+                value={editor.role}
+                onValueChange={(value) => setRole(value as AdminRole)}
+                className="mt-2 border-[#d9dfdc]"
+                options={(catalogQuery.data?.roles || ADMIN_ROLES).map((role) => ({ value: role, label: role }))}
+              />
+            </label>
           </div>
           <div className="mt-6 space-y-4">
             {Object.entries(groups).map(([label, permissions]) => <fieldset key={label}><legend className="mb-2 text-xs font-bold uppercase tracking-wider text-[#68716d]">{label}</legend><div className="flex flex-wrap gap-2">{permissions.map((permission: Permission) => { const checked = editor.permissions.includes("*") || editor.permissions.includes(permission); return <label key={permission} className={`cursor-pointer rounded-lg border px-3 py-2 text-xs font-semibold ${checked ? "border-[#07845f] bg-[#e5f6ef] text-[#067554]" : "border-[#d9dfdc] text-[#68716d]"}`}><input type="checkbox" className="sr-only" checked={checked} disabled={editor.permissions.includes("*")} onChange={() => togglePermission(permission)} />{permission}</label> })}</div></fieldset>)}
