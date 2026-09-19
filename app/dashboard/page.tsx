@@ -2,6 +2,7 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { BrandMark } from "@/components/brand/brand-mark"
 import type { AdminProfile } from "@/lib/auth/types"
+import Link from "next/link"
 
 function profileFromCookie(value?: string): AdminProfile | null {
   if (!value) return null
@@ -30,6 +31,7 @@ export default async function DashboardPage() {
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#07845f]">Migration workspace</p>
         <h1 className="font-brand mt-3 text-4xl font-bold text-[#17201c]">Dashboard foundation ready</h1>
         <p className="mt-4 max-w-xl text-[#68716d]">Authentication is connected. The remaining admin modules can now be migrated into this protected shell.</p>
+        <Link href="/dashboard/sessions" className="mt-7 inline-flex h-11 items-center rounded-lg border border-[#b9c8c1] bg-white px-5 text-sm font-bold text-[#075f48] hover:bg-[#edf3f0]">Manage active sessions</Link>
       </section>
     </main>
   )

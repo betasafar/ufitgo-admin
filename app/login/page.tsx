@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 export default async function LoginPage() {
   const cookieStore = await cookies()
   if (cookieStore.has("ufitgo_admin_access")) redirect("/dashboard")
+  if (cookieStore.has("ufitgo_admin_refresh")) redirect("/api/auth/resume?next=/dashboard")
 
   return (
     <AuthShell>
