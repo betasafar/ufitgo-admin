@@ -68,7 +68,12 @@ export function AdminAccessPanel() {
   function saveEditor() {
     if (!editor) return
     if (!editor.name.trim() || !editor.email.trim()) return setError("Name and email are required.")
-    const body = { ...editor, name: editor.name.trim(), email: editor.email.trim().toLowerCase() }
+    const body = {
+      name: editor.name.trim(),
+      email: editor.email.trim().toLowerCase(),
+      role: editor.role,
+      permissions: editor.permissions,
+    }
     mutation.mutate({ url: editor.id ? `/api/admin/auth/admins/${editor.id}` : "/api/admin/auth/invite", body })
   }
 
