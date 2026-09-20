@@ -7,10 +7,12 @@ import {
   CreditCard,
   Gift,
   LayoutDashboard,
+  Mail,
   Map,
   Megaphone,
   MonitorSmartphone,
   Package,
+  Send,
   Settings,
   ShieldCheck,
   Users,
@@ -61,7 +63,7 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
       { label: "Customers", href: "/dashboard/customers", icon: Users, permissions: ["users.manage"], available: true },
       { label: "Partners", href: "/dashboard/operators", icon: BriefcaseBusiness, permissions: ["operators.manage"], available: true },
       { label: "Packages", href: "/dashboard/packages", icon: Package, permissions: ["packages.manage"], available: true },
-      { label: "Journey tracker", href: "/dashboard/journeys", icon: Map, permissions: ["journeys.manage"], available: true },
+      { label: "Bookings", href: "/dashboard/journeys", icon: Map, permissions: ["bookings.manage", "journeys.manage"], mode: "any", available: true },
     ],
   },
   {
@@ -92,6 +94,8 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     items: [
       { label: "Referrals", href: "/dashboard/referrals", icon: Gift, permissions: ["referrals.manage"], available: true },
       { label: "Sponsored ads", href: "/dashboard/ads", icon: Megaphone, permissions: ["marketing.manage"], available: true },
+      { label: "Broadcast", href: "/dashboard/broadcast", icon: Send, permissions: ["marketing.manage"], available: true },
+      { label: "Email templates", href: "/dashboard/notification-templates", icon: Mail, permissions: ["marketing.manage"], available: true },
     ],
   },
   {

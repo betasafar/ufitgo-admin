@@ -30,6 +30,9 @@
 
 html {
   background: var(--background);
+  /* Shrinks rem/em-based Tailwind spacing and text to ~75%; unlike `zoom`, this doesn't
+     desync fixed/sticky positioning or 100vw/vh math from the visual viewport. */
+  font-size: 85%;
 }
 
 body {

@@ -1,0 +1,98 @@
+{
+  "stageNotes": [
+    {
+      "title": "Customer contacted",
+      "text": "Customer contacted successfully. Concierge process explained and document collection started."
+    },
+    {
+      "title": "No answer",
+      "text": "Attempted to contact the customer but received no response. Follow-up required."
+    },
+    {
+      "title": "Waiting for customer",
+      "text": "Customer has been contacted and is expected to send the outstanding information."
+    },
+    {
+      "title": "Passport available",
+      "text": "Customer confirmed that a passport is available. Awaiting passport data page."
+    },
+    {
+      "title": "Passport assistance needed",
+      "text": "Customer does not currently have a passport and has been connected to Passport Assistance."
+    },
+    {
+      "title": "Passport received",
+      "text": "Passport data page received and added to the customer document record."
+    },
+    {
+      "title": "NIN received",
+      "text": "Customer NIN details received and recorded for document processing."
+    },
+    {
+      "title": "Documents incomplete",
+      "text": "Some customer documents have been received, but additional documents are still outstanding."
+    },
+    {
+      "title": "Vaccination pending",
+      "text": "Vaccination certificate is outstanding. Customer has been informed and operator assistance may be required."
+    },
+    {
+      "title": "Operator assistance required",
+      "text": "Outstanding document support has been acknowledged for operator assistance after handoff."
+    },
+    {
+      "title": "Documents complete",
+      "text": "Required customer documents have been collected or exceptions have been acknowledged."
+    },
+    {
+      "title": "Customer handed off",
+      "text": "Customer has been handed off to the operator. Outstanding items and next steps were recorded."
+    }
+  ],
+  "followUps": [
+    {
+      "title": "Call customer",
+      "text": "Call customer to discuss the booking and collect outstanding information."
+    },
+    {
+      "title": "WhatsApp follow-up",
+      "text": "Send WhatsApp follow-up requesting the outstanding booking information."
+    },
+    {
+      "title": "Request passport",
+      "text": "Follow up with customer for the passport data page."
+    },
+    {
+      "title": "Request NIN",
+      "text": "Follow up with customer for NIN details."
+    },
+    {
+      "title": "Request vaccination",
+      "text": "Follow up with customer for the vaccination certificate or confirm operator assistance."
+    },
+    {
+      "title": "Check customer response",
+      "text": "Check whether the customer has responded and update the document checklist."
+    },
+    {
+      "title": "Follow up Passport Assistance",
+      "text": "Follow up on the customer's Passport Assistance request and record the outcome."
+    },
+    {
+      "title": "Follow up operator",
+      "text": "Follow up with the operator for the customer's document, payment, visa, or fulfilment update."
+    },
+    {
+      "title": "Payment reminder",
+      "text": "Follow up with customer regarding the outstanding package payment."
+    },
+    {
+      "title": "Visa update request",
+      "text": "Request the latest visa application update and supporting document from the operator."
+    },
+    {
+      "title": "Customer unavailable",
+      "text": "Customer was unavailable. Try again on the next scheduled follow-up date."
+    }
+  ]
+}

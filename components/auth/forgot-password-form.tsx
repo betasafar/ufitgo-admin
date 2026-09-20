@@ -69,7 +69,7 @@ export function ForgotPasswordForm() {
               autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="admin@ufitgo.com"
+              placeholder="admin@ufitgo.ng"
               disabled={isSubmitting}
               aria-invalid={Boolean(error)}
               aria-describedby={error ? "email-error" : undefined}

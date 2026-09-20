@@ -21,7 +21,7 @@ export default function CreatePackagePage() {
   const isEdit = Boolean(editId)
   const [operators, setOperators] = useState<any[]>([])
   const [operatorId, setOperatorId] = useState("")
-  const [form, setForm] = useState({ title: "", description: "", type: "umrah", serviceLevel: "standard", price: "", capacity: "", departureDate: "", returnDate: "", paymentPlan: "FULL_PAYMENT", registrationFee: "", initialPayment: "", finalBalance: "" })
+  const [form, setForm] = useState({ title: "", description: "", type: "umrah", serviceLevel: "standard", price: "", capacity: "", departureDate: "", returnDate: "", paymentPlan: "FULL_PAYMENT", registrationFee: "", initialPayment: "", finalBalance: "", finalPaymentDueDate: "" })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
@@ -43,7 +43,7 @@ export default function CreatePackagePage() {
           title: pkg?.title || "", description: pkg?.description || "", type: pkg?.type || "umrah", serviceLevel: pkg?.serviceLevel || "standard",
           price: String(pkg?.price || ""), capacity: String(pkg?.capacity || ""), departureDate: pkg?.departureDate?.slice?.(0, 10) || "", returnDate: pkg?.returnDate?.slice?.(0, 10) || "",
           paymentPlan: hasRegistration && hasInstallments ? "REGISTRATION_AND_INSTALLMENTS" : hasRegistration ? "REGISTRATION_AND_FULL_PAYMENT" : hasInstallments ? "INSTALLMENTS" : "FULL_PAYMENT",
-          registrationFee: hasRegistration ? String(pkg.registrationFeeAmount) : "", initialPayment: hasInstallments ? String(pkg.initialDeposit || "") : "", finalBalance: hasInstallments ? String(pkg.finalBalance || "") : "",
+          registrationFee: hasRegistration ? String(pkg.registrationFeeAmount) : "", initialPayment: hasInstallments ? String(pkg.initialDeposit || "") : "", finalBalance: hasInstallments ? String(pkg.finalBalance || "") : "", finalPaymentDueDate: hasInstallments ? pkg.finalPaymentDueDate?.slice?.(0, 10) || "" : "",
         })
       }).catch(() => setError("Unable to load package for editing"))
     }
@@ -78,6 +78,7 @@ export default function CreatePackagePage() {
     body.append("installmentEligible", String(usesInstallments))
     body.append("initialDeposit", usesInstallments ? String(Number(form.initialPayment || 0)) : "0")
     body.append("finalBalance", usesInstallments ? String(Number(form.finalBalance || 0)) : "0")
+    body.append("finalPaymentDueDate", usesInstallments ? form.finalPaymentDueDate : "")
     try {
       const response = isEdit
         ? await fetch(`/api/admin/operator-auth/packages/${editId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(body.entries())) })

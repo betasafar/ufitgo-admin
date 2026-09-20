@@ -30,9 +30,13 @@ function validateLogin(values: LoginFormState): LoginErrors {
   return errors
 }
 
+// Next.js inlines process.env.NODE_ENV at build time, so this branch is
+// dead-code-eliminated from production bundles (e.g. Vercel builds).
+const DEV_DEFAULTS = process.env.NODE_ENV === "development" ? { email: "admin@ufitgo.com", password: "Admin@123" } : { email: "", password: "" }
+
 export function LoginForm() {
   const router = useRouter()
-  const [values, setValues] = useState<LoginFormState>({ email: "admin@ufitgo.com", password: "admin123", rememberMe: false })
+  const [values, setValues] = useState<LoginFormState>({ ...DEV_DEFAULTS, rememberMe: false })
   const [errors, setErrors] = useState<LoginErrors>({})
   const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -82,7 +86,7 @@ export function LoginForm() {
               type="email"
               autoComplete="email"
               inputMode="email"
-              placeholder="admin@ufitgo.com"
+              placeholder="admin@ufitgo.ng"
               value={values.email}
               onChange={(event) => setValues((current) => ({ ...current, email: event.target.value }))}
               aria-invalid={Boolean(errors.email)}

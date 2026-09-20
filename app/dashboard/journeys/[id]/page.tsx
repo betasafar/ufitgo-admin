@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { AppSelect } from "@/components/ui/app-select"
+import noteTemplates from "@/data/booking-note-templates.json"
 import {
   ArrowLeft,
   Banknote,
@@ -14,13 +15,16 @@ import {
   Mail,
   MessageSquare,
   Package as PackageIcon,
+  Pencil,
   Phone,
   Receipt,
   Save,
   Stamp,
   Trash2,
+  Upload,
   UserPlus,
   UserRound,
+  X,
 } from "lucide-react"
 
 type BookingRecord = {
@@ -63,6 +67,71 @@ type BookingRecord = {
 type TravelerDocument = { id: string; type: string; viewUrl?: string; status?: string }
 type Traveler = { id: string; fullName: string; relationship?: string; nin?: string; linkedUserId?: string }
 
+function operationalAction(stage: string | undefined, booking: BookingRecord) {
+  const normalized = stage || "CHECKOUT_INITIATED"
+  const outstanding = Number(booking.paymentBreakdown?.totalOutstanding ?? booking.totalOutstanding ?? Number(booking.totalAmountPayable ?? booking.totalAmount ?? 0) - Number(booking.totalPaid ?? booking.amountPaid ?? 0))
+  const owner = booking.assignedConcierge || "You"
+  if (normalized === "AWAITING_CONCIERGE" || normalized === "BOOKING_SECURED") return { owner, waitingFor: "Concierge contact", nextAction: "Contact the customer and start document collection." }
+  if (["CONCIERGE_PROCESSING", "CONCIERGE_REVIEW", "DOCUMENTS_PENDING"].includes(normalized)) return { owner, waitingFor: "Customer documents or assistance outcome", nextAction: "Record the latest customer conversation and update the document checklist." }
+  if (["DOCUMENTS_VERIFIED", "PAYMENT_PHASE", "PAYMENT_PENDING"].includes(normalized)) return { owner: outstanding > 0 ? "Customer" : "UfitGo Operations", waitingFor: outstanding > 0 ? "Outstanding package payment" : "Operator handoff", nextAction: outstanding > 0 ? "Monitor the payment stages and follow up when needed." : "Confirm the handoff and begin operator follow-up." }
+  if (normalized === "FULFILLMENT_READY") return { owner: "UfitGo Operations", waitingFor: "Operator fulfilment update", nextAction: "Follow up with the operator and record visa or travel progress." }
+  if (normalized === "COMPLETED") return { owner: "UfitGo Operations", waitingFor: "Nothing outstanding", nextAction: "Keep the completed booking record available for support." }
+  return { owner: "UfitGo Operations", waitingFor: "Registration payment", nextAction: outstanding > 0 ? "Monitor registration payment." : "Move the booking into Concierge processing." }
+}
+
+const journeySteps = [
+  { key: "REGISTRATION", label: "Registration", description: "Secure booking" },
+  { key: "CONCIERGE", label: "Concierge & documents", description: "Collect information" },
+  { key: "PAYMENT", label: "Package payment", description: "Initial and final payment" },
+  { key: "HANDOFF", label: "Operator handoff", description: "Begin fulfilment" },
+  { key: "VISA", label: "Visa processing", description: "Monitor operator progress" },
+  { key: "TRAVEL_READY", label: "Travel ready", description: "Ready for departure" },
+]
+
+function journeyStepIndex(stage?: string) {
+  const normalized = stage || "CHECKOUT_INITIATED"
+  if (["CHECKOUT_INITIATED", "PENDING", "BOOKING_SECURED"].includes(normalized)) return 0
+  if (["AWAITING_CONCIERGE", "CONCIERGE_PROCESSING", "CONCIERGE_REVIEW", "DOCUMENTS_PENDING"].includes(normalized)) return 1
+  if (["DOCUMENTS_VERIFIED", "PAYMENT_PHASE", "PAYMENT_PENDING", "DEPOSIT_PAID"].includes(normalized)) return 2
+  if (["OPERATOR_HANDOFF", "HANDOFF"].includes(normalized)) return 3
+  if (["VISA_PROCESSING", "VISA_ISSUED"].includes(normalized)) return 4
+  if (["FULFILLMENT_READY", "TRAVEL_READY", "COMPLETED", "FULLY_PAID"].includes(normalized)) return 5
+  return 0
+}
+
+function BookingJourneyTracker({ stage }: { stage?: string }) {
+  const currentIndex = journeyStepIndex(stage)
+  return (
+    <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#07845f]">Booking journey</p>
+          <h2 className="mt-1 font-brand text-xl font-bold text-[#17201c]">Where this booking is now</h2>
+        </div>
+        <p className="text-xs font-semibold text-[#78817d]">Step {currentIndex + 1} of {journeySteps.length}</p>
+      </div>
+      <div className="mt-6 grid gap-4 md:grid-cols-6">
+        {journeySteps.map((step, index) => {
+          const completed = index < currentIndex
+          const current = index === currentIndex
+          return (
+            <div key={step.key} className="relative min-w-0">
+              {index < journeySteps.length - 1 && <span className={`absolute left-8 right-[-1rem] top-4 hidden h-0.5 md:block ${index < currentIndex ? "bg-[#0d7d5f]" : "bg-[#dfe7e3]"}`} />}
+              <div className="relative z-10 flex items-start gap-2 md:block">
+                <span className={`grid size-8 shrink-0 place-items-center rounded-full border-2 text-xs font-bold ${completed ? "border-[#0d7d5f] bg-[#0d7d5f] text-white" : current ? "border-[#0d7d5f] bg-[#eaf9f3] text-[#0d7d5f]" : "border-[#dfe7e3] bg-white text-[#9aa39e]"}`}>{completed ? "✓" : index + 1}</span>
+                <div className="mt-0.5 md:mt-3">
+                  <p className={`text-sm font-bold ${current ? "text-[#0d7d5f]" : completed ? "text-[#32443d]" : "text-[#9aa39e]"}`}>{step.label}</p>
+                  <p className={`mt-1 text-xs ${current || completed ? "text-[#78817d]" : "text-[#b1bab5]"}`}>{step.description}</p>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 type PaymentEvent = {
   id: string | number
   amount: number
@@ -89,6 +158,14 @@ type PaymentBreakdown = {
   totalAmountPayable?: number
   totalPaid?: number
   totalOutstanding?: number
+  paymentPolicy?: {
+    mode?: "FULL_PAYMENT" | "INSTALLMENTS"
+    finalPaymentStatus?: "NOT_APPLICABLE" | "DUE" | "OVERDUE"
+    finalPaymentDueDate?: string | null
+    checkoutAllowed?: boolean
+    checkoutBlockReason?: string | null
+  }
+  paymentStages?: Array<{ key: string; label: string; amount: number; paid: number; balance: number; status: string; enabled: boolean }>
   paymentBreakdown?: {
     registration?: { amount: number; paid: number; balance: number; status: string }
     initialPayment?: { amount: number; paid: number; balance: number; status: string }
@@ -106,6 +183,16 @@ const officialStages = [
   { value: "FULFILLMENT_READY", label: "Fulfillment ready" },
   { value: "COMPLETED", label: "Completed" },
 ]
+
+const stageGuidance: Record<string, { meaning: string; beforeAdvancing: string; tab?: (typeof tabs)[number]["id"] }> = {
+  CHECKOUT_INITIATED: { meaning: "The booking exists, but registration payment has not been confirmed.", beforeAdvancing: "Wait for the registration payment record before starting concierge work." },
+  AWAITING_CONCIERGE: { meaning: "Registration is paid and the customer needs first contact.", beforeAdvancing: "Contact the customer, record the conversation outcome, and assign a concierge.", tab: "documents" },
+  CONCIERGE_PROCESSING: { meaning: "Document collection or customer assistance is in progress.", beforeAdvancing: "Update the document checklist or record the assistance outcome before marking documents verified.", tab: "documents" },
+  DOCUMENTS_VERIFIED: { meaning: "The document review is complete or outstanding items have an acknowledged exception.", beforeAdvancing: "Confirm the payment plan is ready and move the booking to payment phase.", tab: "payments" },
+  PAYMENT_PHASE: { meaning: "The customer is responsible for the remaining package payment.", beforeAdvancing: "Use payment records as the source of truth; do not manually mark money as paid.", tab: "payments" },
+  FULFILLMENT_READY: { meaning: "Payment and operational fulfilment are ready for final travel preparation.", beforeAdvancing: "Record operator or visa updates before completing the booking.", tab: "visa" },
+  COMPLETED: { meaning: "The booking workflow is complete.", beforeAdvancing: "Keep the record available for support and audit." },
+}
 
 const documentRequirements = [
   { key: "passport", label: "Valid passport", hint: "At least 6 months validity from travel date and 2 blank pages." },
@@ -139,8 +226,9 @@ const tabs = [
 
 const stageLabels: Record<string, string> = {
   REGISTRATION: "Registration",
-  INITIAL_PAYMENT: "Initial deposit",
+  INITIAL_PAYMENT: "Initial payment",
   FINAL_PAYMENT: "Final balance",
+  FULL_PAYMENT: "Full package payment",
 }
 
 const paymentStatusTone: Record<string, string> = {
@@ -215,13 +303,20 @@ function PaymentsTab({ data, loading }: { data: PaymentBreakdown | null; loading
   const totalPayable = Number(data.totalAmountPayable ?? Number(data.totalAmount || 0))
   const totalPaid = Number(data.totalPaid ?? data.amountPaid ?? registrationPaid + packagePaid)
   const events = [...data.payments].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+  const stages = data.paymentStages?.length ? data.paymentStages : [
+    { key: "REGISTRATION", label: "Registration fee", amount: registrationTotal, paid: registrationPaid, balance: Math.max(0, registrationTotal - registrationPaid), status: registrationTotal <= 0 ? "NOT_APPLICABLE" : registrationPaid >= registrationTotal ? "PAID" : "DUE", enabled: registrationTotal > 0 },
+    ...(data.paymentPolicy?.mode === "INSTALLMENTS" || (!data.paymentPolicy?.mode && (initialPayment || finalBalance))
+      ? [
+          { key: "INITIAL_PAYMENT", label: "Initial payment", amount: Number(initialPayment?.amount ?? packageCost), paid: Number(initialPayment?.paid ?? Math.min(packagePaid, packageCost)), balance: Number(initialPayment?.balance ?? 0), status: initialPayment?.status || "DUE", enabled: true },
+          { key: "FINAL_PAYMENT", label: "Final balance", amount: Number(finalBalance?.amount ?? 0), paid: Number(finalBalance?.paid ?? 0), balance: Number(finalBalance?.balance ?? 0), status: finalBalance?.status || "NOT_APPLICABLE", enabled: Boolean(finalBalance?.amount) },
+        ]
+      : [{ key: "FULL_PAYMENT", label: "Full package payment", amount: packageCost, paid: packagePaid, balance: Math.max(0, packageCost - packagePaid), status: packagePaid >= packageCost ? "PAID" : "DUE", enabled: packageCost > 0 }]),
+  ]
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <PaymentSummaryTile label="Registration fee" paid={registrationPaid} total={registrationTotal} />
-        <PaymentSummaryTile label="Initial payment" paid={Number(initialPayment?.paid ?? Math.min(packagePaid, packageCost))} total={Number(initialPayment?.amount ?? packageCost)} />
-        <PaymentSummaryTile label="Final balance" paid={Number(finalBalance?.paid ?? Math.max(packagePaid - packageCost, 0))} total={Number(finalBalance?.amount ?? 0)} />
+        {stages.filter((stage) => stage.enabled).map((stage) => <PaymentSummaryTile key={stage.key} label={stage.label || stageLabels[stage.key] || stage.key} paid={Number(stage.paid)} total={Number(stage.amount)} />)}
         <PaymentSummaryTile label="Total payable" paid={totalPaid} total={totalPayable} />
       </div>
 
@@ -288,6 +383,32 @@ function parseStageNotes(notes?: string) {
   return notes.split("\n").filter(Boolean).reverse()
 }
 
+// Activity lines look like "[timestamp (Admin)]: message" — split so only the
+// free-text message is editable, leaving the timestamp/author prefix intact.
+function parseActivityEntry(raw: string) {
+  const match = raw.match(/^(\[[^\]]*\]:\s?)([\s\S]*)$/)
+  if (match) return { prefix: match[1], message: match[2] }
+  return { prefix: "", message: raw }
+}
+
+// The stored prefix keeps its original "M/D/YYYY, h:mm:ss AM" text (from the
+// server's toLocaleString()); reformat only for display, e.g. "20 Sep 2026, 5:17 am".
+function formatActivityPrefix(prefix: string) {
+  const match = prefix.match(/^\[(.+?)(\s\(Admin\))?\]:\s?$/)
+  if (!match) return prefix
+  const [, rawDate, suffix = ""] = match
+  const date = new Date(rawDate)
+  if (Number.isNaN(date.getTime())) return prefix
+  const formatted = date.toLocaleString("en-NG", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })
+  return `[${formatted}${suffix}]: `
+}
+
+function todayInputValue() {
+  const now = new Date()
+  const offset = now.getTimezoneOffset() * 60000
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10)
+}
+
 export default function JourneyDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -297,7 +418,9 @@ export default function JourneyDetailPage() {
   const [visaFeatureEnabled, setVisaFeatureEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("overview")
+  const [actionWorkspaceOpen, setActionWorkspaceOpen] = useState(false)
 
   const [stage, setStage] = useState("")
   const [concierge, setConcierge] = useState("")
@@ -305,8 +428,14 @@ export default function JourneyDetailPage() {
   const [savingStage, setSavingStage] = useState(false)
 
   const [followUpNotes, setFollowUpNotes] = useState("")
-  const [nextFollowUpAt, setNextFollowUpAt] = useState("")
+  const [selectedStageTemplate, setSelectedStageTemplate] = useState("")
+  const [selectedFollowUpTemplate, setSelectedFollowUpTemplate] = useState("")
+  const [nextFollowUpAt, setNextFollowUpAt] = useState(todayInputValue)
   const [savingFollowUp, setSavingFollowUp] = useState(false)
+  const [activityOpen, setActivityOpen] = useState(false)
+  const [editingActivityIndex, setEditingActivityIndex] = useState<number | null>(null)
+  const [editingActivityText, setEditingActivityText] = useState("")
+  const [savingActivityEdit, setSavingActivityEdit] = useState(false)
 
   const [surchargeAmount, setSurchargeAmount] = useState("")
   const [surchargeReason, setSurchargeReason] = useState("")
@@ -326,6 +455,11 @@ export default function JourneyDetailPage() {
 
   const [payments, setPayments] = useState<PaymentBreakdown | null>(null)
   const [paymentsLoading, setPaymentsLoading] = useState(false)
+
+  function showToast(type: "success" | "error", text: string) {
+    setToast({ type, text })
+    window.setTimeout(() => setToast(null), 3500)
+  }
 
   const load = async () => {
     setLoading(true)
@@ -378,6 +512,53 @@ export default function JourneyDetailPage() {
     }
   }
 
+  const refreshBookingSilently = async () => {
+    const response = await fetch("/api/admin/bookings/journey-tracker", { cache: "no-store" })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(payload?.message || "Unable to refresh booking")
+    const list: BookingRecord[] = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []
+    const found = list.find((item) => String(item.id) === id)
+    if (!found) throw new Error("Booking not found")
+    setBooking(found)
+    setStage(found.currentJourneyStage || "CHECKOUT_INITIATED")
+    setConcierge(found.assignedConcierge || "")
+  }
+
+  function startEditingActivity(reversedIndex: number, currentMessage: string) {
+    setEditingActivityIndex(reversedIndex)
+    setEditingActivityText(currentMessage)
+  }
+
+  function cancelEditingActivity() {
+    setEditingActivityIndex(null)
+    setEditingActivityText("")
+  }
+
+  async function saveActivityEdit() {
+    if (!booking || editingActivityIndex === null) return
+    const rawLines = (booking.stageNotes || "").split("\n").filter(Boolean)
+    const originalIndex = rawLines.length - 1 - editingActivityIndex
+    const { prefix } = parseActivityEntry(rawLines[originalIndex] || "")
+    rawLines[originalIndex] = `${prefix}${editingActivityText}`
+
+    setSavingActivityEdit(true)
+    try {
+      const response = await fetch(`/api/admin/bookings/${id}/stage-notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawNotes: rawLines.join("\n") }),
+      })
+      if (!response.ok) throw new Error("Unable to save")
+      await refreshBookingSilently()
+      showToast("success", "Note updated.")
+      cancelEditingActivity()
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to update note.")
+    } finally {
+      setSavingActivityEdit(false)
+    }
+  }
+
   const loadTravelerDocs = async (travelerId: string) => {
     const response = await fetch(`/api/admin/bookings/travelers/${travelerId}/documents`, { cache: "no-store" })
     const payload = await response.json().catch(() => null)
@@ -412,6 +593,11 @@ export default function JourneyDetailPage() {
 
   async function saveStage() {
     if (!booking) return
+    if (stage !== booking.currentJourneyStage) {
+      const selectedLabel = officialStages.find((item) => item.value === stage)?.label || stage
+      const confirmed = window.confirm(`Move this booking to "${selectedLabel}"? Confirm that the current stage work is complete or that the exception has been recorded.`)
+      if (!confirmed) return
+    }
     setSavingStage(true)
     try {
       const data: Record<string, unknown> = {}
@@ -425,9 +611,11 @@ export default function JourneyDetailPage() {
       })
       if (!response.ok) throw new Error("Unable to save")
       setStageNotes("")
-      await load()
-    } catch {
-      window.alert("Failed to update booking.")
+      setSelectedStageTemplate("")
+      await refreshBookingSilently()
+      showToast("success", "Booking stage updated.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to update booking.")
     } finally {
       setSavingStage(false)
     }
@@ -449,10 +637,12 @@ export default function JourneyDetailPage() {
       })
       if (!response.ok) throw new Error("Unable to save")
       setFollowUpNotes("")
-      setNextFollowUpAt("")
-      await load()
-    } catch {
-      window.alert("Failed to record follow-up.")
+      setSelectedFollowUpTemplate("")
+      setNextFollowUpAt(todayInputValue())
+      await refreshBookingSilently()
+      showToast("success", "Follow-up saved.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to record follow-up.")
     } finally {
       setSavingFollowUp(false)
     }
@@ -474,9 +664,10 @@ export default function JourneyDetailPage() {
       if (!response.ok) throw new Error("Unable to apply surcharge")
       setSurchargeAmount("")
       setSurchargeReason("")
-      await load()
-    } catch {
-      window.alert("Failed to apply surcharge.")
+      await refreshBookingSilently()
+      showToast("success", "Surcharge applied.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to apply surcharge.")
     } finally {
       setSavingSurcharge(false)
     }
@@ -509,9 +700,27 @@ export default function JourneyDetailPage() {
         body: JSON.stringify({ documentType, status }),
       })
       if (!response.ok) throw new Error("Unable to save")
-      await load()
-    } catch {
-      window.alert("Failed to update document status.")
+      await refreshBookingSilently()
+      showToast("success", "Document status updated.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to update document status.")
+    } finally {
+      setDocSaving(null)
+    }
+  }
+
+  async function uploadDocument(documentType: string, file: File) {
+    setDocSaving(documentType)
+    try {
+      const form = new FormData()
+      form.append("documentType", documentType)
+      form.append("file", file)
+      const response = await fetch(`/api/admin/bookings/${id}/upload-document`, { method: "POST", body: form })
+      if (!response.ok) throw new Error("Unable to upload document")
+      await refreshBookingSilently()
+      showToast("success", "Document uploaded.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to upload document.")
     } finally {
       setDocSaving(null)
     }
@@ -533,9 +742,10 @@ export default function JourneyDetailPage() {
       })
       if (!response.ok) throw new Error("Unable to save")
       setVisaForm((current) => ({ ...current, note: "" }))
-      await load()
-    } catch {
-      window.alert("Failed to update visa progress.")
+      await refreshBookingSilently()
+      showToast("success", "Visa progress updated.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to update visa progress.")
     } finally {
       setSavingVisa(false)
     }
@@ -553,8 +763,9 @@ export default function JourneyDetailPage() {
       if (!response.ok) throw new Error("Unable to add traveler")
       setNewTraveler({ fullName: "", relationship: "", nin: "" })
       await loadTravelers()
-    } catch {
-      window.alert("Failed to add traveler.")
+      showToast("success", "Traveler added.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to add traveler.")
     } finally {
       setAddingTraveler(false)
     }
@@ -605,13 +816,51 @@ export default function JourneyDetailPage() {
       <main className="p-8">
         <div className="rounded-xl border border-[#f4d0ca] bg-[#fff0ee] p-6 text-sm font-semibold text-[#a43229]">{error || "Booking not found."}</div>
         <Link href="/dashboard/journeys" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-[#a43229]">
-          <ArrowLeft className="size-4" /> Back to journey tracker
+          <ArrowLeft className="size-4" /> Back to bookings
         </Link>
       </main>
     )
   }
 
   const review = booking.conciergeDocumentReview || {}
+  const action = operationalAction(booking.currentJourneyStage, booking)
+  const guidance = stageGuidance[booking.currentJourneyStage || "CHECKOUT_INITIATED"] || stageGuidance.CHECKOUT_INITIATED
+  const activity = parseStageNotes(booking.stageNotes)
+
+  function renderActivityRow(note: string, index: number) {
+    const { prefix, message } = parseActivityEntry(note)
+    const isEditing = editingActivityIndex === index
+    // activity is newest-first, so the top row carries the highest number and it counts down.
+    const sequenceNumber = activity.length - index
+    if (isEditing) {
+      return (
+        <div key={index} className="rounded-lg border border-[#0d7d5f] bg-white px-3 py-2">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[#0d7d5f] text-[10px] font-bold text-white">{sequenceNumber}</span>
+            {prefix && <p className="text-xs font-semibold text-[#9aa19e]">{formatActivityPrefix(prefix).replace(/:\s?$/, "")}</p>}
+          </div>
+          <textarea value={editingActivityText} onChange={(event) => setEditingActivityText(event.target.value)} className="h-20 w-full resize-none rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-2 py-1.5 text-sm outline-none focus:border-[#0d7d5f]" autoFocus />
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={cancelEditingActivity} disabled={savingActivityEdit} className="inline-flex items-center gap-1 rounded-lg border border-[#d3dad7] px-2.5 py-1 text-xs font-bold text-[#68716d] hover:bg-[#f7faf9] disabled:opacity-50"><X className="size-3" /> Cancel</button>
+            <button type="button" onClick={() => void saveActivityEdit()} disabled={savingActivityEdit} className="inline-flex items-center gap-1 rounded-lg bg-[#0d7d5f] px-2.5 py-1 text-xs font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingActivityEdit ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />} Save</button>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div key={index} className="group flex items-start justify-between gap-2 rounded-lg border border-[#edf1ef] bg-[#f7faf9] px-3 py-2 text-sm text-[#42504a]">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[#dfe7e3] text-[10px] font-bold text-[#52625b]">{sequenceNumber}</span>
+          <span className="min-w-0 flex-1 whitespace-pre-wrap">{prefix ? `${formatActivityPrefix(prefix)}${message}` : note}</span>
+        </div>
+        {prefix && (
+          <button type="button" title="Edit this note" aria-label="Edit this note" onClick={() => startEditingActivity(index, message)} className="shrink-0 rounded-md p-1 text-[#9aa19e] opacity-0 transition group-hover:opacity-100 hover:bg-[#edf1ef] hover:text-[#0d7d5f]">
+            <Pencil className="size-3.5" />
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <main className="space-y-6 p-5 sm:p-8">
@@ -669,6 +918,25 @@ export default function JourneyDetailPage() {
         </div>
       </div>
 
+      <BookingJourneyTracker stage={booking.currentJourneyStage} />
+
+      <section className="rounded-2xl border border-[#cfeee0] bg-[#f5fbf8] p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#07845f]">Current action</p>
+            <h2 className="mt-2 font-brand text-xl font-bold text-[#17201c]">{action.nextAction}</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex w-fit rounded-full border border-[#cfeee0] bg-white px-3 py-1 text-xs font-bold text-[#0c6b50]">{action.owner}</span>
+            <button type="button" onClick={() => { setActiveTab("overview"); setActionWorkspaceOpen(true); window.setTimeout(() => document.getElementById("action-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0) }} className="inline-flex items-center rounded-lg bg-[#0d7d5f] px-3 py-2 text-xs font-bold text-white hover:bg-[#0b6b51]">Open action workspace</button>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+          <div className="rounded-xl border border-[#dbeee4] bg-white p-3"><p className="text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Waiting for</p><p className="mt-1 font-semibold text-[#32443d]">{action.waitingFor}</p></div>
+          <div className="rounded-xl border border-[#dbeee4] bg-white p-3"><p className="text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Last stage update</p><p className="mt-1 font-semibold text-[#32443d]">{formatDate(booking.stageEnteredAt)}</p></div>
+        </div>
+      </section>
+
       <div className="border-b border-[#d9dfdc]">
         <nav className="flex gap-1 overflow-x-auto">
           {tabs.map((tab) => {
@@ -716,13 +984,24 @@ export default function JourneyDetailPage() {
             </section>
           </aside>
 
-          <div className="space-y-6">
+          <div id="action-workspace" className="space-y-6">
+            {!actionWorkspaceOpen && (
+              <div className="rounded-2xl border border-dashed border-[#cbdad3] bg-[#f8fbf9] p-5 text-sm text-[#68716d]">
+                The operational workspace is closed. Use <span className="font-bold text-[#0d7d5f]">Open action workspace</span> above when you are ready to update the stage, record notes, or schedule a follow-up.
+              </div>
+            )}
+            {actionWorkspaceOpen && <>
             <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
-              <h2 className="font-brand text-lg font-bold text-[#17201c]">Stage & concierge</h2>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div><h2 className="font-brand text-lg font-bold text-[#17201c]">Stage & concierge</h2><p className="mt-1 text-sm text-[#68716d]">{guidance.meaning}</p></div>
+                {guidance.tab && <button type="button" onClick={() => setActiveTab(guidance.tab!)} className="inline-flex w-fit items-center rounded-lg border border-[#b9d8ca] bg-[#f5fbf8] px-3 py-2 text-xs font-bold text-[#0d7d5f]">Open {guidance.tab === "documents" ? "documents" : guidance.tab === "payments" ? "payments" : "visa progress"}</button>}
+              </div>
+              <div className="mt-4 rounded-xl border border-[#dbeee4] bg-[#f5fbf8] p-3 text-sm text-[#42504a]"><span className="font-bold text-[#0d7d5f]">Before advancing:</span> {guidance.beforeAdvancing}</div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Journey stage</label>
+                  <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Advanced stage override</label>
                   <AppSelect value={stage} onValueChange={setStage} options={officialStages} />
+                  <p className="mt-1 text-xs text-[#9aa39e]">Use only after completing the current stage or recording an exception.</p>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Assigned concierge</label>
@@ -730,8 +1009,8 @@ export default function JourneyDetailPage() {
                 </div>
               </div>
               <div className="mt-3">
-                <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Notes (optional)</label>
-                <textarea value={stageNotes} onChange={(event) => setStageNotes(event.target.value)} placeholder="Add a note about this update…" className="h-20 w-full resize-none rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" />
+                <div className="mb-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><label htmlFor="stage-note" className="block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Notes (optional)</label><select aria-label="Insert a note template" value={selectedStageTemplate} onChange={(event) => { const template = noteTemplates.stageNotes.find((item) => item.title === event.target.value); setSelectedStageTemplate(event.target.value); if (template) setStageNotes(template.text) }} className="h-8 max-w-full rounded-md border border-[#d3dad7] bg-white px-2 text-xs font-semibold text-[#52625b] outline-none focus:border-[#0d7d5f]"><option value="">Insert common note...</option>{noteTemplates.stageNotes.map((template) => <option key={template.title} value={template.title}>{template.title}</option>)}</select></div>
+                <textarea id="stage-note" value={stageNotes} onChange={(event) => setStageNotes(event.target.value)} placeholder="Add a note about this update…" className="h-20 w-full resize-none rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" />
               </div>
               <button type="button" onClick={() => void saveStage()} disabled={savingStage} className="mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#0d7d5f] px-5 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">
                 {savingStage ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Save changes
@@ -741,7 +1020,7 @@ export default function JourneyDetailPage() {
             <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
               <h2 className="font-brand flex items-center gap-2 text-lg font-bold text-[#17201c]"><MessageSquare className="size-4 text-[#0d7d5f]" /> Follow-ups</h2>
               <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <textarea value={followUpNotes} onChange={(event) => setFollowUpNotes(event.target.value)} placeholder="Summarize the conversation or action taken…" className="h-20 flex-1 resize-none rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" />
+                <div className="flex-1"><div className="mb-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><label htmlFor="follow-up-note" className="text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Follow-up note</label><select aria-label="Insert a follow-up template" value={selectedFollowUpTemplate} onChange={(event) => { const template = noteTemplates.followUps.find((item) => item.title === event.target.value); setSelectedFollowUpTemplate(event.target.value); if (template) setFollowUpNotes(template.text) }} className="h-8 max-w-full rounded-md border border-[#d3dad7] bg-white px-2 text-xs font-semibold text-[#52625b] outline-none focus:border-[#0d7d5f]"><option value="">Insert common follow-up...</option>{noteTemplates.followUps.map((template) => <option key={template.title} value={template.title}>{template.title}</option>)}</select></div><textarea id="follow-up-note" value={followUpNotes} onChange={(event) => setFollowUpNotes(event.target.value)} placeholder="Summarize the conversation or action taken…" className="h-20 w-full resize-none rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" /></div>
                 <div className="flex flex-col gap-2 sm:w-48">
                   <input type="date" value={nextFollowUpAt} onChange={(event) => setNextFollowUpAt(event.target.value)} className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
                   <button type="button" onClick={() => void saveFollowUp()} disabled={savingFollowUp} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">
@@ -749,14 +1028,23 @@ export default function JourneyDetailPage() {
                   </button>
                 </div>
               </div>
-              {parseStageNotes(booking.stageNotes).length > 0 && (
-                <div className="mt-5 space-y-3 border-t border-[#edf1ef] pt-4">
-                  {parseStageNotes(booking.stageNotes).map((note, index) => (
-                    <div key={index} className="rounded-lg bg-[#f7faf9] px-3 py-2 text-sm text-[#42504a]">{note}</div>
-                  ))}
+              {activity.length > 0 && (
+                <div className="mt-5 border-t border-[#edf1ef] pt-4">
+                  <div className="flex items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-[0.08em] text-[#78817d]">Recent activity</p><button type="button" onClick={() => setActivityOpen(true)} className="text-xs font-bold text-[#0d7d5f] hover:underline">View message sequence ({activity.length})</button></div>
+                  <div className="mt-3 space-y-2">{activity.slice(0, 3).map((note, index) => renderActivityRow(note, index))}</div>
                 </div>
               )}
             </section>
+            </>}
+          </div>
+        </div>
+      )}
+
+      {activityOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#17201c]/35 p-5" role="dialog" aria-modal="true" aria-label="Booking activity sequence">
+          <div className="max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-[#dbe2de] bg-white shadow-xl">
+            <div className="flex items-start justify-between gap-4 border-b border-[#edf1ef] p-5"><div><p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#07845f]">Booking activity</p><h2 className="mt-1 font-brand text-xl font-bold text-[#17201c]">Conversation and action sequence</h2><p className="mt-1 text-sm text-[#68716d]">Saved notes and follow-ups, newest first.</p></div><button type="button" onClick={() => setActivityOpen(false)} className="text-sm font-bold text-[#68716d] hover:text-[#17201c]">Close</button></div>
+            <div className="max-h-[60vh] space-y-3 overflow-y-auto p-5">{activity.map((note, index) => renderActivityRow(note, index))}</div>
           </div>
         </div>
       )}
@@ -768,10 +1056,11 @@ export default function JourneyDetailPage() {
       {activeTab === "documents" && (
         <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
           <h2 className="font-brand text-lg font-bold text-[#17201c]">Document checklist</h2>
-          <p className="mt-1 text-sm text-[#68716d]">Track concierge review status for each required travel document.</p>
+          <p className="mt-1 text-sm text-[#68716d]">Track concierge review status for each required travel document, or upload it directly if the customer shared it with you.</p>
           <div className="mt-5 space-y-3">
             {documentRequirements.map((req) => {
               const status = review[req.key]?.status || "missing"
+              const uploading = docSaving === req.key
               return (
                 <div key={req.key} className="flex flex-col gap-3 rounded-xl border border-[#dbe2de] p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -779,13 +1068,30 @@ export default function JourneyDetailPage() {
                     <p className="mt-0.5 text-xs text-[#7b8580]">{req.hint}</p>
                     {review[req.key]?.url && <a href={review[req.key]?.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-bold text-[#0d7d5f] hover:underline">View uploaded file</a>}
                   </div>
-                  <AppSelect
-                    value={status}
-                    onValueChange={(next) => void saveDocumentReview(req.key, next)}
-                    disabled={docSaving === req.key}
-                    className="h-10 sm:w-52"
-                    options={documentStatusOptions.map((option) => ({ value: option, label: option.replaceAll("_", " ") }))}
-                  />
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <label className={`inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-xs font-bold text-[#35443e] hover:bg-[#edf3f0] ${uploading ? "pointer-events-none opacity-60" : ""}`}>
+                      {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                      {review[req.key]?.url ? "Replace file" : "Upload file"}
+                      <input
+                        type="file"
+                        accept="image/*,.pdf"
+                        className="sr-only"
+                        disabled={uploading}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0]
+                          event.target.value = ""
+                          if (file) void uploadDocument(req.key, file)
+                        }}
+                      />
+                    </label>
+                    <AppSelect
+                      value={status}
+                      onValueChange={(next) => void saveDocumentReview(req.key, next)}
+                      disabled={docSaving === req.key}
+                      className="h-10 sm:w-52"
+                      options={documentStatusOptions.map((option) => ({ value: option, label: option.replaceAll("_", " ") }))}
+                    />
+                  </div>
                 </div>
               )
             })}

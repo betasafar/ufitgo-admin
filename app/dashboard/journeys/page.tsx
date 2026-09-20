@@ -148,8 +148,8 @@ export default function JourneyTrackerPage() {
       <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#07845f]">Operations</p>
-          <h1 className="mt-2 font-brand text-3xl font-bold text-[#17201c]">Journey tracker</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">Track every booking's journey from checkout to fulfillment, spot who needs a follow-up, and jump straight into the details that matter.</p>
+          <h1 className="mt-2 font-brand text-3xl font-bold text-[#17201c]">Bookings</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">Manage every booking from checkout to fulfillment, spot who needs a follow-up, and jump straight into the details that matter.</p>
         </div>
         <button type="button" onClick={() => void refetch()} className="inline-flex items-center justify-center rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">
           Refresh

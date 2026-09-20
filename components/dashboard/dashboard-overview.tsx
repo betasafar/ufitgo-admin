@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Clock3,
+  ChevronDown,
+  ChevronUp,
   Package,
   Plane,
   ShieldCheck,
@@ -39,6 +41,15 @@ interface SummaryItem {
   value: string
 }
 
+interface BookingAction {
+  id: string
+  bookingRef: string
+  customer: string
+  task: string
+  owner: string
+  tone: "red" | "gold" | "blue"
+}
+
 interface DashboardView {
   eyebrow: string
   title: string
@@ -57,6 +68,18 @@ function money(value: unknown) {
 
 function number(value: unknown) {
   return Number(value || 0).toLocaleString("en-NG")
+}
+
+function bookingActions(bookings: any[]): BookingAction[] {
+  return bookings.map((booking) => {
+    const stage = booking.currentJourneyStage || "CHECKOUT_INITIATED"
+    const outstanding = Number(booking.paymentBreakdown?.totalOutstanding ?? booking.totalOutstanding ?? Number(booking.totalAmountPayable ?? booking.totalAmount ?? 0) - Number(booking.totalPaid ?? booking.amountPaid ?? 0))
+    if (["AWAITING_CONCIERGE", "BOOKING_SECURED"].includes(stage)) return { id: String(booking.id), bookingRef: booking.bookingRef || `#${booking.id}`, customer: booking.pilgrimName || "Customer", task: "Contact customer and start document collection", owner: booking.assignedConcierge || "You", tone: "red" }
+    if (["CONCIERGE_PROCESSING", "CONCIERGE_REVIEW", "DOCUMENTS_PENDING"].includes(stage)) return { id: String(booking.id), bookingRef: booking.bookingRef || `#${booking.id}`, customer: booking.pilgrimName || "Customer", task: "Follow up on documents or assistance", owner: booking.assignedConcierge || "You", tone: "gold" }
+    if (["DOCUMENTS_VERIFIED", "PAYMENT_PHASE", "PAYMENT_PENDING"].includes(stage) && outstanding > 0) return { id: String(booking.id), bookingRef: booking.bookingRef || `#${booking.id}`, customer: booking.pilgrimName || "Customer", task: "Monitor outstanding package payment", owner: "Customer", tone: "gold" }
+    if (["FULFILLMENT_READY", "OPERATOR_HANDOFF", "VISA_PROCESSING"].includes(stage)) return { id: String(booking.id), bookingRef: booking.bookingRef || `#${booking.id}`, customer: booking.pilgrimName || "Customer", task: "Follow up with operator and update fulfilment", owner: "UfitGo Operations", tone: "blue" }
+    return null
+  }).filter(Boolean) as BookingAction[]
 }
 
 function executiveView(data: Record<string, any>, name: string): DashboardView {
@@ -221,9 +244,15 @@ function SummaryTable({ title, items }: { title: string; items: SummaryItem[] })
   )
 }
 
+function ActionRequiredPanel({ actions }: { actions: BookingAction[] }) {
+  const [open, setOpen] = useState(true)
+  return <section className="rounded-lg border border-[#dbe2de] bg-white"><button type="button" onClick={() => setOpen((current) => !current)} className="flex w-full items-center justify-between gap-4 border-b border-[#edf1ef] px-5 py-4 text-left"><div><h2 className="font-brand text-lg font-bold text-[#17201c]">Action required</h2><p className="mt-1 text-xs text-[#7b8580]">Bookings that need a clear next step</p></div><span className="flex items-center gap-3"><span className="rounded-full bg-[#fff1d0] px-2 py-1 text-[10px] font-bold uppercase text-[#8a6500]">{actions.length} open</span>{open ? <ChevronUp className="size-4 text-[#68716d]" /> : <ChevronDown className="size-4 text-[#68716d]" />}</span></button>{open && <div className="divide-y divide-[#edf1ef]">{actions.slice(0, 6).map((action) => <Link key={action.id} href={`/dashboard/journeys/${action.id}`} className="flex items-start gap-3 px-5 py-4 transition hover:bg-[#f7faf9]"><span className={cn("mt-1 size-2 shrink-0 rounded-full", action.tone === "red" ? "bg-[#dc3f35]" : action.tone === "gold" ? "bg-[#e2b316]" : "bg-[#3478c5]")} /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold text-[#26332e]">{action.task}</p><span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[#7b8580]">{action.bookingRef}</span></div><p className="mt-1 text-xs text-[#7b8580]">{action.customer} · Owner: {action.owner}</p></div><ArrowRight className="mt-1 size-4 shrink-0 text-[#0d7d5f]" /></Link>)}{!actions.length && <div className="px-5 py-10 text-center text-sm text-[#87908c]">No booking actions require attention right now.</div>}</div>}</section>
+}
+
 export function DashboardOverview() {
   const { admin, can } = useAdminSession()
   const [data, setData] = useState<Record<string, any> | null>(null)
+  const [bookingActionsData, setBookingActionsData] = useState<BookingAction[]>([])
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
 
@@ -231,16 +260,23 @@ export function DashboardOverview() {
     setLoading(true)
     setError("")
     try {
-      const response = await fetch(endpointForRole(admin.role), { cache: "no-store" })
+      const requests = [fetch(endpointForRole(admin.role), { cache: "no-store" })]
+      if (can(["bookings.manage"]) || can(["journeys.manage"])) requests.push(fetch("/api/admin/bookings/journey-tracker?limit=100", { cache: "no-store" }))
+      const [response, bookingsResponse] = await Promise.all(requests)
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(payload?.message || "Unable to load dashboard data.")
       setData(payload?.data || payload || {})
+      if (bookingsResponse) {
+        const bookingsPayload = await bookingsResponse.json().catch(() => null)
+        const bookings = Array.isArray(bookingsPayload?.data) ? bookingsPayload.data : Array.isArray(bookingsPayload) ? bookingsPayload : []
+        setBookingActionsData(bookingActions(bookings))
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load dashboard data.")
     } finally {
       setLoading(false)
     }
-  }, [admin.role])
+  }, [admin.role, can])
 
   useEffect(() => { void load() }, [load])
 
@@ -259,6 +295,7 @@ export function DashboardOverview() {
 
   return (
     <div className="space-y-6">
+      {(can(["bookings.manage"]) || can(["journeys.manage"])) && <ActionRequiredPanel actions={bookingActionsData} />}
       <header className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#07845f]">{view.eyebrow}</p>
