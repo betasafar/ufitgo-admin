@@ -107,12 +107,13 @@ export default function BroadcastPage() {
   }
 
   const sendMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) => apiRequest<{ success: boolean; targetsReached?: number }>("/api/admin/notifications/broadcast", { method: "POST", body: JSON.stringify(payload) }),
+    mutationFn: (payload: Record<string, unknown>) => apiRequest<{ success: boolean; targetsReached?: number; pushError?: string | null }>("/api/admin/notifications/broadcast", { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: (result, payload) => {
       const recipients = payload.recipients as Array<unknown> | undefined
       const count = recipients?.length ?? result.targetsReached ?? 0
       setNotice(`Broadcast sent to ${count} recipient(s).`)
       window.setTimeout(() => setNotice(""), 6000)
+      if (result.pushError) setError(`Push notification failed: ${result.pushError}`)
       resetForm()
     },
     onError: (requestError) => setError(requestError instanceof Error ? requestError.message : "Failed to send broadcast."),
