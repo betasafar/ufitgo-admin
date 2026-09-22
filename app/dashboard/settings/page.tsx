@@ -17,6 +17,7 @@ import { useAdminSession } from "@/components/auth/session-provider"
 
 type SystemConfig = {
   features?: Record<string, boolean>
+  demoMode?: boolean
   fees?: { savingsBreakPenaltyPercent?: number }
   savingsConfig?: { gracePeriodDays?: number; dropThresholdDays?: number }
   tiers?: Array<{
@@ -78,6 +79,7 @@ export default function SettingsPage() {
   const [config, setConfig] = useState<SystemConfig | null>(null)
   const [configLoading, setConfigLoading] = useState(true)
   const [savingFeature, setSavingFeature] = useState<string | null>(null)
+  const [savingDemoMode, setSavingDemoMode] = useState(false)
 
   const [platformSettings, setPlatformSettings] = useState<PlatformSetting[]>([])
   const [whatsappNumber, setWhatsappNumber] = useState("")
@@ -133,6 +135,24 @@ export default function SettingsPage() {
       showToast("error", "Failed to update this feature.")
     } finally {
       setSavingFeature(null)
+    }
+  }
+
+  async function toggleDemoMode(current: boolean) {
+    setSavingDemoMode(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demoMode: !current }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((previous) => ({ ...previous, demoMode: !current }))
+      showToast("success", `Demo mode is now ${!current ? "active" : "inactive"}.`)
+    } catch {
+      showToast("error", "Failed to update demo mode.")
+    } finally {
+      setSavingDemoMode(false)
     }
   }
 
@@ -293,6 +313,13 @@ export default function SettingsPage() {
             <div className="mt-8 grid place-items-center"><div className="size-6 animate-spin rounded-full border-2 border-[#0d7d5f] border-t-transparent" /></div>
           ) : (
             <div className="mt-5 space-y-3">
+              <div className="flex items-center justify-between gap-4 rounded-xl border border-[#e9bc72] bg-[#fff8e8] p-4">
+                <div>
+                  <p className="flex items-center gap-2 font-bold text-[#17201c]"><CircleAlert className="size-4 text-[#a95b00]" /> Demo mode</p>
+                  <p className="mt-0.5 max-w-xl text-xs text-[#7b5b26]">Uses simulated NIN, wallet, bank-resolution, savings funding, and payout responses. Turn this off before live FCMB testing.</p>
+                </div>
+                <ToggleSwitch checked={Boolean(config?.demoMode)} disabled={savingDemoMode} onChange={() => void toggleDemoMode(Boolean(config?.demoMode))} />
+              </div>
               {featureToggles.map((feature) => {
                 const isActive = Boolean(config?.features?.[feature.key])
                 return (
