@@ -37,6 +37,7 @@ type TierLimitDraft = Partial<Record<TierLimitKey, string>>
 
 const featureToggles = [
   { key: "enableTravelFx", label: "Travel FX", desc: "Enable foreign exchange and currency swap features." },
+  { key: "enableTour", label: "Tours", desc: "Show tour packages alongside Hajj and Umrah on the mobile home screen." },
   { key: "enableAiAdvisor", label: "AI Advisor (Lima)", desc: "Enable Lima chat, recommendations, proactive prompts, and AI package assistance." },
   { key: "enableVisaProgress", label: "Visa progress", desc: "Enable internal visa status updates, customer timeline, and the official Saudi portal link." },
   { key: "enablePassportAssist", label: "Passport assist", desc: "Enable passport application and renewal services." },
