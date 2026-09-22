@@ -32,6 +32,8 @@ type SystemConfig = {
 }
 
 type PlatformSetting = { key: string; value?: string; description?: string }
+type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit"
+type TierLimitDraft = Partial<Record<TierLimitKey, string>>
 
 const featureToggles = [
   { key: "enableTravelFx", label: "Travel FX", desc: "Enable foreign exchange and currency swap features." },
@@ -80,6 +82,10 @@ export default function SettingsPage() {
   const [configLoading, setConfigLoading] = useState(true)
   const [savingFeature, setSavingFeature] = useState<string | null>(null)
   const [savingDemoMode, setSavingDemoMode] = useState(false)
+  const [penaltyDraft, setPenaltyDraft] = useState<string | null>(null)
+  const [savingPenalty, setSavingPenalty] = useState(false)
+  const [tierDrafts, setTierDrafts] = useState<Record<string, TierLimitDraft>>({})
+  const [savingTier, setSavingTier] = useState<string | null>(null)
 
   const [platformSettings, setPlatformSettings] = useState<PlatformSetting[]>([])
   const [whatsappNumber, setWhatsappNumber] = useState("")
@@ -156,7 +162,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function saveFeeField(field: "fees" | "savingsConfig", key: string, value: number) {
+  async function saveFeeField(field: "fees" | "savingsConfig", key: string, value: number): Promise<boolean> {
     try {
       const response = await fetch("/api/admin/customers/system/config", {
         method: "PATCH",
@@ -166,16 +172,33 @@ export default function SettingsPage() {
       if (!response.ok) throw new Error()
       setConfig((prev) => ({ ...prev, [field]: { ...(prev as any)?.[field], [key]: value } }))
       showToast("success", "Setting saved.")
+      return true
     } catch {
       showToast("error", "Failed to save this setting.")
+      return false
     }
   }
 
-  async function saveTierLimit(provider: string, tierLevel: number, key: "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit", value: number) {
+  async function saveTierLimits(provider: string, tierLevel: number) {
     const tier = config?.tiers?.find((item) => item.provider === provider && item.tierLevel === tierLevel)
-    if (!tier || value < 0) return
+    const tierKey = `${provider}-${tierLevel}`
+    const draft = tierDrafts[tierKey]
+    if (!tier || !draft) return
+
+    const updatedTier = {
+      ...tier,
+      ...Object.fromEntries(
+        Object.entries(draft).map(([key, value]) => [key, Number(value)]),
+      ),
+    }
+
+    if ([updatedTier.maxBalanceLimit, updatedTier.singleTransactionLimit, updatedTier.dailyTransactionLimit].some((value) => !Number.isFinite(value) || value < 0)) {
+      showToast("error", "Enter valid, non-negative tier limits before saving.")
+      return
+    }
+
+    setSavingTier(tierKey)
     try {
-      const updatedTier = { ...tier, [key]: value }
       const response = await fetch("/api/admin/customers/system/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -186,9 +209,40 @@ export default function SettingsPage() {
         ...previous,
         tiers: previous?.tiers?.map((item) => item.provider === provider && item.tierLevel === tierLevel ? updatedTier : item),
       }))
+      setTierDrafts((previous) => {
+        const { [tierKey]: _, ...remainingDrafts } = previous
+        return remainingDrafts
+      })
       showToast("success", `${provider} Tier ${tierLevel} limit saved.`)
     } catch {
       showToast("error", `Failed to save ${provider} Tier ${tierLevel} limit.`)
+    } finally {
+      setSavingTier(null)
+    }
+  }
+
+  function updateTierDraft(provider: string, tierLevel: number, key: TierLimitKey, value: string) {
+    const tierKey = `${provider}-${tierLevel}`
+    setTierDrafts((previous) => ({
+      ...previous,
+      [tierKey]: { ...previous[tierKey], [key]: value },
+    }))
+  }
+
+  async function savePenalty() {
+    const value = Number(penaltyDraft)
+    if (!Number.isFinite(value) || value < 0 || value > 100) {
+      showToast("error", "Enter a penalty between 0 and 100 percent.")
+      return
+    }
+
+    setSavingPenalty(true)
+    try {
+      if (await saveFeeField("fees", "savingsBreakPenaltyPercent", value)) {
+        setPenaltyDraft(null)
+      }
+    } finally {
+      setSavingPenalty(false)
     }
   }
 
@@ -240,6 +294,7 @@ export default function SettingsPage() {
   const penaltyPercent = useMemo(() => Number(config?.fees?.savingsBreakPenaltyPercent ?? 0.9), [config])
   const gracePeriodDays = useMemo(() => Number(config?.savingsConfig?.gracePeriodDays ?? 3), [config])
   const dropThresholdDays = useMemo(() => Number(config?.savingsConfig?.dropThresholdDays ?? 30), [config])
+  const penaltyHasChanges = penaltyDraft !== null && Number(penaltyDraft) !== penaltyPercent
 
   return (
     <main className="space-y-6 p-5 sm:p-8">
@@ -347,34 +402,41 @@ export default function SettingsPage() {
                 <p className="font-bold text-[#17201c]">Savings break penalty</p>
                 <p className="mt-0.5 text-xs text-[#7b8580]">Percentage applied when a user breaks their savings goal before the target date.</p>
               </div>
-              <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
-                <div>
-                  <p className="font-bold text-[#17201c]">KYC tier limits</p>
-                  <p className="mt-0.5 text-xs text-[#7b8580]">These limits apply immediately to wallet and savings enforcement.</p>
-                </div>
-                <div className="mt-4 space-y-3">
-                  {(config?.tiers || []).map((tier) => (
-                    <div key={`${tier.provider}-${tier.tierLevel}`} className="grid gap-3 border-t border-[#dbe2de] pt-3 md:grid-cols-4">
-                      <div>
-                        <p className="text-sm font-bold text-[#17201c]">{tier.provider} {tier.name}</p>
-                        <p className="mt-0.5 text-xs text-[#7b8580]">Tier {tier.tierLevel}</p>
-                      </div>
-                      <label className="text-xs font-semibold text-[#68716d]">Maximum balance
-                        <input type="number" min="0" defaultValue={tier.maxBalanceLimit} key={`${tier.provider}-${tier.tierLevel}-balance-${tier.maxBalanceLimit}`} onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void saveTierLimit(tier.provider, tier.tierLevel, "maxBalanceLimit", value) }} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-                      </label>
-                      <label className="text-xs font-semibold text-[#68716d]">Per transaction
-                        <input type="number" min="0" defaultValue={tier.singleTransactionLimit} key={`${tier.provider}-${tier.tierLevel}-single-${tier.singleTransactionLimit}`} onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void saveTierLimit(tier.provider, tier.tierLevel, "singleTransactionLimit", value) }} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-                      </label>
-                      <label className="text-xs font-semibold text-[#68716d]">Daily outgoing
-                        <input type="number" min="0" defaultValue={tier.dailyTransactionLimit} key={`${tier.provider}-${tier.tierLevel}-daily-${tier.dailyTransactionLimit}`} onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void saveTierLimit(tier.provider, tier.tierLevel, "dailyTransactionLimit", value) }} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
               <div className="flex items-center gap-2">
-                <input type="number" step="0.01" min="0" max="100" defaultValue={penaltyPercent.toFixed(2)} key={`penalty-${penaltyPercent}`} onBlur={(event) => { const val = parseFloat(event.target.value); if (!Number.isNaN(val)) void saveFeeField("fees", "savingsBreakPenaltyPercent", val) }} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
+                <input type="number" step="0.01" min="0" max="100" value={penaltyDraft ?? penaltyPercent.toFixed(2)} onChange={(event) => setPenaltyDraft(event.target.value)} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">%</span>
+                {penaltyHasChanges && <button type="button" onClick={() => void savePenalty()} disabled={savingPenalty} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingPenalty ? "Saving..." : "Save"}</button>}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
+              <div>
+                <p className="font-bold text-[#17201c]">KYC tier limits</p>
+                <p className="mt-0.5 text-xs text-[#7b8580]">These limits apply immediately to wallet and savings enforcement.</p>
+              </div>
+              <div className="mt-4 space-y-4">
+                {(config?.tiers || []).map((tier) => {
+                  const tierKey = `${tier.provider}-${tier.tierLevel}`
+                  const draft = tierDrafts[tierKey]
+                  const hasChanges = Boolean(draft && Object.entries(draft).some(([key, value]) => Number(value) !== Number(tier[key as TierLimitKey])))
+                  return (
+                    <div key={tierKey} className="border-t border-[#dbe2de] pt-4 first:border-t-0 first:pt-0">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-[#17201c]">{tier.provider} {tier.name}</p>
+                          <p className="mt-0.5 text-xs text-[#7b8580]">Tier {tier.tierLevel}</p>
+                        </div>
+                        {hasChanges && <button type="button" onClick={() => void saveTierLimits(tier.provider, tier.tierLevel)} disabled={savingTier === tierKey} className="h-9 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingTier === tierKey ? "Saving..." : "Save changes"}</button>}
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        {(["maxBalanceLimit", "singleTransactionLimit", "dailyTransactionLimit"] as TierLimitKey[]).map((key) => (
+                          <label key={key} className="text-xs font-semibold text-[#68716d]">{key === "maxBalanceLimit" ? "Maximum balance" : key === "singleTransactionLimit" ? "Per transaction" : "Daily outgoing"}
+                            <input type="number" min="0" value={draft?.[key] ?? String(tier[key])} onChange={(event) => updateTierDraft(tier.provider, tier.tierLevel, key, event.target.value)} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
             <div className="flex items-center justify-between gap-4 rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
