@@ -19,6 +19,15 @@ type SystemConfig = {
   features?: Record<string, boolean>
   fees?: { savingsBreakPenaltyPercent?: number }
   savingsConfig?: { gracePeriodDays?: number; dropThresholdDays?: number }
+  tiers?: Array<{
+    provider: string
+    tierLevel: number
+    name: string
+    maxBalanceLimit: number
+    singleTransactionLimit: number
+    dailyTransactionLimit: number
+    requiredDocuments: string[]
+  }>
 }
 
 type PlatformSetting = { key: string; value?: string; description?: string }
@@ -139,6 +148,27 @@ export default function SettingsPage() {
       showToast("success", "Setting saved.")
     } catch {
       showToast("error", "Failed to save this setting.")
+    }
+  }
+
+  async function saveTierLimit(provider: string, tierLevel: number, key: "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit", value: number) {
+    const tier = config?.tiers?.find((item) => item.provider === provider && item.tierLevel === tierLevel)
+    if (!tier || value < 0) return
+    try {
+      const updatedTier = { ...tier, [key]: value }
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tiers: [updatedTier] }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((previous) => ({
+        ...previous,
+        tiers: previous?.tiers?.map((item) => item.provider === provider && item.tierLevel === tierLevel ? updatedTier : item),
+      }))
+      showToast("success", `${provider} Tier ${tierLevel} limit saved.`)
+    } catch {
+      showToast("error", `Failed to save ${provider} Tier ${tierLevel} limit.`)
     }
   }
 
@@ -289,6 +319,31 @@ export default function SettingsPage() {
               <div className="max-w-md">
                 <p className="font-bold text-[#17201c]">Savings break penalty</p>
                 <p className="mt-0.5 text-xs text-[#7b8580]">Percentage applied when a user breaks their savings goal before the target date.</p>
+              </div>
+              <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
+                <div>
+                  <p className="font-bold text-[#17201c]">KYC tier limits</p>
+                  <p className="mt-0.5 text-xs text-[#7b8580]">These limits apply immediately to wallet and savings enforcement.</p>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {(config?.tiers || []).map((tier) => (
+                    <div key={`${tier.provider}-${tier.tierLevel}`} className="grid gap-3 border-t border-[#dbe2de] pt-3 md:grid-cols-4">
+                      <div>
+                        <p className="text-sm font-bold text-[#17201c]">{tier.provider} {tier.name}</p>
+                        <p className="mt-0.5 text-xs text-[#7b8580]">Tier {tier.tierLevel}</p>
+                      </div>
+                      <label className="text-xs font-semibold text-[#68716d]">Maximum balance
+                        <input type="number" min="0" defaultValue={tier.maxBalanceLimit} key={`${tier.provider}-${tier.tierLevel}-balance-${tier.maxBalanceLimit}`} onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void saveTierLimit(tier.provider, tier.tierLevel, "maxBalanceLimit", value) }} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                      </label>
+                      <label className="text-xs font-semibold text-[#68716d]">Per transaction
+                        <input type="number" min="0" defaultValue={tier.singleTransactionLimit} key={`${tier.provider}-${tier.tierLevel}-single-${tier.singleTransactionLimit}`} onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void saveTierLimit(tier.provider, tier.tierLevel, "singleTransactionLimit", value) }} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                      </label>
+                      <label className="text-xs font-semibold text-[#68716d]">Daily outgoing
+                        <input type="number" min="0" defaultValue={tier.dailyTransactionLimit} key={`${tier.provider}-${tier.tierLevel}-daily-${tier.dailyTransactionLimit}`} onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void saveTierLimit(tier.provider, tier.tierLevel, "dailyTransactionLimit", value) }} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                      </label>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <input type="number" step="0.01" min="0" max="100" defaultValue={penaltyPercent.toFixed(2)} key={`penalty-${penaltyPercent}`} onBlur={(event) => { const val = parseFloat(event.target.value); if (!Number.isNaN(val)) void saveFeeField("fees", "savingsBreakPenaltyPercent", val) }} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
