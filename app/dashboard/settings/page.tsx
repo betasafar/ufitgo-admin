@@ -18,7 +18,11 @@ import { useAdminSession } from "@/components/auth/session-provider"
 type SystemConfig = {
   features?: Record<string, boolean>
   demoMode?: boolean
-  fees?: { savingsBreakPenaltyPercent?: number }
+  fees?: {
+    savingsEarlyExitChargePercent?: number
+    savingsEarlyExitChargeCap?: number
+    savingsBreakPenaltyPercent?: number
+  }
   savingsConfig?: { gracePeriodDays?: number; dropThresholdDays?: number }
   tiers?: Array<{
     provider: string
@@ -83,8 +87,9 @@ export default function SettingsPage() {
   const [configLoading, setConfigLoading] = useState(true)
   const [savingFeature, setSavingFeature] = useState<string | null>(null)
   const [savingDemoMode, setSavingDemoMode] = useState(false)
-  const [penaltyDraft, setPenaltyDraft] = useState<string | null>(null)
-  const [savingPenalty, setSavingPenalty] = useState(false)
+  const [earlyExitChargePercentDraft, setEarlyExitChargePercentDraft] = useState<string | null>(null)
+  const [earlyExitChargeCapDraft, setEarlyExitChargeCapDraft] = useState<string | null>(null)
+  const [savingEarlyExitCharge, setSavingEarlyExitCharge] = useState(false)
   const [tierDrafts, setTierDrafts] = useState<Record<string, TierLimitDraft>>({})
   const [savingTier, setSavingTier] = useState<string | null>(null)
 
@@ -230,20 +235,46 @@ export default function SettingsPage() {
     }))
   }
 
-  async function savePenalty() {
-    const value = Number(penaltyDraft)
-    if (!Number.isFinite(value) || value < 0 || value > 100) {
-      showToast("error", "Enter a penalty between 0 and 100 percent.")
+  async function saveEarlyExitCharge() {
+    const percent = Number(earlyExitChargePercentDraft ?? earlyExitChargePercent)
+    const cap = Number(earlyExitChargeCapDraft ?? earlyExitChargeCap)
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      showToast("error", "Enter an early exit charge between 0 and 100 percent.")
+      return
+    }
+    if (!Number.isFinite(cap) || cap < 0) {
+      showToast("error", "Enter a valid, non-negative charge cap.")
       return
     }
 
-    setSavingPenalty(true)
+    setSavingEarlyExitCharge(true)
     try {
-      if (await saveFeeField("fees", "savingsBreakPenaltyPercent", value)) {
-        setPenaltyDraft(null)
-      }
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fees: {
+            savingsEarlyExitChargePercent: percent,
+            savingsEarlyExitChargeCap: cap,
+          },
+        }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((previous) => ({
+        ...previous,
+        fees: {
+          ...previous?.fees,
+          savingsEarlyExitChargePercent: percent,
+          savingsEarlyExitChargeCap: cap,
+        },
+      }))
+      showToast("success", "Early exit charge saved.")
+        setEarlyExitChargePercentDraft(null)
+        setEarlyExitChargeCapDraft(null)
+    } catch {
+      showToast("error", "Failed to save the early exit charge.")
     } finally {
-      setSavingPenalty(false)
+      setSavingEarlyExitCharge(false)
     }
   }
 
@@ -292,10 +323,13 @@ export default function SettingsPage() {
     }
   }
 
-  const penaltyPercent = useMemo(() => Number(config?.fees?.savingsBreakPenaltyPercent ?? 0.9), [config])
+  const earlyExitChargePercent = useMemo(() => Number(config?.fees?.savingsEarlyExitChargePercent ?? config?.fees?.savingsBreakPenaltyPercent ?? 0.9), [config])
+  const earlyExitChargeCap = useMemo(() => Number(config?.fees?.savingsEarlyExitChargeCap ?? 15000), [config])
   const gracePeriodDays = useMemo(() => Number(config?.savingsConfig?.gracePeriodDays ?? 3), [config])
   const dropThresholdDays = useMemo(() => Number(config?.savingsConfig?.dropThresholdDays ?? 30), [config])
-  const penaltyHasChanges = penaltyDraft !== null && Number(penaltyDraft) !== penaltyPercent
+  const earlyExitChargeHasChanges =
+    (earlyExitChargePercentDraft !== null && Number(earlyExitChargePercentDraft) !== earlyExitChargePercent) ||
+    (earlyExitChargeCapDraft !== null && Number(earlyExitChargeCapDraft) !== earlyExitChargeCap)
 
   return (
     <main className="space-y-6 p-5 sm:p-8">
@@ -396,17 +430,19 @@ export default function SettingsPage() {
       {activeTab === "fees" && (
         <section className="rounded-2xl border border-[#dbe2de] bg-white p-6 shadow-sm">
           <h2 className="font-brand text-lg font-bold text-[#17201c]">Fees & savings automation</h2>
-          <p className="mt-1 text-sm text-[#68716d]">Numbers that drive automated penalties and savings-plan enforcement.</p>
+          <p className="mt-1 text-sm text-[#68716d]">Numbers that drive early-exit service charges and savings-plan enforcement.</p>
           <div className="mt-5 space-y-3">
             <div className="flex items-center justify-between gap-4 rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
               <div className="max-w-md">
-                <p className="font-bold text-[#17201c]">Savings break penalty</p>
-                <p className="mt-0.5 text-xs text-[#7b8580]">Percentage applied when a user breaks their savings goal before the target date.</p>
+                <p className="font-bold text-[#17201c]">Early exit service charge</p>
+                <p className="mt-0.5 text-xs text-[#7b8580]">Applied to an early cash withdrawal, up to the configured maximum charge.</p>
               </div>
               <div className="flex items-center gap-2">
-                <input type="number" step="0.01" min="0" max="100" value={penaltyDraft ?? penaltyPercent.toFixed(2)} onChange={(event) => setPenaltyDraft(event.target.value)} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
+                <input aria-label="Early exit charge percentage" type="number" step="0.01" min="0" max="100" value={earlyExitChargePercentDraft ?? earlyExitChargePercent.toFixed(2)} onChange={(event) => setEarlyExitChargePercentDraft(event.target.value)} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">%</span>
-                {penaltyHasChanges && <button type="button" onClick={() => void savePenalty()} disabled={savingPenalty} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingPenalty ? "Saving..." : "Save"}</button>}
+                <input aria-label="Early exit charge cap" type="number" min="0" value={earlyExitChargeCapDraft ?? String(earlyExitChargeCap)} onChange={(event) => setEarlyExitChargeCapDraft(event.target.value)} className="h-10 w-28 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
+                <span className="text-sm font-bold text-[#68716d]">NGN cap</span>
+                {earlyExitChargeHasChanges && <button type="button" onClick={() => void saveEarlyExitCharge()} disabled={savingEarlyExitCharge} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingEarlyExitCharge ? "Saving..." : "Save"}</button>}
               </div>
             </div>
             <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
