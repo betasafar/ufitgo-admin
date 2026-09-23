@@ -5,12 +5,18 @@ import { CheckCircle2, CircleAlert, Database, ExternalLink, Loader2, Play, Refre
 
 type WebhookEvent = {
   id: string
+  providerEventId?: string
   eventType?: string
   status?: string
   processingError?: string
   receivedAt?: string
   processedAt?: string
   payloadHash?: string
+  accountNumber?: string
+  amount?: string
+  reference?: string
+  scope?: string
+  eventTime?: string
 }
 
 type Account = {
@@ -133,7 +139,7 @@ export default function FcmbWebhooksPage() {
           </div>
 
           <aside className="space-y-6">
-            <section className="rounded-xl border border-[#d7e2dc] bg-white p-5 shadow-[0_10px_30px_rgba(20,55,40,0.06)]"><h2 className="text-lg font-bold">Selected event</h2>{selectedEvent ? <dl className="mt-5 grid gap-4 text-sm"><div><dt className="text-xs font-bold uppercase tracking-[0.08em] text-[#718079]">Event</dt><dd className="mt-1 font-bold">{selectedEvent.eventType || "Unknown"}</dd></div><div><dt className="text-xs font-bold uppercase tracking-[0.08em] text-[#718079]">Received</dt><dd className="mt-1">{formatDate(selectedEvent.receivedAt)}</dd></div><div><dt className="text-xs font-bold uppercase tracking-[0.08em] text-[#718079]">Payload checksum</dt><dd className="mt-1 break-all font-mono text-xs text-[#52625a]">{selectedEvent.payloadHash || "-"}</dd></div>{selectedEvent.processingError && <div className="rounded-lg bg-[#fff0ee] p-3 text-sm text-[#a83b31]">{selectedEvent.processingError}</div>}</dl> : <p className="mt-5 text-sm text-[#63736b]">Select an event to inspect it.</p>}</section>
+            <section className="rounded-xl border border-[#d7e2dc] bg-white p-5 shadow-[0_10px_30px_rgba(20,55,40,0.06)]"><h2 className="text-lg font-bold">Selected event</h2>{selectedEvent ? <dl className="mt-5 grid gap-4 text-sm"><div><dt className="text-xs font-bold uppercase tracking-[0.08em] text-[#718079]">Event</dt><dd className="mt-1 font-bold">{selectedEvent.eventType || "Unknown"}</dd></div><div><dt className="text-xs font-bold uppercase tracking-[0.08em] text-[#718079]">FCMB event ID</dt><dd className="mt-1 break-all font-mono text-xs">{selectedEvent.providerEventId || "-"}</dd></div><div><dt className="text-xs font-bold uppercase tracking-[0.08em] text-[#718079]">Wallet credit</dt><dd className="mt-1">{selectedEvent.accountNumber || "-"} · NGN {selectedEvent.amount || "-"}</dd></div><div><dt className="text-xs font-bold uppercase tracking-[0.08em] text-[#718079]">Reference / scope</dt><dd className="mt-1 break-all text-xs">{selectedEvent.reference || "-"}<span className="ml-2 text-[#63736b]">{selectedEvent.scope || ""}</span></dd></div><div><dt className="text-xs font-bold uppercase tracking-[0.08em] text-[#718079]">Received</dt><dd className="mt-1">{formatDate(selectedEvent.receivedAt)}</dd></div><div><dt className="text-xs font-bold uppercase tracking-[0.08em] text-[#718079]">Payload checksum</dt><dd className="mt-1 break-all font-mono text-xs text-[#52625a]">{selectedEvent.payloadHash || "-"}</dd></div>{selectedEvent.processingError && <div className="rounded-lg bg-[#fff0ee] p-3 text-sm text-[#a83b31]">{selectedEvent.processingError}</div>}</dl> : <p className="mt-5 text-sm text-[#63736b]">Select an event to inspect it.</p>}</section>
 
             <section className="rounded-xl border border-[#e5d49c] bg-[#fffcef] p-5"><div className="flex items-center gap-2"><Play className="size-4 text-[#9a7000]" /><h2 className="text-lg font-bold">Sandbox payment</h2></div><div className="mt-4 grid gap-3"><label className="text-sm font-semibold">Wallet account<input value={accountNumber} onChange={(event) => setAccountNumber(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-[#d7c27a] bg-white px-3 font-mono text-sm outline-none focus:border-[#967000]" /></label><label className="text-sm font-semibold">Amount (NGN)<input type="number" min="1" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-[#d7c27a] bg-white px-3 text-sm outline-none focus:border-[#967000]" /></label></div>{notice && <p className="mt-4 rounded-lg bg-[#edf8f1] p-3 text-sm text-[#17633d]">{notice}</p>}<button type="button" onClick={() => void triggerPayment()} disabled={triggering || !accountNumber || Number(amount) <= 0} className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#a67900] text-sm font-bold text-white hover:bg-[#8d6600] disabled:opacity-60">{triggering ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Trigger sandbox credit</button></section>
           </aside>
