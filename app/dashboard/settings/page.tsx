@@ -323,8 +323,8 @@ export default function SettingsPage() {
     }
   }
 
-  const earlyExitChargePercent = useMemo(() => Number(config?.fees?.savingsEarlyExitChargePercent ?? config?.fees?.savingsBreakPenaltyPercent ?? 0.9), [config])
-  const earlyExitChargeCap = useMemo(() => Number(config?.fees?.savingsEarlyExitChargeCap ?? 15000), [config])
+  const earlyExitChargePercent = useMemo(() => Number(config?.fees?.savingsEarlyExitChargePercent ?? config?.fees?.savingsBreakPenaltyPercent ?? 0), [config])
+  const earlyExitChargeCap = useMemo(() => Number(config?.fees?.savingsEarlyExitChargeCap ?? 0), [config])
   const gracePeriodDays = useMemo(() => Number(config?.savingsConfig?.gracePeriodDays ?? 3), [config])
   const dropThresholdDays = useMemo(() => Number(config?.savingsConfig?.dropThresholdDays ?? 30), [config])
   const earlyExitChargeHasChanges =
