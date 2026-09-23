@@ -43,6 +43,7 @@ export default function FcmbWebhooksPage() {
   const [amount, setAmount] = useState("1200")
   const [loading, setLoading] = useState(true)
   const [triggering, setTriggering] = useState(false)
+  const [backfilling, setBackfilling] = useState(false)
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
 
@@ -94,6 +95,23 @@ export default function FcmbWebhooksPage() {
     }
   }
 
+  const backfillAccounts = async () => {
+    setBackfilling(true)
+    setError("")
+    setNotice("")
+    try {
+      const response = await fetch("/api/admin/fcmb-diagnostics/backfill-accounts", { method: "POST" })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.message || "Account backfill failed.")
+      setNotice(`Backfill complete: ${payload?.mapped ?? 0} of ${payload?.scanned ?? 0} accounts mapped.`)
+      await load()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Account backfill failed.")
+    } finally {
+      setBackfilling(false)
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#f3f7f5] px-5 py-8 text-[#18241f] sm:px-8 lg:px-12">
       <div className="mx-auto max-w-[1480px]">
@@ -121,7 +139,7 @@ export default function FcmbWebhooksPage() {
           </aside>
         </section>
 
-        <section className="mt-6 rounded-xl border border-[#d7e2dc] bg-white p-5 shadow-[0_10px_30px_rgba(20,55,40,0.06)]"><div className="flex items-center gap-2"><Database className="size-5 text-[#07845f]" /><h2 className="text-lg font-bold">UfitGo settlement account mappings</h2></div><div className="mt-5 overflow-x-auto"><table className="min-w-[780px] w-full text-left text-sm"><thead className="border-y border-[#e2eae5] bg-[#f7faf8] text-xs uppercase tracking-[0.08em] text-[#718079]"><tr><th className="px-4 py-3">Account</th><th className="px-4 py-3">Name</th><th className="px-4 py-3">Bank</th><th className="px-4 py-3">Tier</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Created</th></tr></thead><tbody className="divide-y divide-[#e9efeb]">{accounts.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-[#63736b]">No settlement mappings yet. Tier 1 accounts created before mapping support will appear here only after they are backfilled.</td></tr> : accounts.map((account) => <tr key={account.id}><td className="px-4 py-4 font-mono font-bold text-[#087851]">{account.accountNumber || "-"}</td><td className="px-4 py-4">{account.accountName || "-"}</td><td className="px-4 py-4">{account.bankName || "FCMB"}</td><td className="px-4 py-4">{account.activeTier || 1}</td><td className="px-4 py-4"><span className="rounded-full bg-[#eaf9f0] px-2.5 py-1 text-xs font-bold text-[#17633d]">{account.status || "active"}</span></td><td className="px-4 py-4 text-[#63736b]">{formatDate(account.createdAt)}</td></tr>)}</tbody></table></div></section>
+        <section className="mt-6 rounded-xl border border-[#d7e2dc] bg-white p-5 shadow-[0_10px_30px_rgba(20,55,40,0.06)]"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><Database className="size-5 text-[#07845f]" /><h2 className="text-lg font-bold">UfitGo settlement account mappings</h2></div><button type="button" onClick={() => void backfillAccounts()} disabled={backfilling} className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#b9ccc2] bg-white px-3 text-sm font-bold text-[#204236] hover:bg-[#edf5f0] disabled:opacity-60">{backfilling && <Loader2 className="size-4 animate-spin" />} Backfill existing accounts</button></div><div className="mt-5 overflow-x-auto"><table className="min-w-[780px] w-full text-left text-sm"><thead className="border-y border-[#e2eae5] bg-[#f7faf8] text-xs uppercase tracking-[0.08em] text-[#718079]"><tr><th className="px-4 py-3">Account</th><th className="px-4 py-3">Name</th><th className="px-4 py-3">Bank</th><th className="px-4 py-3">Tier</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Created</th></tr></thead><tbody className="divide-y divide-[#e9efeb]">{accounts.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-[#63736b]">No settlement mappings yet. Use the backfill action to register existing Tier 1 accounts.</td></tr> : accounts.map((account) => <tr key={account.id}><td className="px-4 py-4 font-mono font-bold text-[#087851]">{account.accountNumber || "-"}</td><td className="px-4 py-4">{account.accountName || "-"}</td><td className="px-4 py-4">{account.bankName || "FCMB"}</td><td className="px-4 py-4">{account.activeTier || 1}</td><td className="px-4 py-4"><span className="rounded-full bg-[#eaf9f0] px-2.5 py-1 text-xs font-bold text-[#17633d]">{account.status || "active"}</span></td><td className="px-4 py-4 text-[#63736b]">{formatDate(account.createdAt)}</td></tr>)}</tbody></table></div></section>
       </div>
     </main>
   )
