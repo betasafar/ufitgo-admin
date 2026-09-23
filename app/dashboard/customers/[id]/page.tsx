@@ -70,6 +70,34 @@ type KycData = {
   docStatus?: string
 }
 
+type AuditAccount = {
+  id?: string
+  provider?: string
+  accountId?: string
+  nubanAccountNumber?: string | null
+  activeTier?: number
+  status?: string
+  balanceLimit?: number | string
+  createdAt?: string
+}
+
+type AuditEvent = {
+  id?: string
+  eventType?: string
+  credentialType?: string | null
+  maskedCredential?: string | null
+  provider?: string
+  accountNumber?: string | null
+  tier?: number | null
+  status?: string
+  actorType?: string
+  ipAddress?: string | null
+  userAgent?: string | null
+  source?: string
+  deviceType?: string | null
+  createdAt?: string
+}
+
 function pick<T>(...values: Array<T | undefined | null>): T | undefined {
   return values.find((value): value is T => value !== undefined && value !== null && value !== "")
 }
@@ -122,6 +150,8 @@ export default function CustomerDetailPage() {
   const [bookings, setBookings] = useState<BookingRecord[]>([])
   const [savings, setSavings] = useState<SavingsGoal[]>([])
   const [kyc, setKyc] = useState<KycData | null>(null)
+  const [auditAccounts, setAuditAccounts] = useState<AuditAccount[]>([])
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -133,17 +163,19 @@ export default function CustomerDetailPage() {
       setError("")
 
       try {
-        const [customerResponse, kycResponse, bookingsResponse, savingsResponse] = await Promise.all([
+        const [customerResponse, kycResponse, bookingsResponse, savingsResponse, auditResponse] = await Promise.all([
           fetch(`/api/admin/customers/${customerId}`, { cache: "no-store" }),
           fetch(`/api/admin/customers/${customerId}/kyc`, { cache: "no-store" }),
           fetch(`/api/admin/customers/${customerId}/bookings`, { cache: "no-store" }),
           fetch(`/api/admin/customers/${customerId}/savings`, { cache: "no-store" }),
+          fetch(`/api/admin/customers/${customerId}/audit`, { cache: "no-store" }),
         ])
 
         const customerPayload = await customerResponse.json().catch(() => null)
         const kycPayload = await kycResponse.json().catch(() => null)
         const bookingsPayload = await bookingsResponse.json().catch(() => null)
         const savingsPayload = await savingsResponse.json().catch(() => null)
+        const auditPayload = await auditResponse.json().catch(() => null)
 
         if (!customerResponse.ok) throw new Error(customerPayload?.message || "Unable to load customer")
 
@@ -210,6 +242,15 @@ export default function CustomerDetailPage() {
           currentAmount: pick(goal?.currentAmount, goal?.savedAmount),
           status: pick(goal?.status, goal?.goalStatus),
         })))
+
+        setAuditAccounts(Array.isArray(auditPayload?.accounts) ? auditPayload.accounts : [])
+        const registrationEvents = Array.isArray(auditPayload?.registrationEvents)
+          ? auditPayload.registrationEvents.map((event: AuditEvent) => ({ ...event, eventType: "ACCOUNT_REGISTERED" }))
+          : []
+        const kycEvents = Array.isArray(auditPayload?.kycEvents) ? auditPayload.kycEvents : []
+        setAuditEvents([...registrationEvents, ...kycEvents].sort((left, right) =>
+          new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime(),
+        ))
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : "Unable to load customer.")
       } finally {
@@ -236,6 +277,7 @@ export default function CustomerDetailPage() {
     { id: "overview", label: "Overview", icon: User },
     { id: "kyc", label: "KYC & Docs", icon: ShieldCheck },
     { id: "financials", label: "Wallet & Savings", icon: Wallet },
+    { id: "audit", label: "Account & Audit", icon: Building },
     { id: "bookings", label: "Bookings", icon: Map },
   ]
 
@@ -501,6 +543,38 @@ export default function CustomerDetailPage() {
                 ))
               )}
             </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === "audit" && (
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-[#dbe2de] bg-white p-6">
+            <h3 className="font-brand flex items-center gap-2 text-xl font-bold text-[#17201c]">
+              <Building className="size-5 text-[#07845f]" />
+              Bank account details
+            </h3>
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {auditAccounts.length === 0 ? (
+                <div className="col-span-full rounded-xl border border-dashed border-[#d9dfdc] bg-[#f9fbfa] p-8 text-center text-sm text-[#7b8580]">
+                  No FCMB account has been created for this customer.
+                </div>
+              ) : auditAccounts.map((account) => (
+                <div key={account.id || account.accountId} className="contents">
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Bank / provider</div><div className="mt-2 text-sm font-bold text-[#17201c]">{account.provider || "FCMB"}</div></div>
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Account number</div><div className="mt-2 text-sm font-bold text-[#17201c]">{account.nubanAccountNumber || "Not assigned"}</div></div>
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Tier / status</div><div className="mt-2 text-sm font-bold text-[#17201c]">Tier {account.activeTier ?? "—"} · {account.status || "Unknown"}</div></div>
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Balance limit</div><div className="mt-2 text-sm font-bold text-[#17201c]">{formatCurrency(account.balanceLimit)}</div></div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-[#dbe2de] bg-white p-6">
+            <h3 className="font-brand text-xl font-bold text-[#17201c]">Registration and verification audit</h3>
+            <div className="mt-6 overflow-hidden rounded-xl border border-[#edf1ef]"><div className="overflow-x-auto"><table className="min-w-[900px] w-full text-left text-sm"><thead className="bg-[#f7f9f8] text-[10px] uppercase tracking-[0.12em] text-[#7b8580]"><tr><th className="px-4 py-3 font-bold">Event</th><th className="px-4 py-3 font-bold">Credential</th><th className="px-4 py-3 font-bold">Actor / device</th><th className="px-4 py-3 font-bold">IP address</th><th className="px-4 py-3 font-bold">Date</th></tr></thead><tbody className="divide-y divide-[#edf1ef]">
+              {auditEvents.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-[#7b8580]">Not recorded (pre-audit customer).</td></tr> : auditEvents.map((event) => <tr key={event.id || `${event.eventType}-${event.createdAt}`}><td className="px-4 py-3 font-bold text-[#17201c]">{event.eventType?.replaceAll("_", " ") || "Recorded event"}<div className="mt-1 text-xs font-normal text-[#68716d]">{event.status || event.source || "Recorded"}</div></td><td className="px-4 py-3 text-[#49615b]">{event.credentialType ? `${event.credentialType}: ${event.maskedCredential || "masked"}` : "—"}</td><td className="px-4 py-3 text-[#49615b]">{event.actorType || "USER"}{event.deviceType ? ` · ${event.deviceType}` : ""}<div className="mt-1 max-w-[280px] truncate text-xs text-[#7b8580]" title={event.userAgent || ""}>{event.userAgent || "—"}</div></td><td className="px-4 py-3 text-[#49615b]">{event.ipAddress || "Not recorded"}</td><td className="px-4 py-3 text-[#68716d]">{formatDate(event.createdAt)}</td></tr>)}
+            </tbody></table></div></div>
           </section>
         </div>
       )}
