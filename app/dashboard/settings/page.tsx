@@ -15,15 +15,31 @@ import {
 } from "lucide-react"
 import { useAdminSession } from "@/components/auth/session-provider"
 
+type IntelligenceConfig = {
+  finderMode?: "disabled" | "free" | "paid"
+  comparisonMode?: "disabled" | "free" | "paid"
+  hajjPilotMode?: "disabled" | "free" | "paid"
+  hajjPrice?: number
+  hajjEndsOn?: string | null
+  umrahPrice?: number
+  ramadanPrice?: number
+  ramadanStartsOn?: string | null
+  ramadanEndsOn?: string | null
+}
+
 type SystemConfig = {
-  features?: Record<string, boolean>
+  features?: Record<string, boolean | string[]>
   demoMode?: boolean
   fees?: {
     savingsEarlyExitChargePercent?: number
     savingsEarlyExitChargeCap?: number
     savingsBreakPenaltyPercent?: number
   }
-  savingsConfig?: { gracePeriodDays?: number; dropThresholdDays?: number }
+  savingsConfig?: {
+    gracePeriodDays?: number
+    dropThresholdDays?: number
+    intelligence?: IntelligenceConfig
+  }
   tiers?: Array<{
     provider: string
     tierLevel: number
@@ -40,13 +56,14 @@ type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransac
 type TierLimitDraft = Partial<Record<TierLimitKey, string>>
 
 const featureToggles = [
-  { key: "enableTravelFx", label: "Travel FX", desc: "Enable foreign exchange and currency swap features." },
+  { key: "enableTravelFx", badgeId: "fx", label: "Travel FX", desc: "Enable foreign exchange and currency swap features." },
   { key: "enableTour", label: "Tours", desc: "Show tour packages alongside Hajj and Umrah on the mobile home screen." },
   { key: "enableAiAdvisor", label: "AI Advisor (Lima)", desc: "Enable Lima chat, recommendations, proactive prompts, and AI package assistance." },
   { key: "enableVisaProgress", label: "Visa progress", desc: "Enable internal visa status updates, customer timeline, and the official Saudi portal link." },
-  { key: "enablePassportAssist", label: "Passport assist", desc: "Enable passport application and renewal services." },
-  { key: "enableTravelDocs", label: "Travel documents", desc: "Enable visa processing and travel document services." },
-  { key: "enableTargetSavings", label: "Target savings", desc: "Enable user target savings plans for travel." },
+  { key: "enablePassportAssist", badgeId: "passport", label: "Passport assist", desc: "Enable passport application and renewal services." },
+  { key: "enableTravelDocs", badgeId: "docs", label: "Travel documents", desc: "Enable visa processing and travel document services." },
+  { key: "enableTargetSavings", badgeId: "savings", label: "Target savings", desc: "Enable user target savings plans for travel." },
+  { key: "enableTravelIntelligence", badgeId: "intelligence", label: "Hajj Intelligence", desc: "Enable Find Open Slots, availability alerts, and Hajj package comparison." },
   { key: "enableProactiveAdvisorNudge", label: "Proactive AI nudge", desc: "Show a bottom-sheet inviting users to chat with the AI Advisor after repeated zero-result searches." },
   { key: "enableReferralProgram", label: "Referral & rewards", desc: "Enable the refer & earn program (signup and package-sale bonuses) across the app." },
   { key: "enableOperatorDirectory", label: "Operator directory", desc: "Show the browsable \"All Operators\" list in the app. Consider keeping off while onboarding few operators." },
@@ -90,6 +107,8 @@ export default function SettingsPage() {
   const [earlyExitChargePercentDraft, setEarlyExitChargePercentDraft] = useState<string | null>(null)
   const [earlyExitChargeCapDraft, setEarlyExitChargeCapDraft] = useState<string | null>(null)
   const [savingEarlyExitCharge, setSavingEarlyExitCharge] = useState(false)
+  const [intelligenceDraft, setIntelligenceDraft] = useState<IntelligenceConfig | null>(null)
+  const [savingIntelligence, setSavingIntelligence] = useState(false)
   const [tierDrafts, setTierDrafts] = useState<Record<string, TierLimitDraft>>({})
   const [savingTier, setSavingTier] = useState<string | null>(null)
 
@@ -145,6 +164,27 @@ export default function SettingsPage() {
       showToast("success", `${featureToggles.find((f) => f.key === key)?.label} is now ${!current ? "active" : "inactive"}.`)
     } catch {
       showToast("error", "Failed to update this feature.")
+    } finally {
+      setSavingFeature(null)
+    }
+  }
+
+  async function toggleNewBadge(badgeId: string, current: boolean) {
+    setSavingFeature(`badge-${badgeId}`)
+    const newFeatureBadges = current
+      ? ((config?.features?.newFeatureBadges as string[] | undefined) || []).filter((id) => id !== badgeId)
+      : [...new Set([...((config?.features?.newFeatureBadges as string[] | undefined) || []), badgeId])]
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newFeatureBadges }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((prev) => ({ ...prev, features: { ...prev?.features, newFeatureBadges } }))
+      showToast("success", `NEW badge ${current ? "removed" : "shown"}.`)
+    } catch {
+      showToast("error", "Failed to update the NEW badge.")
     } finally {
       setSavingFeature(null)
     }
@@ -278,6 +318,36 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveIntelligenceConfig() {
+    const value = intelligenceDraft ?? config?.savingsConfig?.intelligence
+    if (!value) return
+    const prices = [value.hajjPrice, value.umrahPrice, value.ramadanPrice]
+    if (prices.some((price) => !Number.isFinite(Number(price)) || Number(price) < 0)) {
+      showToast("error", "Enter valid, non-negative Intelligence prices.")
+      return
+    }
+    if ((value.ramadanStartsOn && !value.ramadanEndsOn) || (!value.ramadanStartsOn && value.ramadanEndsOn)) {
+      showToast("error", "Set both Ramadan dates or leave both empty.")
+      return
+    }
+    setSavingIntelligence(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ savingsConfig: { intelligence: value } }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((previous) => ({ ...previous, savingsConfig: { ...previous?.savingsConfig, intelligence: value } }))
+      setIntelligenceDraft(null)
+      showToast("success", "Intelligence settings saved.")
+    } catch {
+      showToast("error", "Failed to save Intelligence settings.")
+    } finally {
+      setSavingIntelligence(false)
+    }
+  }
+
   async function saveWhatsappNumber() {
     const value = whatsappNumber.trim()
     if (!value) return
@@ -330,6 +400,17 @@ export default function SettingsPage() {
   const earlyExitChargeHasChanges =
     (earlyExitChargePercentDraft !== null && Number(earlyExitChargePercentDraft) !== earlyExitChargePercent) ||
     (earlyExitChargeCapDraft !== null && Number(earlyExitChargeCapDraft) !== earlyExitChargeCap)
+  const intelligenceConfig = intelligenceDraft ?? config?.savingsConfig?.intelligence ?? {
+    finderMode: "free" as const,
+    comparisonMode: "free" as const,
+    hajjPilotMode: "paid" as const,
+    hajjPrice: 2000,
+    hajjEndsOn: null,
+    umrahPrice: 1000,
+    ramadanPrice: 1200,
+    ramadanStartsOn: null,
+    ramadanEndsOn: null,
+  }
 
   return (
     <main className="space-y-6 p-5 sm:p-8">
@@ -411,14 +492,18 @@ export default function SettingsPage() {
                 <ToggleSwitch checked={Boolean(config?.demoMode)} disabled={savingDemoMode} onChange={() => void toggleDemoMode(Boolean(config?.demoMode))} />
               </div>
               {featureToggles.map((feature) => {
-                const isActive = Boolean(config?.features?.[feature.key])
+                const isActive = config?.features?.[feature.key] === true
+                const showNewBadge = feature.badgeId ? Boolean((config?.features?.newFeatureBadges as string[] | undefined)?.includes(feature.badgeId)) : false
                 return (
                   <div key={feature.key} className="flex items-center justify-between gap-4 rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
                     <div>
                       <p className="font-bold text-[#17201c]">{feature.label}</p>
                       <p className="mt-0.5 text-xs text-[#7b8580]">{feature.desc}</p>
                     </div>
-                    <ToggleSwitch checked={isActive} disabled={savingFeature === feature.key} onChange={() => void toggleFeature(feature.key, isActive)} />
+                    <div className="flex items-center gap-4">
+                      {feature.badgeId && isActive && <label className="flex items-center gap-2 text-xs font-bold text-[#a62b2b]"><span>Show NEW badge</span><ToggleSwitch checked={showNewBadge} disabled={savingFeature === `badge-${feature.badgeId}`} onChange={() => void toggleNewBadge(feature.badgeId!, showNewBadge)} /></label>}
+                      <ToggleSwitch checked={isActive} disabled={savingFeature === feature.key} onChange={() => void toggleFeature(feature.key, isActive)} />
+                    </div>
                   </div>
                 )
               })}
@@ -443,6 +528,44 @@ export default function SettingsPage() {
                 <input aria-label="Early exit charge cap" type="number" min="0" value={earlyExitChargeCapDraft ?? String(earlyExitChargeCap)} onChange={(event) => setEarlyExitChargeCapDraft(event.target.value)} className="h-10 w-28 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">NGN cap</span>
                 {earlyExitChargeHasChanges && <button type="button" onClick={() => void saveEarlyExitCharge()} disabled={savingEarlyExitCharge} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingEarlyExitCharge ? "Saving..." : "Save"}</button>}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-bold text-[#17201c]">Hajj & Umrah Intelligence</p>
+                  <p className="mt-0.5 max-w-2xl text-xs text-[#7b8580]">Control whether Slot Finder and Package Comparison are hidden, free, or paid. Prices apply only to new paid purchases.</p>
+                </div>
+                <button type="button" onClick={() => void saveIntelligenceConfig()} disabled={savingIntelligence} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingIntelligence ? "Saving..." : "Save Intelligence"}</button>
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                {(["finderMode", "comparisonMode", "hajjPilotMode"] as const).map((key) => (
+                  <label key={key} className="text-xs font-semibold text-[#68716d]">{key === "finderMode" ? "Available Slot Finder" : key === "comparisonMode" ? "Package Comparison" : "Hajj Intelligence pilot"}
+                    <select value={intelligenceConfig[key] ?? "free"} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, [key]: event.target.value as "disabled" | "free" | "paid" }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]">
+                      <option value="disabled">Disabled</option>
+                      <option value="free">Free</option>
+                      <option value="paid">Paid</option>
+                    </select>
+                  </label>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {([['hajjPrice', 'Hajj pass'], ['umrahPrice', 'Umrah 30-day pass'], ['ramadanPrice', 'Ramadan pass']] as const).map(([key, label]) => (
+                  <label key={key} className="text-xs font-semibold text-[#68716d]">{label} (NGN)
+                    <input type="number" min="0" value={String(intelligenceConfig[key] ?? 0)} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, [key]: Number(event.target.value) }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                  </label>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <label className="text-xs font-semibold text-[#68716d]">Hajj pass ends
+                  <input type="date" value={intelligenceConfig.hajjEndsOn ?? ""} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, hajjEndsOn: event.target.value || null }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                </label>
+                <label className="text-xs font-semibold text-[#68716d]">Ramadan price starts
+                  <input type="date" value={intelligenceConfig.ramadanStartsOn ?? ""} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, ramadanStartsOn: event.target.value || null }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                </label>
+                <label className="text-xs font-semibold text-[#68716d]">Ramadan price ends
+                  <input type="date" value={intelligenceConfig.ramadanEndsOn ?? ""} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, ramadanEndsOn: event.target.value || null }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                </label>
               </div>
             </div>
             <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">

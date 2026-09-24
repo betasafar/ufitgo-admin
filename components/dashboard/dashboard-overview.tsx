@@ -305,6 +305,7 @@ export function DashboardOverview() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/dashboard/sessions" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#cbd5d0] bg-white px-4 text-sm font-bold text-[#405149] hover:bg-[#edf3f0]">Active sessions</Link>
+          <Link href="/fcmb-webhooks" className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#cbd5d0] bg-white px-4 text-sm font-bold text-[#405149] hover:bg-[#edf3f0]">Goto  Webhook</Link>
           {can(["settings.manage"]) && <Link href="/dashboard/admins" className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#e5b814] px-4 text-sm font-bold text-[#282410] hover:bg-[#d2a70f]">Manage admins <ArrowRight className="size-4" /></Link>}
         </div>
       </header>
