@@ -27,6 +27,11 @@ type IntelligenceConfig = {
   ramadanEndsOn?: string | null
 }
 
+type HajjSeasonCampaignConfig = {
+  mode: "planning" | "live" | "hidden"
+  seasonLabel: string
+}
+
 type SystemConfig = {
   features?: Record<string, boolean | string[]>
   demoMode?: boolean
@@ -39,6 +44,7 @@ type SystemConfig = {
     gracePeriodDays?: number
     dropThresholdDays?: number
     intelligence?: IntelligenceConfig
+    hajjSeasonCampaign?: HajjSeasonCampaignConfig
   }
   tiers?: Array<{
     provider: string
@@ -58,6 +64,7 @@ type TierLimitDraft = Partial<Record<TierLimitKey, string>>
 const featureToggles = [
   { key: "enableTravelFx", badgeId: "fx", label: "Travel FX", desc: "Enable foreign exchange and currency swap features." },
   { key: "enableTour", label: "Tours", desc: "Show tour packages alongside Hajj and Umrah on the mobile home screen." },
+  { key: "enableHomeAds", label: "Home ads", desc: "Show sponsored and promotional ads on the mobile home screen." },
   { key: "enableAiAdvisor", label: "AI Advisor (Lima)", desc: "Enable Lima chat, recommendations, proactive prompts, and AI package assistance." },
   { key: "enableVisaProgress", label: "Visa progress", desc: "Enable internal visa status updates, customer timeline, and the official Saudi portal link." },
   { key: "enablePassportAssist", badgeId: "passport", label: "Passport assist", desc: "Enable passport application and renewal services." },
@@ -109,6 +116,8 @@ export default function SettingsPage() {
   const [savingEarlyExitCharge, setSavingEarlyExitCharge] = useState(false)
   const [intelligenceDraft, setIntelligenceDraft] = useState<IntelligenceConfig | null>(null)
   const [savingIntelligence, setSavingIntelligence] = useState(false)
+  const [campaignDraft, setCampaignDraft] = useState<HajjSeasonCampaignConfig | null>(null)
+  const [savingCampaign, setSavingCampaign] = useState(false)
   const [tierDrafts, setTierDrafts] = useState<Record<string, TierLimitDraft>>({})
   const [savingTier, setSavingTier] = useState<string | null>(null)
 
@@ -348,6 +357,31 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveCampaignConfig() {
+    const value = campaignDraft ?? campaignConfig
+    if (!value.seasonLabel.trim()) {
+      showToast("error", "Enter a Hajj season label before saving.")
+      return
+    }
+    setSavingCampaign(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ savingsConfig: { hajjSeasonCampaign: { ...value, seasonLabel: value.seasonLabel.trim() } } }),
+      })
+      if (!response.ok) throw new Error()
+      const savedValue = { ...value, seasonLabel: value.seasonLabel.trim() }
+      setConfig((previous) => ({ ...previous, savingsConfig: { ...previous?.savingsConfig, hajjSeasonCampaign: savedValue } }))
+      setCampaignDraft(null)
+      showToast("success", "Hajj season campaign saved.")
+    } catch {
+      showToast("error", "Failed to save the Hajj season campaign.")
+    } finally {
+      setSavingCampaign(false)
+    }
+  }
+
   async function saveWhatsappNumber() {
     const value = whatsappNumber.trim()
     if (!value) return
@@ -410,6 +444,10 @@ export default function SettingsPage() {
     ramadanPrice: 1200,
     ramadanStartsOn: null,
     ramadanEndsOn: null,
+  }
+  const campaignConfig = campaignDraft ?? config?.savingsConfig?.hajjSeasonCampaign ?? {
+    mode: "planning" as const,
+    seasonLabel: "Hajj 2027",
   }
 
   return (
@@ -492,7 +530,9 @@ export default function SettingsPage() {
                 <ToggleSwitch checked={Boolean(config?.demoMode)} disabled={savingDemoMode} onChange={() => void toggleDemoMode(Boolean(config?.demoMode))} />
               </div>
               {featureToggles.map((feature) => {
-                const isActive = config?.features?.[feature.key] === true
+                const isActive = feature.key === "enableHomeAds"
+                  ? config?.features?.[feature.key] !== false
+                  : config?.features?.[feature.key] === true
                 const showNewBadge = feature.badgeId ? Boolean((config?.features?.newFeatureBadges as string[] | undefined)?.includes(feature.badgeId)) : false
                 return (
                   <div key={feature.key} className="flex items-center justify-between gap-4 rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
@@ -566,6 +606,27 @@ export default function SettingsPage() {
                 <label className="text-xs font-semibold text-[#68716d]">Ramadan price ends
                   <input type="date" value={intelligenceConfig.ramadanEndsOn ?? ""} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, ramadanEndsOn: event.target.value || null }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
                 </label>
+              </div>
+              <div className="mt-4 rounded-lg border border-[#d9dfdc] bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-[#17201c]">Hajj season campaign</p>
+                    <p className="mt-1 max-w-2xl text-xs leading-5 text-[#68716d]">Planning shows free Hajj-opening and savings waitlists. Live enables the paid Hajj Intelligence flow. Hidden removes the campaign card from the app.</p>
+                  </div>
+                  <button type="button" onClick={() => void saveCampaignConfig()} disabled={savingCampaign} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingCampaign ? "Saving..." : "Save campaign"}</button>
+                </div>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="text-xs font-semibold text-[#68716d]">Campaign mode
+                    <select value={campaignConfig.mode} onChange={(event) => setCampaignDraft((current) => ({ ...campaignConfig, ...current, mode: event.target.value as HajjSeasonCampaignConfig["mode"] }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]">
+                      <option value="planning">Planning / waitlist</option>
+                      <option value="live">Live / paid Hajj Intelligence</option>
+                      <option value="hidden">Hidden</option>
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold text-[#68716d]">Season label
+                    <input value={campaignConfig.seasonLabel} onChange={(event) => setCampaignDraft((current) => ({ ...campaignConfig, ...current, seasonLabel: event.target.value }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                  </label>
+                </div>
               </div>
             </div>
             <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
