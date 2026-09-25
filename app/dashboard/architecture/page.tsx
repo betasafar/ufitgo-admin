@@ -132,6 +132,17 @@ export default async function ArchitecturePage() {
         <div className="flex items-center gap-2"><Database className="size-5 text-[#0d7d5f]" /><h2 className="font-brand text-lg font-bold text-[#17201c]">How duplicate work is prevented</h2></div>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-[#68716d]">Most API jobs use a PostgreSQL advisory lock: one running service acquires the lock and the others safely skip. The auto-debit worker also uses a unique reference for each savings goal and date, so a retry cannot create a second charge for the same cycle.</p>
       </section>
+
+      <section className="rounded-xl border border-[#dbe2de] bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-2"><ShieldCheck className="size-5 text-[#0d7d5f]" /><h2 className="font-brand text-lg font-bold text-[#17201c]">Package policy lifecycle</h2></div>
+        <ol className="mt-4 max-w-3xl list-decimal space-y-2 pl-5 text-sm leading-6 text-[#42504a]">
+          <li>In <strong>Operator policies</strong>, create a draft. Leave Operator ID blank for the UfitGo marketplace disclaimer; enter the operator ID for an operator cancellation and refund policy.</li>
+          <li>Use Preview to check the wording, then publish the approved version. Published text is immutable because bookings retain the exact accepted version.</li>
+          <li>In the package editor, assign the published operator policy. New bookings then require acceptance of that policy and the current UfitGo marketplace disclaimer.</li>
+          <li>For a normal update, create and publish a replacement version, move affected packages to it, then archive the old version. Archived versions cannot be assigned to future packages; existing booking evidence remains intact.</li>
+          <li>For a material published-wording error, use <strong>Correct wording</strong>. Record the reason and corrected text. The system publishes an auditable replacement, archives the flawed version, and moves its package assignments. Existing booking snapshots are never changed.</li>
+        </ol>
+      </section>
     </main>
   )
 }
