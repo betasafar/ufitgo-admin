@@ -7,7 +7,6 @@ import {
   Eye,
   FileText,
   PencilLine,
-  Plus,
   Send,
   X,
 } from "lucide-react";
@@ -47,9 +46,19 @@ type PolicyDraft = {
 };
 type DraftAccess = {
   id: string;
+  accessScope: "restricted" | "operator_organisation";
   permission: "view" | "edit";
+  acceptedAt?: string | null;
   revokedAt?: string | null;
   expiresAt?: string | null;
+};
+type DraftApproval = {
+  id: string;
+  revision: number;
+  contentHash: string;
+  signatoryName: string;
+  signatoryRole: string;
+  createdAt: string;
 };
 
 const MARKETPLACE_TEMPLATE = `UfitGo Marketplace Disclaimer
@@ -73,6 +82,24 @@ const TEMPLATE_SUMMARIES: Record<string, string> = {
     "Travel foundation for visa, flight, hotel, and supplier outcomes.",
 };
 
+function defaultInviteExpiry() {
+  return new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function activityActor(event: { actorType?: string; actorId?: string | null }) {
+  if (event.actorType === "operator") return "Operator";
+  if (event.actorType === "admin") return event.actorId?.replace(/^admin:/, "") || "UfitGo Admin";
+  return "UfitGo system";
+}
+
+function relativeActivityTime(value: string) {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
 export default function OperatorPoliciesPage() {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [drafts, setDrafts] = useState<PolicyDraft[]>([]);
@@ -84,6 +111,8 @@ export default function OperatorPoliciesPage() {
   const [templateId, setTemplateId] = useState("");
   const [editorDocumentKey, setEditorDocumentKey] = useState(0);
   const [form, setForm] = useState({ title: "", content: "", contentFormat: "plain_text" as "plain_text" | "rich_text" });
+  const [editingDraft, setEditingDraft] = useState<{ id: string; revision: number } | null>(null);
+  const [draftChangeSummary, setDraftChangeSummary] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -102,11 +131,16 @@ export default function OperatorPoliciesPage() {
     reason: string;
   } | null>(null);
   const [correcting, setCorrecting] = useState(false);
+  const [publishingDraft, setPublishingDraft] = useState(false);
   const [sharing, setSharing] = useState<{
     draft: PolicyDraft;
+    accessScope: "restricted" | "operator_organisation";
     permission: "view" | "edit";
     expiresAt: string;
     access: DraftAccess[];
+    activity: Array<{ id: string; eventType: string; actorType?: string; actorId?: string | null; createdAt: string; metadata?: { revision?: number; changeSummary?: string | null } }>;
+    approvals: DraftApproval[];
+    reviewUrl?: string;
   } | null>(null);
 
   const selectedOperator = operators.find(
@@ -172,6 +206,8 @@ export default function OperatorPoliciesPage() {
 
   function selectKind(nextKind: "operator" | "platform") {
     setKind(nextKind);
+    setEditingDraft(null);
+    setDraftChangeSummary("");
     setTemplateId("");
     setForm(
       nextKind === "platform"
@@ -196,6 +232,8 @@ export default function OperatorPoliciesPage() {
   }
 
   function startBlankDraft() {
+    setEditingDraft(null);
+    setDraftChangeSummary("");
     setTemplateId("");
     setForm({ title: "", content: "", contentFormat: "plain_text" });
     setEditorDocumentKey((current) => current + 1);
@@ -221,14 +259,24 @@ export default function OperatorPoliciesPage() {
     try {
       const isOperator = kind === "operator";
       const response = await fetch(
-        isOperator
-          ? "/api/admin/operator-policy-drafts"
+        editingDraft
+          ? `/api/admin/operator-policy-drafts/${editingDraft.id}`
+          : isOperator
+            ? "/api/admin/operator-policy-drafts"
           : "/api/admin/operator-policies",
         {
-          method: "POST",
+          method: editingDraft ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
-            isOperator
+            editingDraft
+              ? {
+                  title: form.title,
+                  content: form.content,
+                  contentFormat: form.contentFormat,
+                  expectedRevision: editingDraft.revision,
+                  changeSummary: draftChangeSummary,
+                }
+              : isOperator
               ? {
                   operatorId: Number(operatorId),
                   title: form.title,
@@ -250,11 +298,15 @@ export default function OperatorPoliciesPage() {
       if (!response.ok)
         throw new Error(payload?.message || "Unable to save policy");
       setMessage(
-        isOperator
+        editingDraft
+          ? "Draft revision saved and recorded in the audit history."
+          : isOperator
           ? "Operator policy draft saved. Sharing and operator approval are the next workflow phase."
           : "UfitGo disclaimer draft saved. Preview it before publishing.",
       );
       setTemplateId("");
+      setEditingDraft(null);
+      setDraftChangeSummary("");
       setForm(
         isOperator
           ? { title: "", content: "", contentFormat: "plain_text" }
@@ -288,10 +340,13 @@ export default function OperatorPoliciesPage() {
       if (!response.ok)
         throw new Error(payload?.message || "Unable to load sharing settings");
       setSharing({
-        draft,
+        draft: payload?.data?.draft || draft,
+        accessScope: "restricted",
         permission: "edit",
-        expiresAt: "",
+        expiresAt: defaultInviteExpiry(),
         access: Array.isArray(payload?.data?.access) ? payload.data.access : [],
+        activity: Array.isArray(payload?.data?.auditEvents) ? payload.data.auditEvents : [],
+        approvals: Array.isArray(payload?.data?.approvals) ? payload.data.approvals : [],
       });
     } catch (error) {
       setMessage(
@@ -299,6 +354,27 @@ export default function OperatorPoliciesPage() {
           ? error.message
           : "Unable to load sharing settings",
       );
+    }
+  }
+
+  async function editDraft(draft: PolicyDraft) {
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/admin/operator-policy-drafts/${draft.id}`, { cache: "no-store" });
+      const payload = await response.json();
+      const current = payload?.data?.draft;
+      if (!response.ok || !current) throw new Error(payload?.message || "Unable to load policy draft");
+      setKind("operator");
+      setOperatorId(String(current.operatorId));
+      setOperatorQuery("");
+      setTemplateId(current.sourceTemplateId || "");
+      setForm({ title: current.title, content: current.content, contentFormat: current.contentFormat || "plain_text" });
+      setEditingDraft({ id: current.id, revision: current.revision });
+      setDraftChangeSummary("");
+      setEditorDocumentKey((key) => key + 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to load policy draft");
     }
   }
 
@@ -312,6 +388,7 @@ export default function OperatorPoliciesPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            accessScope: sharing.accessScope,
             permission: sharing.permission,
             expiresAt: sharing.expiresAt
               ? new Date(`${sharing.expiresAt}T23:59:59`).toISOString()
@@ -322,7 +399,7 @@ export default function OperatorPoliciesPage() {
       const payload = await response.json();
       if (!response.ok)
         throw new Error(payload?.message || "Unable to share draft");
-      setSharing(null);
+      setSharing((current) => current ? { ...current, reviewUrl: payload?.data?.reviewUrl } : current);
       setMessage(
         `Draft shared for ${sharing.permission === "edit" ? "editing" : "viewing"}. The operator received a secure portal notification and email.`,
       );
@@ -331,6 +408,16 @@ export default function OperatorPoliciesPage() {
       setMessage(
         error instanceof Error ? error.message : "Unable to share draft",
       );
+    }
+  }
+
+  async function copyReviewLink() {
+    if (!sharing?.reviewUrl || sharing.accessScope !== "restricted") return;
+    try {
+      await navigator.clipboard.writeText(sharing.reviewUrl);
+      setMessage("Secure review link copied. It still requires the invited operator to sign in.");
+    } catch {
+      setMessage("Unable to copy the secure review link.");
     }
   }
 
@@ -346,6 +433,35 @@ export default function OperatorPoliciesPage() {
     }
     await openSharing(sharing.draft);
     setMessage("Operator access revoked.");
+  }
+
+  async function requestChanges() {
+    if (!sharing) return;
+    const response = await fetch(`/api/admin/operator-policy-drafts/${sharing.draft.id}/request-changes`, { method: "POST" });
+    if (!response.ok) {
+      setMessage("Unable to request policy changes.");
+      return;
+    }
+    setSharing(null);
+    setMessage("Changes requested from the operator.");
+    await loadData();
+  }
+
+  async function publishApprovedDraft() {
+    if (!sharing || !window.confirm("Publish this approved policy? Published wording will become immutable.")) return;
+    setPublishingDraft(true);
+    try {
+      const response = await fetch(`/api/admin/operator-policy-drafts/${sharing.draft.id}/publish`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.message || "Unable to publish approved policy");
+      setSharing(null);
+      setMessage("Approved operator policy published as an immutable version.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to publish approved policy");
+    } finally {
+      setPublishingDraft(false);
+    }
   }
 
   async function archivePolicy(policy: Policy) {
@@ -402,8 +518,8 @@ export default function OperatorPoliciesPage() {
   }
 
   return (
-    <main className="space-y-6 p-4 sm:p-8">
-      <header>
+    <main className="space-y-7 p-4 sm:p-8">
+      <header className="max-w-5xl">
         <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#07845f]">
           Administration
         </p>
@@ -417,44 +533,37 @@ export default function OperatorPoliciesPage() {
         </p>
       </header>
 
-      <section className="border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex items-center gap-2">
-          <Plus className="size-5 text-[#0d7d5f]" />
-          <h2 className="font-brand text-lg font-bold text-[#17201c]">
-            Create a policy
-          </h2>
+      <section className="max-w-5xl bg-white px-0 py-1 sm:px-0">
+        <div>
+          <h2 className="font-brand text-xl font-bold text-[#17201c]">Create a policy</h2>
+          <p className="mt-1 text-sm text-[#68716d]">Choose the policy owner, then use a starting point or author from scratch.</p>
+          {editingDraft && <p className="mt-3 bg-[#eaf9f3] px-3 py-2 text-sm text-[#17201c]">Editing draft revision {editingDraft.revision}. Saving creates a new auditable revision.</p>}
         </div>
         <div
-          className="mt-5 grid grid-cols-2 gap-2"
+          className="mt-5 inline-flex rounded-lg bg-[#edf3f0] p-1"
           role="group"
           aria-label="Policy type"
         >
           <button
             type="button"
             onClick={() => selectKind("operator")}
-            className={`min-h-16 border px-3 text-left text-sm font-bold ${kind === "operator" ? "border-[#0d7d5f] bg-[#eaf9f3] text-[#0d7d5f]" : "border-[#d3dad7] text-[#52605a]"}`}
+            className={`min-h-10 rounded-md px-4 text-sm font-bold transition-colors ${kind === "operator" ? "bg-white text-[#0d7d5f] shadow-sm" : "text-[#52605a] hover:text-[#17201c]"}`}
           >
             Operator policy
-            <span className="mt-1 block text-xs font-normal">
-              Cancellation and refunds
-            </span>
           </button>
           <button
             type="button"
             onClick={() => selectKind("platform")}
-            className={`min-h-16 border px-3 text-left text-sm font-bold ${kind === "platform" ? "border-[#0d7d5f] bg-[#eaf9f3] text-[#0d7d5f]" : "border-[#d3dad7] text-[#52605a]"}`}
+            className={`min-h-10 rounded-md px-4 text-sm font-bold transition-colors ${kind === "platform" ? "bg-white text-[#0d7d5f] shadow-sm" : "text-[#52605a] hover:text-[#17201c]"}`}
           >
             UfitGo disclaimer
-            <span className="mt-1 block text-xs font-normal">
-              Marketplace terms
-            </span>
           </button>
         </div>
 
-        <form onSubmit={saveDraft} className="mt-5 grid gap-5">
+        <form onSubmit={saveDraft} className="mt-6 grid max-w-4xl gap-7">
           {kind === "operator" && (
             <div className="grid gap-3">
-              <label className="text-sm font-semibold text-[#52605a]">
+              <label className="text-sm font-bold text-[#35443e]">
                 Choose operator
                 <input
                   value={operatorQuery}
@@ -493,7 +602,7 @@ export default function OperatorPoliciesPage() {
                 </div>
               )}
               {selectedOperator && (
-                <p className="border-l-4 border-[#0d7d5f] bg-[#eaf9f3] px-3 py-2 text-sm text-[#17201c]">
+                <p className="bg-[#eaf9f3] px-3 py-2.5 text-sm text-[#17201c]">
                   Draft for{" "}
                   <strong>
                     {selectedOperator.companyName ||
@@ -514,18 +623,18 @@ export default function OperatorPoliciesPage() {
 
           {kind === "operator" && (
             <fieldset>
-              <legend className="text-sm font-semibold text-[#52605a]">
+              <legend className="text-sm font-bold text-[#35443e]">
                 Start from template
               </legend>
               <p className="mt-1 text-sm text-[#68716d]">
                 Choose the closest scenario. The policy remains editable before
                 review.
               </p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <button
                   type="button"
                   onClick={startBlankDraft}
-                  className={`min-h-28 border p-4 text-left ${!templateId ? "border-[#0d7d5f] bg-[#eaf9f3]" : "border-[#dbe2de] hover:border-[#86b8a7]"}`}
+                  className={`min-h-28 rounded-lg p-4 text-left transition-colors ${!templateId ? "bg-[#eaf9f3] ring-1 ring-inset ring-[#0d7d5f]" : "bg-[#f4f7f5] hover:bg-[#edf3f0]"}`}
                 >
                   <p className="font-bold text-[#17201c]">Blank draft</p>
                   <p className="mt-2 text-xs leading-5 text-[#68716d]">
@@ -537,7 +646,7 @@ export default function OperatorPoliciesPage() {
                     key={template.id}
                     type="button"
                     onClick={() => applyTemplate(template)}
-                    className={`min-h-28 border p-4 text-left ${templateId === template.id ? "border-[#0d7d5f] bg-[#eaf9f3]" : "border-[#dbe2de] hover:border-[#86b8a7]"}`}
+                    className={`min-h-28 rounded-lg p-4 text-left transition-colors ${templateId === template.id ? "bg-[#eaf9f3] ring-1 ring-inset ring-[#0d7d5f]" : "bg-[#f4f7f5] hover:bg-[#edf3f0]"}`}
                   >
                     <p className="font-bold text-[#17201c]">{template.name}</p>
                     <p className="mt-2 text-xs leading-5 text-[#68716d]">
@@ -549,7 +658,7 @@ export default function OperatorPoliciesPage() {
             </fieldset>
           )}
 
-          <label className="text-sm font-semibold text-[#52605a]">
+          <label className="text-sm font-bold text-[#35443e]">
             Policy title
             <input
               required
@@ -565,7 +674,7 @@ export default function OperatorPoliciesPage() {
               className="mt-1.5 h-11 w-full border border-[#d3dad7] bg-[#f8faf9] px-3 font-normal outline-none focus:border-[#0d7d5f]"
             />
           </label>
-          <div className="text-sm font-semibold text-[#52605a]">
+          <div className="text-sm font-bold text-[#35443e]">
             Policy text
             <RichPolicyEditor
               key={editorDocumentKey}
@@ -574,7 +683,8 @@ export default function OperatorPoliciesPage() {
               onChange={(content) => setForm((current) => ({ ...current, content, contentFormat: "rich_text" }))}
             />
           </div>
-          <div className="sticky bottom-0 -mx-4 flex flex-wrap gap-3 border-t border-[#dbe2de] bg-white p-4 sm:static sm:mx-0 sm:border-0 sm:p-0">
+          {editingDraft && <label className="text-sm font-bold text-[#35443e]">What changed?<input required value={draftChangeSummary} onChange={(event) => setDraftChangeSummary(event.target.value)} placeholder="For example: clarified supplier cancellation fees" className="mt-1.5 h-11 w-full border border-[#d3dad7] bg-[#f8faf9] px-3 font-normal outline-none focus:border-[#0d7d5f]" /></label>}
+          <div className="sticky bottom-0 -mx-4 flex flex-wrap gap-3 border-t border-[#dbe2de] bg-white p-4 sm:mx-0 sm:justify-end sm:border-0 sm:px-0">
             <button
               type="button"
               onClick={() =>
@@ -596,7 +706,7 @@ export default function OperatorPoliciesPage() {
               className="inline-flex h-11 items-center gap-2 bg-[#0d7d5f] px-4 text-sm font-bold text-white disabled:opacity-50"
             >
               <FileText className="size-4" />
-              {saving ? "Saving..." : "Save draft"}
+              {saving ? "Saving..." : editingDraft ? "Save revision" : "Save draft"}
             </button>
           </div>
           {message && <p className="text-sm text-[#52605a]">{message}</p>}
@@ -631,14 +741,10 @@ export default function OperatorPoliciesPage() {
                     {draft.status.replaceAll("_", " ")}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void openSharing(draft)}
-                  className="inline-flex h-10 items-center gap-2 border border-[#0d7d5f] px-3 text-sm font-bold text-[#0d7d5f]"
-                >
-                  <Send className="size-4" />
-                  Manage access
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => void editDraft(draft)} className="inline-flex h-10 items-center gap-2 border border-[#d3dad7] px-3 text-sm font-bold text-[#35443e]"><FileText className="size-4" />Edit draft</button>
+                  <button type="button" onClick={() => void openSharing(draft)} className="inline-flex h-10 items-center gap-2 border border-[#0d7d5f] px-3 text-sm font-bold text-[#0d7d5f]"><Send className="size-4" />Manage access</button>
+                </div>
               </article>
             ))
           )}
@@ -794,14 +900,13 @@ export default function OperatorPoliciesPage() {
             <header className="flex items-start justify-between gap-4 border-b border-[#dbe2de] px-5 py-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#07845f]">
-                  Restricted operator access
+                  Operator draft access
                 </p>
                 <h2 className="mt-1 font-brand text-xl font-bold text-[#17201c]">
                   Share {sharing.draft.title}
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-[#68716d]">
-                  Only the selected operator account can open this review link
-                  after signing in.
+                  Access always requires operator sign-in. The link alone never grants access.
                 </p>
               </div>
               <button
@@ -814,6 +919,14 @@ export default function OperatorPoliciesPage() {
               </button>
             </header>
             <div className="space-y-5 px-5 py-5">
+              <fieldset>
+                <legend className="text-sm font-semibold text-[#52605a]">Access scope</legend>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setSharing({ ...sharing, accessScope: "restricted" })} className={`min-h-12 border px-3 text-sm font-bold ${sharing.accessScope === "restricted" ? "border-[#0d7d5f] bg-[#eaf9f3] text-[#0d7d5f]" : "border-[#d3dad7] text-[#52605a]"}`}>This operator account</button>
+                  <button type="button" onClick={() => setSharing({ ...sharing, accessScope: "operator_organisation" })} className={`min-h-12 border px-3 text-sm font-bold ${sharing.accessScope === "operator_organisation" ? "border-[#0d7d5f] bg-[#eaf9f3] text-[#0d7d5f]" : "border-[#d3dad7] text-[#52605a]"}`}>Operator organisation</button>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-[#68716d]">Organisation access will extend to verified organisation users as those accounts are introduced.</p>
+              </fieldset>
               <fieldset>
                 <legend className="text-sm font-semibold text-[#52605a]">
                   Permission
@@ -858,35 +971,26 @@ export default function OperatorPoliciesPage() {
                 <Send className="size-4" />
                 Send secure invite
               </button>
+              {sharing.accessScope === "restricted" && sharing.reviewUrl && <button type="button" onClick={() => void copyReviewLink()} className="ml-3 inline-flex h-11 items-center border border-[#0d7d5f] px-4 text-sm font-bold text-[#0d7d5f]">Copy review link</button>}
               <div className="border-t border-[#dbe2de] pt-4">
                 <p className="text-sm font-semibold text-[#52605a]">
                   Current access
                 </p>
                 <div className="mt-2 space-y-2">
-                  {sharing.access.filter((access) => !access.revokedAt)
-                    .length ? (
-                    sharing.access
-                      .filter((access) => !access.revokedAt)
-                      .map((access) => (
+                  {sharing.access.length ? (
+                    sharing.access.map((access) => (
                         <div
                           key={access.id}
                           className="flex items-center justify-between gap-3 bg-[#f8faf9] p-3 text-sm"
                         >
                           <span>
-                            {access.permission === "edit"
-                              ? "Can edit"
-                              : "View only"}
+                            {access.accessScope === "operator_organisation" ? "Organisation" : "This operator account"} · {access.permission === "edit" ? "Can edit" : "View only"}
+                            {access.revokedAt ? " · Revoked" : access.expiresAt && new Date(access.expiresAt) <= new Date() ? " · Expired" : access.acceptedAt ? ` · Accepted ${new Date(access.acceptedAt).toLocaleDateString()}` : " · Invited"}
                             {access.expiresAt
                               ? ` · expires ${new Date(access.expiresAt).toLocaleDateString()}`
                               : " · no expiry"}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => void revokeDraftAccess(access.id)}
-                            className="font-bold text-[#9f3434] underline"
-                          >
-                            Revoke
-                          </button>
+                          {!access.revokedAt && !(access.expiresAt && new Date(access.expiresAt) <= new Date()) && <button type="button" onClick={() => void revokeDraftAccess(access.id)} className="font-bold text-[#9f3434] underline">Revoke</button>}
                         </div>
                       ))
                   ) : (
@@ -896,6 +1000,16 @@ export default function OperatorPoliciesPage() {
                   )}
                 </div>
               </div>
+              <div className="border-t border-[#dbe2de] pt-4">
+                <p className="text-sm font-semibold text-[#52605a]">Approval status</p>
+                {sharing.approvals[0] && sharing.draft.status === "operator_approved" ? <div className="mt-2 bg-[#eaf9f3] p-3 text-sm text-[#17201c]"><strong>Ready to publish</strong><span className="block pt-1">Approved by {sharing.approvals[0].signatoryName}, {sharing.approvals[0].signatoryRole} · Revision {sharing.approvals[0].revision}</span></div> : <p className="mt-2 text-sm text-[#68716d]">Operator approval is required before publication.</p>}
+                {sharing.draft.status === "operator_approved" && <button type="button" disabled={publishingDraft} onClick={() => void publishApprovedDraft()} className="mt-3 inline-flex h-11 items-center bg-[#0d7d5f] px-4 text-sm font-bold text-white disabled:opacity-50">{publishingDraft ? "Publishing..." : "Publish approved policy"}</button>}
+              </div>
+              <div className="border-t border-[#dbe2de] pt-4">
+                <p className="text-sm font-semibold text-[#52605a]">Recent activity</p>
+                <div className="mt-2 space-y-2">{sharing.activity.slice(0, 5).map((event) => <p key={event.id} className="bg-[#f8faf9] p-3 text-sm text-[#52605a]"><span className="font-semibold text-[#17201c]">{event.eventType === "draft_updated" ? `Edited by ${activityActor(event)}` : event.eventType.replaceAll("_", " ")}</span>{event.metadata?.revision ? ` · Revision ${event.metadata.revision}` : ""}{event.metadata?.changeSummary ? ` · ${event.metadata.changeSummary}` : ""}<span className="block pt-1 text-xs text-[#68716d]">{relativeActivityTime(event.createdAt)}</span></p>)}{!sharing.activity.length && <p className="text-sm text-[#68716d]">No activity recorded yet.</p>}</div>
+              </div>
+              <button type="button" onClick={() => void requestChanges()} className="min-h-11 text-sm font-bold text-[#215b87] underline">Request changes from operator</button>
             </div>
           </section>
         </div>
