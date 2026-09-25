@@ -36,6 +36,7 @@ type PolicyTemplate = {
   scenario: string;
   titleTemplate: string;
   contentTemplate: string;
+  version: number;
 };
 type PolicyDraft = {
   id: string;
@@ -86,6 +87,15 @@ function defaultInviteExpiry() {
   return new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+function operatorLegalName(operator?: Operator) {
+  return operator?.companyName || operator?.tradingName || "";
+}
+
+function expandOperatorPlaceholders(value: string, operator?: Operator) {
+  const legalName = operatorLegalName(operator);
+  return legalName ? value.replaceAll("[Operator legal name]", legalName) : value;
+}
+
 function activityActor(event: { actorType?: string; actorId?: string | null }) {
   if (event.actorType === "operator") return "Operator";
   if (event.actorType === "admin") return event.actorId?.replace(/^admin:/, "") || "UfitGo Admin";
@@ -109,6 +119,8 @@ export default function OperatorPoliciesPage() {
   const [operatorId, setOperatorId] = useState("");
   const [operatorQuery, setOperatorQuery] = useState("");
   const [templateId, setTemplateId] = useState("");
+  const [editingTemplate, setEditingTemplate] = useState<PolicyTemplate | null>(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [editorDocumentKey, setEditorDocumentKey] = useState(0);
   const [form, setForm] = useState({ title: "", content: "", contentFormat: "plain_text" as "plain_text" | "rich_text" });
   const [editingDraft, setEditingDraft] = useState<{ id: string; revision: number } | null>(null);
@@ -224,8 +236,8 @@ export default function OperatorPoliciesPage() {
   function applyTemplate(template: PolicyTemplate) {
     setTemplateId(template.id);
     setForm({
-      title: template.titleTemplate,
-      content: template.contentTemplate,
+      title: expandOperatorPlaceholders(template.titleTemplate, selectedOperator),
+      content: expandOperatorPlaceholders(template.contentTemplate, selectedOperator),
       contentFormat: "plain_text",
     });
     setEditorDocumentKey((current) => current + 1);
@@ -237,6 +249,34 @@ export default function OperatorPoliciesPage() {
     setTemplateId("");
     setForm({ title: "", content: "", contentFormat: "plain_text" });
     setEditorDocumentKey((current) => current + 1);
+  }
+
+  async function saveTemplate(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editingTemplate) return;
+    setSavingTemplate(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/admin/operator-policy-templates/${editingTemplate.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editingTemplate.name,
+          titleTemplate: editingTemplate.titleTemplate,
+          contentTemplate: editingTemplate.contentTemplate,
+          expectedVersion: editingTemplate.version,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.message || "Unable to update policy template");
+      setEditingTemplate(null);
+      setMessage("Policy template updated. New drafts will use the revised wording.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to update policy template");
+    } finally {
+      setSavingTemplate(false);
+    }
   }
 
   function useAsTemplate(policy: Policy) {
@@ -581,6 +621,12 @@ export default function OperatorPoliciesPage() {
                       onClick={() => {
                         setOperatorId(String(operator.id));
                         setOperatorQuery("");
+                        setForm((current) => ({
+                          ...current,
+                          title: expandOperatorPlaceholders(current.title, operator),
+                          content: expandOperatorPlaceholders(current.content, operator),
+                        }));
+                        setEditorDocumentKey((current) => current + 1);
                       }}
                       className="block w-full border-b border-[#eef2f0] px-3 py-3 text-left text-sm hover:bg-[#eaf9f3]"
                     >
@@ -711,6 +757,18 @@ export default function OperatorPoliciesPage() {
           </div>
           {message && <p className="text-sm text-[#52605a]">{message}</p>}
         </form>
+      </section>
+
+      <section className="border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-brand text-lg font-bold text-[#17201c]">Manage policy templates</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#68716d]">Edit the reusable starting wording here. Existing drafts and published policies are not changed.</p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {templates.map((template) => <button key={template.id} type="button" onClick={() => setEditingTemplate({ ...template })} className="border border-[#dbe2de] bg-[#f8faf9] p-4 text-left hover:border-[#0d7d5f]"><p className="font-bold text-[#17201c]">{template.name}</p><p className="mt-1 text-xs text-[#68716d]">Version {template.version} · Edit reusable wording</p></button>)}
+        </div>
       </section>
 
       <section className="border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-6">
@@ -889,6 +947,7 @@ export default function OperatorPoliciesPage() {
           </section>
         </div>
       )}
+      {editingTemplate && <div role="dialog" aria-modal="true" aria-label="Edit policy template" className="fixed inset-0 z-50 flex items-center justify-center bg-[#17201c]/45 p-3"><form onSubmit={saveTemplate} className="flex max-h-[90vh] w-full max-w-3xl flex-col bg-white shadow-2xl"><header className="flex items-start justify-between gap-4 border-b border-[#dbe2de] px-5 py-4"><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#07845f]">Reusable template · Version {editingTemplate.version}</p><h2 className="mt-1 font-brand text-xl font-bold text-[#17201c]">Edit policy template</h2><p className="mt-2 text-sm leading-6 text-[#68716d]">Use the approved wording from the template reference. Keep placeholders in square brackets where operators must supply information.</p></div><button type="button" onClick={() => setEditingTemplate(null)} aria-label="Close template editor" className="grid size-11 place-items-center text-[#52605a]"><X className="size-5" /></button></header><div className="space-y-5 overflow-y-auto px-5 py-5"><label className="block text-sm font-bold text-[#35443e]">Template name<input required value={editingTemplate.name} onChange={(event) => setEditingTemplate({ ...editingTemplate, name: event.target.value })} className="mt-1.5 h-11 w-full border border-[#d3dad7] bg-[#f8faf9] px-3 font-normal outline-none focus:border-[#0d7d5f]" /></label><label className="block text-sm font-bold text-[#35443e]">Policy title template<input required value={editingTemplate.titleTemplate} onChange={(event) => setEditingTemplate({ ...editingTemplate, titleTemplate: event.target.value })} className="mt-1.5 h-11 w-full border border-[#d3dad7] bg-[#f8faf9] px-3 font-normal outline-none focus:border-[#0d7d5f]" /></label><label className="block text-sm font-bold text-[#35443e]">Policy content template<textarea required value={editingTemplate.contentTemplate} onChange={(event) => setEditingTemplate({ ...editingTemplate, contentTemplate: event.target.value })} className="mt-1.5 min-h-80 w-full border border-[#d3dad7] bg-[#f8faf9] p-3 font-mono text-sm font-normal leading-6 outline-none focus:border-[#0d7d5f]" /></label></div><footer className="flex justify-end gap-3 border-t border-[#dbe2de] px-5 py-4"><button type="button" onClick={() => setEditingTemplate(null)} className="h-11 px-4 text-sm font-bold text-[#52605a]">Cancel</button><button disabled={savingTemplate} className="h-11 bg-[#0d7d5f] px-4 text-sm font-bold text-white disabled:opacity-50">{savingTemplate ? "Saving..." : "Save new template version"}</button></footer></form></div>}
       {sharing && (
         <div
           role="dialog"
