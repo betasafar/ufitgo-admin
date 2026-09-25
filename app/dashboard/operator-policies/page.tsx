@@ -62,6 +62,8 @@ type DraftApproval = {
   createdAt: string;
 };
 
+type PolicyWorkspaceTab = "create" | "templates" | "drafts" | "published";
+
 const MARKETPLACE_TEMPLATE = `UfitGo Marketplace Disclaimer
 
 1. UfitGo's role
@@ -116,6 +118,7 @@ export default function OperatorPoliciesPage() {
   const [templates, setTemplates] = useState<PolicyTemplate[]>([]);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [kind, setKind] = useState<"operator" | "platform">("operator");
+  const [activeTab, setActiveTab] = useState<PolicyWorkspaceTab>("create");
   const [operatorId, setOperatorId] = useState("");
   const [operatorQuery, setOperatorQuery] = useState("");
   const [templateId, setTemplateId] = useState("");
@@ -280,6 +283,7 @@ export default function OperatorPoliciesPage() {
   }
 
   function useAsTemplate(policy: Policy) {
+    setActiveTab("create");
     setKind(policy.ownerType);
     setOperatorId(policy.operatorId ? String(policy.operatorId) : "");
     setTemplateId("");
@@ -412,6 +416,7 @@ export default function OperatorPoliciesPage() {
       setEditingDraft({ id: current.id, revision: current.revision });
       setDraftChangeSummary("");
       setEditorDocumentKey((key) => key + 1);
+      setActiveTab("create");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load policy draft");
@@ -573,7 +578,25 @@ export default function OperatorPoliciesPage() {
         </p>
       </header>
 
-      <section className="max-w-5xl bg-white px-0 py-1 sm:px-0">
+      <nav className="flex max-w-5xl gap-1 overflow-x-auto border-b border-[#dbe2de]" aria-label="Policy workspace">
+        {([
+          ["create", "Create policy"],
+          ["templates", "Templates"],
+          ["drafts", "Drafts and review"],
+          ["published", "Published policies"],
+        ] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`shrink-0 border-b-2 px-4 py-3 text-sm font-bold ${activeTab === tab ? "border-[#0d7d5f] text-[#0d7d5f]" : "border-transparent text-[#52605a] hover:text-[#17201c]"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === "create" && <section className="max-w-5xl bg-white px-0 py-1 sm:px-0">
         <div>
           <h2 className="font-brand text-xl font-bold text-[#17201c]">Create a policy</h2>
           <p className="mt-1 text-sm text-[#68716d]">Choose the policy owner, then use a starting point or author from scratch.</p>
@@ -757,9 +780,9 @@ export default function OperatorPoliciesPage() {
           </div>
           {message && <p className="text-sm text-[#52605a]">{message}</p>}
         </form>
-      </section>
+      </section>}
 
-      <section className="border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-6">
+      {activeTab === "templates" && <section className="border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="font-brand text-lg font-bold text-[#17201c]">Manage policy templates</h2>
@@ -769,9 +792,9 @@ export default function OperatorPoliciesPage() {
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {templates.map((template) => <button key={template.id} type="button" onClick={() => setEditingTemplate({ ...template })} className="border border-[#dbe2de] bg-[#f8faf9] p-4 text-left hover:border-[#0d7d5f]"><p className="font-bold text-[#17201c]">{template.name}</p><p className="mt-1 text-xs text-[#68716d]">Version {template.version} · Edit reusable wording</p></button>)}
         </div>
-      </section>
+      </section>}
 
-      <section className="border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-6">
+      {activeTab === "drafts" && <section className="border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-6">
         <h2 className="font-brand text-lg font-bold text-[#17201c]">
           Operator policy drafts
         </h2>
@@ -807,9 +830,9 @@ export default function OperatorPoliciesPage() {
             ))
           )}
         </div>
-      </section>
+      </section>}
 
-      <section className="border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-6">
+      {activeTab === "published" && <section className="border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-6">
         <h2 className="font-brand text-lg font-bold text-[#17201c]">
           Policy versions
         </h2>
@@ -911,7 +934,7 @@ export default function OperatorPoliciesPage() {
             ))
           )}
         </div>
-      </section>
+      </section>}
 
       {preview && (
         <div
