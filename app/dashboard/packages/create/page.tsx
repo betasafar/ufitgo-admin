@@ -30,6 +30,7 @@ export default function CreatePackagePage() {
   const editId = String(params?.id ?? "");
   const isEdit = Boolean(editId);
   const [operators, setOperators] = useState<any[]>([]);
+  const [operatorPolicies, setOperatorPolicies] = useState<any[]>([]);
   const [operatorId, setOperatorId] = useState("");
   const [form, setForm] = useState({
     title: "",
@@ -44,6 +45,7 @@ export default function CreatePackagePage() {
     registrationFee: "",
     registrationCloseDate: "",
     depositRequiredWithinDays: "20",
+    operatorPolicyVersionId: "",
     initialPayment: "",
     finalBalance: "",
     finalPaymentDueDate: "",
@@ -105,6 +107,7 @@ export default function CreatePackagePage() {
             depositRequiredWithinDays: String(
               pkg?.depositRequiredWithinDays ?? 20,
             ),
+            operatorPolicyVersionId: pkg?.operatorPolicyVersionId || "",
             initialPayment: hasInstallments
               ? String(pkg.initialDeposit || "")
               : "",
@@ -117,6 +120,22 @@ export default function CreatePackagePage() {
         .catch(() => setError("Unable to load package for editing"));
     }
   }, [editId]);
+
+  useEffect(() => {
+    if (!operatorId) {
+      setOperatorPolicies([]);
+      return;
+    }
+    fetch(`/api/admin/operator-policies?operatorId=${encodeURIComponent(operatorId)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        const policies = Array.isArray(payload?.data) ? payload.data : [];
+        setOperatorPolicies(policies.filter((policy: any) => policy.status === "published"));
+      })
+      .catch(() => setOperatorPolicies([]));
+  }, [operatorId]);
 
   const usesRegistration = form.paymentPlan.startsWith("REGISTRATION");
   const usesInstallments = form.paymentPlan.endsWith("INSTALLMENTS");
@@ -165,6 +184,9 @@ export default function CreatePackagePage() {
       usesRegistration ? String(Number(form.registrationFee || 0)) : "0",
     );
     body.append("registrationCloseDate", form.registrationCloseDate);
+    if (form.operatorPolicyVersionId) {
+      body.append("operatorPolicyVersionId", form.operatorPolicyVersionId);
+    }
     body.append(
       "depositRequiredWithinDays",
       String(Number(form.depositRequiredWithinDays || 20)),
@@ -371,6 +393,26 @@ export default function CreatePackagePage() {
                 </div>
               </div>
             )}
+            <div className="mt-4">
+              <label className="text-sm font-semibold text-[#52605a]">
+                Operator cancellation and refund policy
+                <AppSelect
+                  value={form.operatorPolicyVersionId}
+                  onValueChange={(value) => update("operatorPolicyVersionId", value)}
+                  options={[
+                    { value: "", label: "No policy assigned yet" },
+                    ...operatorPolicies.map((policy) => ({
+                      value: policy.id,
+                      label: `${policy.title} (v${policy.version})`,
+                    })),
+                  ]}
+                  className="mt-1.5 w-full"
+                />
+              </label>
+              <p className="mt-1 text-xs text-[#68716d]">
+                Create and publish operator-specific policies in Administration → Operator policies. Assigned policies must be accepted before booking.
+              </p>
+            </div>
             {usesInstallments && (
               <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
