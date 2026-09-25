@@ -36,6 +36,7 @@ type PackageDetailRecord = {
   capacity?: number | string
   booked?: number | string
   status?: string
+  salesStatus?: string
   departureDate?: string
   returnDate?: string
   departingFrom?: string
@@ -113,6 +114,7 @@ export default function PackageDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [statusSaving, setStatusSaving] = useState(false)
+  const [salesStatusSaving, setSalesStatusSaving] = useState(false)
   const [commissionSaving, setCommissionSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -180,6 +182,25 @@ export default function PackageDetailPage() {
     }
   }
 
+  async function toggleSalesStatus() {
+    if (!pkg) return
+    const nextSalesStatus = pkg.salesStatus === "paused" ? "open" : "paused"
+    setSalesStatusSaving(true)
+    try {
+      const response = await fetch(`/api/admin/operator-auth/packages/${id}/sales-status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ salesStatus: nextSalesStatus }),
+      })
+      if (!response.ok) throw new Error("Unable to update sales status")
+      setPkg((current) => (current ? { ...current, salesStatus: nextSalesStatus } : current))
+    } catch {
+      window.alert("Failed to update package sales status.")
+    } finally {
+      setSalesStatusSaving(false)
+    }
+  }
+
   async function saveCommission() {
     if (!selectedCommissionId) return
     setCommissionSaving(true)
@@ -233,6 +254,7 @@ export default function PackageDetailPage() {
   const capacity = Number(pkg.capacity ?? 0)
   const booked = Number(pkg.booked ?? 0)
   const isActive = pkg.status === "active"
+  const isSalesPaused = pkg.salesStatus === "paused"
 
   return (
     <main className="space-y-6 p-5 sm:p-8">
@@ -266,6 +288,10 @@ export default function PackageDetailPage() {
           <button type="button" onClick={() => void toggleStatus()} disabled={statusSaving} className="inline-flex items-center gap-2 rounded-lg border border-[#d9dfdc] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0] disabled:opacity-50">
             {statusSaving ? <Loader2 className="size-4 animate-spin" /> : null}
             {isActive ? "Deactivate" : "Activate"}
+          </button>
+          <button type="button" onClick={() => void toggleSalesStatus()} disabled={salesStatusSaving || !isActive} className="inline-flex items-center gap-2 rounded-lg border border-[#d9dfdc] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0] disabled:opacity-50">
+            {salesStatusSaving ? <Loader2 className="size-4 animate-spin" /> : null}
+            {isSalesPaused ? "Resume sales" : "Pause sales"}
           </button>
           <button type="button" onClick={() => void deletePackage()} disabled={deleting} className="inline-flex items-center gap-2 rounded-lg border border-[#f4d0ca] bg-[#fff0ee] px-4 py-2.5 text-sm font-bold text-[#a43229] hover:bg-[#fddedb] disabled:opacity-50">
             {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}

@@ -105,6 +105,7 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     mode: "any",
     items: [
       { label: "Platform admins", href: "/dashboard/admins", icon: ShieldCheck, permissions: ["settings.manage"], available: true },
+      { label: "System architecture", href: "/dashboard/architecture", icon: BookOpenCheck, permissions: ["settings.manage"], available: true },
       { label: "Lima learning", href: "/dashboard/lima-guidance", icon: BookOpenCheck, permissions: ["settings.manage"], available: true },
       { label: "Settings", href: "/dashboard/settings", icon: Settings, permissions: ["settings.manage"], available: true },
     ],
