@@ -219,6 +219,12 @@ export default function OperatorPoliciesPage() {
     void loadData();
   }, []);
 
+  useEffect(() => {
+    if (!message) return;
+    const timeout = window.setTimeout(() => setMessage(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
+
   function selectKind(nextKind: "operator" | "platform") {
     setKind(nextKind);
     setEditingDraft(null);
@@ -578,6 +584,8 @@ export default function OperatorPoliciesPage() {
         </p>
       </header>
 
+      {message && <div role="status" aria-live="polite" className="fixed right-4 top-4 z-50 flex max-w-md items-start gap-3 bg-[#0d7d5f] px-5 py-4 text-base font-semibold leading-6 text-white shadow-xl sm:right-6 sm:top-6"><CheckCircle2 className="mt-0.5 size-5 shrink-0" /><span>{message}</span><button type="button" onClick={() => setMessage(null)} aria-label="Dismiss notification" className="-mr-2 -mt-1 grid size-8 shrink-0 place-items-center text-white/85 hover:text-white"><X className="size-5" /></button></div>}
+
       <nav className="flex max-w-5xl gap-1 overflow-x-auto border-b border-[#dbe2de]" aria-label="Policy workspace">
         {([
           ["create", "Create policy"],
@@ -778,7 +786,6 @@ export default function OperatorPoliciesPage() {
               {saving ? "Saving..." : editingDraft ? "Save revision" : "Save draft"}
             </button>
           </div>
-          {message && <div role="status" className="border-l-4 border-[#0d7d5f] bg-[#eaf9f3] px-4 py-3 text-base font-semibold leading-6 text-[#17201c]">{message}</div>}
         </form>
       </section>}
 
