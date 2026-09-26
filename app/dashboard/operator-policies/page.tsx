@@ -122,6 +122,15 @@ function activityLabel(event: { eventType: string; actorType?: string; actorId?:
   return event.eventType.replaceAll("_", " ");
 }
 
+function approvalStatusCopy(status: string) {
+  if (status === "operator_approved") return { title: "Ready to publish", detail: "The current revision has valid operator approval.", className: "bg-[#eaf9f3] text-[#17201c]" };
+  if (status === "approval_invalidated") return { title: "Approval invalidated", detail: "The policy changed after approval. Share the current revision for fresh operator approval.", className: "bg-[#fff7df] text-[#5f4100]" };
+  if (status === "changes_requested") return { title: "Changes requested", detail: "Update the draft and send it back to the operator for review.", className: "bg-[#eef5fb] text-[#215b87]" };
+  if (status === "admin_review") return { title: "Awaiting Admin review", detail: "The operator has returned the draft for your review; approval is still required before publication.", className: "bg-[#eef5fb] text-[#215b87]" };
+  if (status === "operator_review" || status === "shared") return { title: "Awaiting operator review", detail: "The operator must review and approve the current policy revision.", className: "bg-[#f4f7f5] text-[#35443e]" };
+  return { title: "Approval required", detail: "Share the draft with the operator to collect approval before publication.", className: "bg-[#f4f7f5] text-[#35443e]" };
+}
+
 function relativeActivityTime(value: string) {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
   if (seconds < 60) return "just now";
@@ -1114,7 +1123,7 @@ export default function OperatorPoliciesPage() {
               </div>
               <div className="border-t border-[#dbe2de] pt-4">
                 <p className="text-sm font-semibold text-[#52605a]">Approval status</p>
-                {sharing.approvals[0] && sharing.draft.status === "operator_approved" ? <div className="mt-2 bg-[#eaf9f3] p-3 text-sm text-[#17201c]"><strong>Ready to publish</strong><span className="block pt-1">Approved by {sharing.approvals[0].signatoryName}, {sharing.approvals[0].signatoryRole} · Revision {sharing.approvals[0].revision}</span></div> : <p className="mt-2 text-sm text-[#68716d]">Operator approval is required before publication.</p>}
+                <div className={`mt-2 p-3 text-sm ${approvalStatusCopy(sharing.draft.status).className}`}><strong>{approvalStatusCopy(sharing.draft.status).title}</strong><span className="block pt-1">{sharing.approvals[0] && sharing.draft.status === "operator_approved" ? `Approved by ${sharing.approvals[0].signatoryName}, ${sharing.approvals[0].signatoryRole} · Revision ${sharing.approvals[0].revision}` : approvalStatusCopy(sharing.draft.status).detail}</span></div>
                 {unresolvedPolicyPlaceholders(sharing.draft).length > 0 && <div className="mt-3 border-l-4 border-[#b06a00] bg-[#fff7df] px-3 py-2 text-sm leading-6 text-[#5f4100]"><strong>Complete required details before publishing.</strong><span className="block">Unresolved: {unresolvedPolicyPlaceholders(sharing.draft).join(", ")}</span></div>}
                 {sharing.draft.status === "operator_approved" && <button type="button" disabled={publishingDraft || unresolvedPolicyPlaceholders(sharing.draft).length > 0} onClick={() => void publishApprovedDraft()} className="mt-3 inline-flex h-11 items-center bg-[#0d7d5f] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{publishingDraft ? "Publishing..." : "Publish approved policy"}</button>}
               </div>
