@@ -778,7 +778,7 @@ export default function OperatorPoliciesPage() {
               {saving ? "Saving..." : editingDraft ? "Save revision" : "Save draft"}
             </button>
           </div>
-          {message && <p className="text-sm text-[#52605a]">{message}</p>}
+          {message && <div role="status" className="border-l-4 border-[#0d7d5f] bg-[#eaf9f3] px-4 py-3 text-base font-semibold leading-6 text-[#17201c]">{message}</div>}
         </form>
       </section>}
 
