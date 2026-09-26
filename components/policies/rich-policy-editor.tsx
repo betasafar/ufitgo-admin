@@ -17,7 +17,7 @@ export function RichPolicyEditor({ value, contentFormat = "plain_text", onChange
   const editor = useEditor({
     extensions: [StarterKit.configure({ heading: { levels: [2, 3] } }), Link.configure({ openOnClick: false }), Underline],
     content: contentFormat === "rich_text" ? value : legacyTextToHtml(value),
-    editorProps: { attributes: { class: "min-h-72 px-3 py-3 text-sm leading-7 text-[#33413a] outline-none" } },
+    editorProps: { attributes: { class: "min-h-72 px-3 py-3 font-sans text-base font-normal leading-7 text-[#33413a] outline-none" } },
     onUpdate: ({ editor: current }) => onChangeRef.current(current.getHTML()),
   })
   if (!editor) return null
