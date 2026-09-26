@@ -109,6 +109,19 @@ function activityActor(event: { actorType?: string; actorId?: string | null }) {
   return "UfitGo system";
 }
 
+function activityLabel(event: { eventType: string; actorType?: string; actorId?: string | null; metadata?: { revision?: number; changeSummary?: string | null; notificationDelivered?: boolean; emailDelivered?: boolean } }) {
+  if (event.eventType === "draft_updated") return `Edited by ${activityActor(event)}`;
+  if (event.eventType === "draft_invitation_sent") {
+    const channels = [event.metadata?.notificationDelivered && "in-app notification", event.metadata?.emailDelivered && "email"].filter(Boolean).join(" and ");
+    return `Review invitation sent${channels ? ` by ${channels}` : ""}`;
+  }
+  if (event.eventType === "draft_invitation_delivery_failed") return "Review invitation delivery failed";
+  if (event.eventType === "draft_expiry_reminder_sent") return "Expiry reminder sent";
+  if (event.eventType === "draft_inactivity_reminder_sent") return "Inactivity reminder sent";
+  if (event.eventType === "draft_expiry_reminder_delivery_failed" || event.eventType === "draft_inactivity_reminder_delivery_failed") return "Review reminder delivery failed";
+  return event.eventType.replaceAll("_", " ");
+}
+
 function relativeActivityTime(value: string) {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
   if (seconds < 60) return "just now";
@@ -1107,7 +1120,7 @@ export default function OperatorPoliciesPage() {
               </div>
               <div className="border-t border-[#dbe2de] pt-4">
                 <p className="text-sm font-semibold text-[#52605a]">Recent activity</p>
-                <div className="mt-2 space-y-2">{sharing.activity.slice(0, 5).map((event) => <p key={event.id} className="bg-[#f8faf9] p-3 text-sm text-[#52605a]"><span className="font-semibold text-[#17201c]">{event.eventType === "draft_updated" ? `Edited by ${activityActor(event)}` : event.eventType.replaceAll("_", " ")}</span>{event.metadata?.revision ? ` · Revision ${event.metadata.revision}` : ""}{event.metadata?.changeSummary ? ` · ${event.metadata.changeSummary}` : ""}<span className="block pt-1 text-xs text-[#68716d]">{relativeActivityTime(event.createdAt)}</span></p>)}{!sharing.activity.length && <p className="text-sm text-[#68716d]">No activity recorded yet.</p>}</div>
+                <div className="mt-2 space-y-2">{sharing.activity.slice(0, 5).map((event) => <p key={event.id} className="bg-[#f8faf9] p-3 text-sm text-[#52605a]"><span className="font-semibold text-[#17201c]">{activityLabel(event)}</span>{event.metadata?.revision ? ` · Revision ${event.metadata.revision}` : ""}{event.metadata?.changeSummary ? ` · ${event.metadata.changeSummary}` : ""}<span className="block pt-1 text-xs text-[#68716d]">{relativeActivityTime(event.createdAt)}</span></p>)}{!sharing.activity.length && <p className="text-sm text-[#68716d]">No activity recorded yet.</p>}</div>
               </div>
               <button type="button" onClick={() => void requestChanges()} className="min-h-11 text-sm font-bold text-[#215b87] underline">Request changes from operator</button>
             </div>
