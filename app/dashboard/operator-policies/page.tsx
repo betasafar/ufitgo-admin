@@ -41,6 +41,7 @@ type PolicyTemplate = {
 type PolicyDraft = {
   id: string;
   title: string;
+  content?: string;
   operatorId: number;
   status: string;
   revision: number;
@@ -96,6 +97,10 @@ function operatorLegalName(operator?: Operator) {
 function expandOperatorPlaceholders(value: string, operator?: Operator) {
   const legalName = operatorLegalName(operator);
   return legalName ? value.replaceAll("[Operator legal name]", legalName) : value;
+}
+
+function unresolvedPolicyPlaceholders(draft?: Pick<PolicyDraft, "title" | "content"> | null) {
+  return [...new Set(`${draft?.title || ""}\n${draft?.content || ""}`.match(/\[[^\]\n]+\]/g) || [])];
 }
 
 function activityActor(event: { actorType?: string; actorId?: string | null }) {
@@ -499,7 +504,12 @@ export default function OperatorPoliciesPage() {
   }
 
   async function publishApprovedDraft() {
-    if (!sharing || !window.confirm("Publish this approved policy? Published wording will become immutable.")) return;
+    if (!sharing) return;
+    if (unresolvedPolicyPlaceholders(sharing.draft).length) {
+      setMessage("Resolve all required policy placeholders before publication.");
+      return;
+    }
+    if (!window.confirm("Publish this approved policy? Published wording will become immutable.")) return;
     setPublishingDraft(true);
     try {
       const response = await fetch(`/api/admin/operator-policy-drafts/${sharing.draft.id}/publish`, { method: "POST" });
@@ -1092,7 +1102,8 @@ export default function OperatorPoliciesPage() {
               <div className="border-t border-[#dbe2de] pt-4">
                 <p className="text-sm font-semibold text-[#52605a]">Approval status</p>
                 {sharing.approvals[0] && sharing.draft.status === "operator_approved" ? <div className="mt-2 bg-[#eaf9f3] p-3 text-sm text-[#17201c]"><strong>Ready to publish</strong><span className="block pt-1">Approved by {sharing.approvals[0].signatoryName}, {sharing.approvals[0].signatoryRole} · Revision {sharing.approvals[0].revision}</span></div> : <p className="mt-2 text-sm text-[#68716d]">Operator approval is required before publication.</p>}
-                {sharing.draft.status === "operator_approved" && <button type="button" disabled={publishingDraft} onClick={() => void publishApprovedDraft()} className="mt-3 inline-flex h-11 items-center bg-[#0d7d5f] px-4 text-sm font-bold text-white disabled:opacity-50">{publishingDraft ? "Publishing..." : "Publish approved policy"}</button>}
+                {unresolvedPolicyPlaceholders(sharing.draft).length > 0 && <div className="mt-3 border-l-4 border-[#b06a00] bg-[#fff7df] px-3 py-2 text-sm leading-6 text-[#5f4100]"><strong>Complete required details before publishing.</strong><span className="block">Unresolved: {unresolvedPolicyPlaceholders(sharing.draft).join(", ")}</span></div>}
+                {sharing.draft.status === "operator_approved" && <button type="button" disabled={publishingDraft || unresolvedPolicyPlaceholders(sharing.draft).length > 0} onClick={() => void publishApprovedDraft()} className="mt-3 inline-flex h-11 items-center bg-[#0d7d5f] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{publishingDraft ? "Publishing..." : "Publish approved policy"}</button>}
               </div>
               <div className="border-t border-[#dbe2de] pt-4">
                 <p className="text-sm font-semibold text-[#52605a]">Recent activity</p>
