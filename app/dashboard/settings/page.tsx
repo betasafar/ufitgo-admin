@@ -692,7 +692,20 @@ export default function SettingsPage() {
                     <input value={campaignConfig.seasonLabel} onChange={(event) => setCampaignDraft((current) => ({ ...campaignConfig, ...current, seasonLabel: event.target.value }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
                   </label>
                 </div>
-                <label className="mt-4 block text-xs font-semibold text-[#68716d]">Season rollover announcement
+                <label className="mt-4 block text-xs font-semibold text-[#68716d]">
+                  <span className="flex flex-wrap items-center justify-between gap-2">
+                    <span>Season rollover announcement</span>
+                    <select aria-label="Announcement suggestion" value="" onChange={(event) => {
+                      const suggestion = event.target.value === "open"
+                        ? `${campaignConfig.seasonLabel} planning is now open. Start preparing early and join the waitlist for updates.`
+                        : `${campaignConfig.seasonLabel} bookings have closed. Start preparing early for the next Hajj season.`
+                      setCampaignDraft((current) => ({ ...campaignConfig, ...current, rolloverAnnouncement: suggestion }))
+                    }} className="h-8 rounded-lg border border-[#d3dad7] bg-white px-2 text-xs font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]">
+                      <option value="">Use a suggestion</option>
+                      <option value="open">Open state</option>
+                      <option value="closed">Closed state</option>
+                    </select>
+                  </span>
                   <textarea value={campaignConfig.rolloverAnnouncement ?? ""} onChange={(event) => setCampaignDraft((current) => ({ ...campaignConfig, ...current, rolloverAnnouncement: event.target.value || null }))} placeholder="Hajj 2027 bookings have closed. Start preparing for Hajj 2028." rows={3} className="mt-1 block w-full resize-y rounded-lg border border-[#d3dad7] bg-white px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" />
                   <span className="mt-1 block font-normal text-[#7b8580]">Shown to customers while this campaign is in planning mode. Leave blank for the standard planning message.</span>
                 </label>
