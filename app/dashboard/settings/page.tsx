@@ -25,6 +25,22 @@ type IntelligenceConfig = {
   ramadanPrice?: number
   ramadanStartsOn?: string | null
   ramadanEndsOn?: string | null
+  openSlotPasses?: Partial<Record<"hajj" | "ramadan" | "umrah", OpenSlotPassConfig>>
+}
+
+type OpenSlotPassConfig = {
+  mode: "disabled" | "paid"
+  basePrice: number
+  plusPrice: number
+  startsOn?: string | null
+  endsOn?: string | null
+  durationDays?: number
+}
+
+const defaultOpenSlotPasses: Record<"hajj" | "ramadan" | "umrah", OpenSlotPassConfig> = {
+  hajj: { mode: "paid", basePrice: 2600, plusPrice: 5300, endsOn: null },
+  ramadan: { mode: "disabled", basePrice: 2600, plusPrice: 5300, startsOn: null, endsOn: null },
+  umrah: { mode: "paid", basePrice: 2600, plusPrice: 5300, durationDays: 30 },
 }
 
 type HajjSeasonCampaignConfig = {
@@ -339,6 +355,23 @@ export default function SettingsPage() {
       showToast("error", "Set both Ramadan dates or leave both empty.")
       return
     }
+    const passConfigs = { ...defaultOpenSlotPasses, ...value.openSlotPasses }
+    if (Object.values(passConfigs).some((pass) => !Number.isFinite(Number(pass.basePrice)) || Number(pass.basePrice) < 0 || !Number.isFinite(Number(pass.plusPrice)) || Number(pass.plusPrice) < Number(pass.basePrice))) {
+      showToast("error", "Set valid Base and Plus pass prices. Plus cannot cost less than Base.")
+      return
+    }
+    if (!passConfigs.hajj.endsOn) {
+      showToast("error", "Set the Hajj Open Slot Pass end date.")
+      return
+    }
+    if (passConfigs.ramadan.mode === "paid" && (!passConfigs.ramadan.startsOn || !passConfigs.ramadan.endsOn || passConfigs.ramadan.startsOn > passConfigs.ramadan.endsOn)) {
+      showToast("error", "Set a valid Ramadan Open Slot Pass travel window.")
+      return
+    }
+    if (!Number.isInteger(Number(passConfigs.umrah.durationDays)) || Number(passConfigs.umrah.durationDays) < 1) {
+      showToast("error", "Set a valid Umrah Open Slot Pass duration.")
+      return
+    }
     setSavingIntelligence(true)
     try {
       const response = await fetch("/api/admin/customers/system/config", {
@@ -444,7 +477,9 @@ export default function SettingsPage() {
     ramadanPrice: 1200,
     ramadanStartsOn: null,
     ramadanEndsOn: null,
+    openSlotPasses: defaultOpenSlotPasses,
   }
+  const openSlotPasses = { ...defaultOpenSlotPasses, ...intelligenceConfig.openSlotPasses }
   const campaignConfig = campaignDraft ?? config?.savingsConfig?.hajjSeasonCampaign ?? {
     mode: "planning" as const,
     seasonLabel: "Hajj 2027",
@@ -595,6 +630,53 @@ export default function SettingsPage() {
                     <input type="number" min="0" value={String(intelligenceConfig[key] ?? 0)} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, [key]: Number(event.target.value) }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
                   </label>
                 ))}
+              </div>
+              <div className="mt-5 border-t border-[#dbe2de] pt-5">
+                <div>
+                  <p className="text-sm font-bold text-[#17201c]">Open Slot Pass catalogue</p>
+                  <p className="mt-1 max-w-2xl text-xs leading-5 text-[#68716d]">Set the customer-facing Base and Plus prices for each journey. Hajj and Ramadan passes end on Admin-selected dates; regular Umrah is valid for a number of days from purchase.</p>
+                </div>
+                <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                  {(["hajj", "ramadan", "umrah"] as const).map((journey) => {
+                    const pass = openSlotPasses[journey]
+                    const label = journey === "hajj" ? "Hajj" : journey === "ramadan" ? "Ramadan Umrah" : "Regular Umrah"
+                    return (
+                      <div key={journey} className="rounded-lg border border-[#dbe2de] bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-bold text-[#17201c]">{label}</p>
+                          <select aria-label={`${label} Open Slot Pass availability`} value={pass.mode} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, openSlotPasses: { ...openSlotPasses, [journey]: { ...pass, mode: event.target.value as OpenSlotPassConfig["mode"] } } }))} className="h-9 rounded-lg border border-[#d3dad7] bg-white px-2 text-xs font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]">
+                            <option value="disabled">Disabled</option>
+                            <option value="paid">Paid</option>
+                          </select>
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <label className="text-xs font-semibold text-[#68716d]">Base (NGN)
+                            <input aria-label={`${label} Base price`} type="number" min="0" value={String(pass.basePrice)} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, openSlotPasses: { ...openSlotPasses, [journey]: { ...pass, basePrice: Number(event.target.value) } } }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                          </label>
+                          <label className="text-xs font-semibold text-[#68716d]">Plus (NGN)
+                            <input aria-label={`${label} Plus price`} type="number" min="0" value={String(pass.plusPrice)} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, openSlotPasses: { ...openSlotPasses, [journey]: { ...pass, plusPrice: Number(event.target.value) } } }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                          </label>
+                        </div>
+                        {journey === "umrah" ? (
+                          <label className="mt-3 block text-xs font-semibold text-[#68716d]">Validity from purchase (days)
+                            <input aria-label="Regular Umrah validity duration" type="number" min="1" value={String(pass.durationDays ?? 30)} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, openSlotPasses: { ...openSlotPasses, umrah: { ...pass, durationDays: Number(event.target.value) } } }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                          </label>
+                        ) : (
+                          <div className="mt-3 grid gap-3">
+                            {journey === "ramadan" && (
+                              <label className="text-xs font-semibold text-[#68716d]">Available from
+                                <input aria-label="Ramadan Open Slot Pass start date" type="date" value={pass.startsOn ?? ""} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, openSlotPasses: { ...openSlotPasses, ramadan: { ...pass, startsOn: event.target.value || null } } }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                              </label>
+                            )}
+                            <label className="text-xs font-semibold text-[#68716d]">Pass ends
+                              <input aria-label={`${label} Open Slot Pass end date`} type="date" value={pass.endsOn ?? ""} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, openSlotPasses: { ...openSlotPasses, [journey]: { ...pass, endsOn: event.target.value || null } } }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <label className="text-xs font-semibold text-[#68716d]">Hajj pass ends
