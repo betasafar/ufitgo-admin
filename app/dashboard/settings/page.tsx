@@ -610,25 +610,18 @@ export default function SettingsPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="font-bold text-[#17201c]">Hajj & Umrah Intelligence</p>
-                  <p className="mt-0.5 max-w-2xl text-xs text-[#7b8580]">Control whether Slot Finder and Package Comparison are hidden, free, or paid. Prices apply only to new paid purchases.</p>
+                  <p className="mt-0.5 max-w-2xl text-xs text-[#7b8580]">Control Finder availability. Configure customer-facing Base and Plus prices in the Open Slot Pass catalogue below.</p>
                 </div>
                 <button type="button" onClick={() => void saveIntelligenceConfig()} disabled={savingIntelligence} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingIntelligence ? "Saving..." : "Save Intelligence"}</button>
               </div>
               <div className="mt-4 grid gap-4 lg:grid-cols-3">
-                {(["finderMode", "comparisonMode", "hajjPilotMode"] as const).map((key) => (
-                  <label key={key} className="text-xs font-semibold text-[#68716d]">{key === "finderMode" ? "Available Slot Finder" : key === "comparisonMode" ? "Package Comparison" : "Hajj Intelligence pilot"}
+                {(["finderMode", "comparisonMode"] as const).map((key) => (
+                  <label key={key} className="text-xs font-semibold text-[#68716d]">{key === "finderMode" ? "Available Slot Finder" : "Package Comparison"}
                     <select value={intelligenceConfig[key] ?? "free"} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, [key]: event.target.value as "disabled" | "free" | "paid" }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]">
                       <option value="disabled">Disabled</option>
                       <option value="free">Free</option>
                       <option value="paid">Paid</option>
                     </select>
-                  </label>
-                ))}
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {([['hajjPrice', 'Hajj pass'], ['umrahPrice', 'Umrah 30-day pass'], ['ramadanPrice', 'Ramadan pass']] as const).map(([key, label]) => (
-                  <label key={key} className="text-xs font-semibold text-[#68716d]">{label} (NGN)
-                    <input type="number" min="0" value={String(intelligenceConfig[key] ?? 0)} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, [key]: Number(event.target.value) }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
                   </label>
                 ))}
               </div>
@@ -678,17 +671,6 @@ export default function SettingsPage() {
                     )
                   })}
                 </div>
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <label className="text-xs font-semibold text-[#68716d]">Hajj pass ends
-                  <input type="date" value={intelligenceConfig.hajjEndsOn ?? ""} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, hajjEndsOn: event.target.value || null }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-                </label>
-                <label className="text-xs font-semibold text-[#68716d]">Ramadan price starts
-                  <input type="date" value={intelligenceConfig.ramadanStartsOn ?? ""} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, ramadanStartsOn: event.target.value || null }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-                </label>
-                <label className="text-xs font-semibold text-[#68716d]">Ramadan price ends
-                  <input type="date" value={intelligenceConfig.ramadanEndsOn ?? ""} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, ramadanEndsOn: event.target.value || null }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-                </label>
               </div>
               <div className="mt-4 rounded-lg border border-[#d9dfdc] bg-white p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
