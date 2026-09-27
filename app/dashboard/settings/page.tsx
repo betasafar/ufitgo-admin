@@ -124,6 +124,19 @@ export default function SettingsPage() {
   const { admin } = useAdminSession()
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("profile")
 
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab")
+    if (tabs.some((item) => item.id === tab)) setActiveTab(tab as (typeof tabs)[number]["id"])
+  }, [])
+
+  const selectTab = (tab: (typeof tabs)[number]["id"]) => {
+    setActiveTab(tab)
+    const url = new URL(window.location.href)
+    if (tab === "profile") url.searchParams.delete("tab")
+    else url.searchParams.set("tab", tab)
+    window.history.replaceState(null, "", url)
+  }
+
   const [config, setConfig] = useState<SystemConfig | null>(null)
   const [configLoading, setConfigLoading] = useState(true)
   const [savingFeature, setSavingFeature] = useState<string | null>(null)
@@ -510,7 +523,7 @@ export default function SettingsPage() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => selectTab(tab.id)}
                 className={`relative flex items-center gap-2 whitespace-nowrap px-4 py-3 text-sm font-semibold transition ${isActive ? "text-[#0d7d5f]" : "text-[#68716d] hover:text-[#17201c]"}`}
               >
                 <span className={`absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-[#0d7d5f] ${isActive ? "opacity-100" : "opacity-0"}`} />
