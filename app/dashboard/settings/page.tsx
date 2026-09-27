@@ -46,6 +46,7 @@ const defaultOpenSlotPasses: Record<"hajj" | "ramadan" | "umrah", OpenSlotPassCo
 type HajjSeasonCampaignConfig = {
   mode: "planning" | "live" | "hidden"
   seasonLabel: string
+  rolloverAnnouncement?: string | null
 }
 
 type SystemConfig = {
@@ -709,6 +710,10 @@ export default function SettingsPage() {
                     <input value={campaignConfig.seasonLabel} onChange={(event) => setCampaignDraft((current) => ({ ...campaignConfig, ...current, seasonLabel: event.target.value }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
                   </label>
                 </div>
+                <label className="mt-4 block text-xs font-semibold text-[#68716d]">Season rollover announcement
+                  <textarea value={campaignConfig.rolloverAnnouncement ?? ""} onChange={(event) => setCampaignDraft((current) => ({ ...campaignConfig, ...current, rolloverAnnouncement: event.target.value || null }))} placeholder="Hajj 2027 bookings have closed. Start preparing for Hajj 2028." rows={3} className="mt-1 block w-full resize-y rounded-lg border border-[#d3dad7] bg-white px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" />
+                  <span className="mt-1 block font-normal text-[#7b8580]">Shown to customers while this campaign is in planning mode. Leave blank for the standard planning message.</span>
+                </label>
               </div>
             </div>
             <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
