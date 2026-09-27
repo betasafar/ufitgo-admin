@@ -164,6 +164,19 @@ export default function OperatorsPage() {
   const [page, setPage] = useState(1)
 
   useEffect(() => {
+    const partner = new URLSearchParams(window.location.search).get("partner")
+    if (partnerTypeOptions.some((option) => option.value === partner)) setPartnerFilter(partner as (typeof partnerTypeOptions)[number]["value"])
+  }, [])
+
+  const selectPartnerFilter = (partner: (typeof partnerTypeOptions)[number]["value"]) => {
+    setPartnerFilter(partner)
+    const url = new URL(window.location.href)
+    if (partner === "all") url.searchParams.delete("partner")
+    else url.searchParams.set("partner", partner)
+    window.history.replaceState(null, "", url)
+  }
+
+  useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 300)
     return () => window.clearTimeout(timer)
   }, [search])
@@ -249,7 +262,7 @@ export default function OperatorsPage() {
               <button
                 key={option.value}
                 type="button"
-                onClick={() => setPartnerFilter(option.value)}
+                onClick={() => selectPartnerFilter(option.value)}
                 className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold transition ${
                   isActive
                     ? "border-[#0d7d5f] bg-[#eaf9f3] text-[#0d7d5f]"

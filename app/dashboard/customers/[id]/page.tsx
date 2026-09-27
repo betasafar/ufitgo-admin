@@ -156,6 +156,19 @@ export default function CustomerDetailPage() {
   const [error, setError] = useState("")
 
   useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab")
+    if (tab && ["overview", "kyc", "financials", "audit", "bookings"].includes(tab)) setActiveTab(tab)
+  }, [])
+
+  const selectTab = (tab: string) => {
+    setActiveTab(tab)
+    const url = new URL(window.location.href)
+    if (tab === "overview") url.searchParams.delete("tab")
+    else url.searchParams.set("tab", tab)
+    window.history.replaceState(null, "", url)
+  }
+
+  useEffect(() => {
     if (!customerId) return
 
     const load = async () => {
@@ -346,7 +359,7 @@ export default function CustomerDetailPage() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => selectTab(tab.id)}
                 className={`relative flex items-center gap-2 whitespace-nowrap px-4 py-3 text-sm font-semibold transition ${isActive ? "text-[#0d7d5f]" : "text-[#68716d] hover:text-[#17201c]"}`}
               >
                 <span className={`absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-[#0d7d5f] ${isActive ? "opacity-100" : "opacity-0"}`} />

@@ -146,6 +146,20 @@ export default function OperatorPoliciesPage() {
   const [operators, setOperators] = useState<Operator[]>([]);
   const [kind, setKind] = useState<"operator" | "platform">("operator");
   const [activeTab, setActiveTab] = useState<PolicyWorkspaceTab>("create");
+
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (["create", "templates", "drafts", "published"].includes(tab || "")) setActiveTab(tab as PolicyWorkspaceTab);
+  }, []);
+
+  const selectTab = (tab: PolicyWorkspaceTab) => {
+    setActiveTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === "create") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", tab);
+    window.history.replaceState(null, "", url);
+  };
+
   const [operatorId, setOperatorId] = useState("");
   const [operatorQuery, setOperatorQuery] = useState("");
   const [templateId, setTemplateId] = useState("");
@@ -316,7 +330,7 @@ export default function OperatorPoliciesPage() {
   }
 
   function useAsTemplate(policy: Policy) {
-    setActiveTab("create");
+    selectTab("create");
     setKind(policy.ownerType);
     setOperatorId(policy.operatorId ? String(policy.operatorId) : "");
     setTemplateId("");
@@ -449,7 +463,7 @@ export default function OperatorPoliciesPage() {
       setEditingDraft({ id: current.id, revision: current.revision });
       setDraftChangeSummary("");
       setEditorDocumentKey((key) => key + 1);
-      setActiveTab("create");
+      selectTab("create");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load policy draft");
@@ -628,7 +642,7 @@ export default function OperatorPoliciesPage() {
           <button
             key={tab}
             type="button"
-            onClick={() => setActiveTab(tab)}
+            onClick={() => selectTab(tab)}
             className={`shrink-0 border-b-2 px-4 py-3 text-sm font-bold ${activeTab === tab ? "border-[#0d7d5f] text-[#0d7d5f]" : "border-transparent text-[#52605a] hover:text-[#17201c]"}`}
           >
             {label}

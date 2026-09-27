@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import {
   CheckCircle2,
+  ChevronDown,
   CircleAlert,
   Lock,
   Mail,
@@ -77,6 +78,8 @@ type SystemConfig = {
 type PlatformSetting = { key: string; value?: string; description?: string }
 type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit"
 type TierLimitDraft = Partial<Record<TierLimitKey, string>>
+const feeCardIds = ["early-exit", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
+type FeeCardId = (typeof feeCardIds)[number]
 
 const featureToggles = [
   { key: "enableTravelFx", badgeId: "fx", label: "Travel FX", desc: "Enable foreign exchange and currency swap features." },
@@ -120,13 +123,50 @@ function ToggleSwitch({ checked, onChange, disabled }: { checked: boolean; onCha
   )
 }
 
+function CollapsibleFeeCard({
+  title,
+  description,
+  isExpanded,
+  onToggle,
+  action,
+  children,
+}: {
+  title: string
+  description: string
+  isExpanded: boolean
+  onToggle: () => void
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <button type="button" onClick={onToggle} aria-expanded={isExpanded} className="min-w-0 flex-1 text-left">
+          <p className="font-bold text-[#17201c]">{title}</p>
+          <p className="mt-0.5 max-w-2xl text-xs text-[#7b8580]">{description}</p>
+        </button>
+        <div className="flex items-center gap-2">
+          {action}
+          <button type="button" onClick={onToggle} aria-label={`${isExpanded ? "Collapse" : "Expand"} ${title}`} title={isExpanded ? "Collapse" : "Expand"} className="grid size-10 place-items-center rounded-lg border border-[#d3dad7] bg-white text-[#52605a] hover:bg-[#edf3f0]">
+            <ChevronDown className={`size-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+      </div>
+      {isExpanded && <div className="mt-4">{children}</div>}
+    </section>
+  )
+}
+
 export default function SettingsPage() {
   const { admin } = useAdminSession()
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("profile")
+  const [collapsedFeeCards, setCollapsedFeeCards] = useState<FeeCardId[]>([])
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab")
     if (tabs.some((item) => item.id === tab)) setActiveTab(tab as (typeof tabs)[number]["id"])
+    const collapsedFees = new URLSearchParams(window.location.search).get("collapsedFees")
+    if (collapsedFees !== null) setCollapsedFeeCards(collapsedFees.split(",").filter((card): card is FeeCardId => feeCardIds.includes(card as FeeCardId)))
   }, [])
 
   const selectTab = (tab: (typeof tabs)[number]["id"]) => {
@@ -134,6 +174,17 @@ export default function SettingsPage() {
     const url = new URL(window.location.href)
     if (tab === "profile") url.searchParams.delete("tab")
     else url.searchParams.set("tab", tab)
+    window.history.replaceState(null, "", url)
+  }
+
+  const toggleFeeCard = (card: FeeCardId) => {
+    const nextCollapsedCards = collapsedFeeCards.includes(card)
+      ? collapsedFeeCards.filter((item) => item !== card)
+      : [...collapsedFeeCards, card]
+    setCollapsedFeeCards(nextCollapsedCards)
+    const url = new URL(window.location.href)
+    if (nextCollapsedCards.length) url.searchParams.set("collapsedFees", nextCollapsedCards.join(","))
+    else url.searchParams.delete("collapsedFees")
     window.history.replaceState(null, "", url)
   }
 
@@ -606,28 +657,17 @@ export default function SettingsPage() {
           <h2 className="font-brand text-lg font-bold text-[#17201c]">Fees & savings automation</h2>
           <p className="mt-1 text-sm text-[#68716d]">Numbers that drive early-exit service charges and savings-plan enforcement.</p>
           <div className="mt-5 space-y-3">
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
-              <div className="max-w-md">
-                <p className="font-bold text-[#17201c]">Early exit service charge</p>
-                <p className="mt-0.5 text-xs text-[#7b8580]">Applied to an early cash withdrawal, up to the configured maximum charge.</p>
-              </div>
-              <div className="flex items-center gap-2">
+            <CollapsibleFeeCard title="Early exit service charge" description="Applied to an early cash withdrawal, up to the configured maximum charge." isExpanded={!collapsedFeeCards.includes("early-exit")} onToggle={() => toggleFeeCard("early-exit")}>
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <input aria-label="Early exit charge percentage" type="number" step="0.01" min="0" max="100" value={earlyExitChargePercentDraft ?? earlyExitChargePercent.toFixed(2)} onChange={(event) => setEarlyExitChargePercentDraft(event.target.value)} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">%</span>
                 <input aria-label="Early exit charge cap" type="number" min="0" value={earlyExitChargeCapDraft ?? String(earlyExitChargeCap)} onChange={(event) => setEarlyExitChargeCapDraft(event.target.value)} className="h-10 w-28 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">NGN cap</span>
                 {earlyExitChargeHasChanges && <button type="button" onClick={() => void saveEarlyExitCharge()} disabled={savingEarlyExitCharge} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingEarlyExitCharge ? "Saving..." : "Save"}</button>}
               </div>
-            </div>
-            <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-bold text-[#17201c]">Hajj & Umrah Intelligence</p>
-                  <p className="mt-0.5 max-w-2xl text-xs text-[#7b8580]">Control Finder availability. Configure customer-facing Base and Plus prices in the Open Slot Pass catalogue below.</p>
-                </div>
-                <button type="button" onClick={() => void saveIntelligenceConfig()} disabled={savingIntelligence} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingIntelligence ? "Saving..." : "Save Intelligence"}</button>
-              </div>
-              <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard title="Hajj & Umrah Intelligence" description="Control Finder availability. Configure customer-facing Base and Plus prices in the Open Slot Pass catalogue below." isExpanded={!collapsedFeeCards.includes("intelligence")} onToggle={() => toggleFeeCard("intelligence")} action={<button type="button" onClick={() => void saveIntelligenceConfig()} disabled={savingIntelligence} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingIntelligence ? "Saving..." : "Save Intelligence"}</button>}>
+              <div className="grid gap-4 lg:grid-cols-3">
                 {(["finderMode", "comparisonMode"] as const).map((key) => (
                   <label key={key} className="text-xs font-semibold text-[#68716d]">{key === "finderMode" ? "Available Slot Finder" : "Package Comparison"}
                     <select value={intelligenceConfig[key] ?? "free"} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, [key]: event.target.value as "disabled" | "free" | "paid" }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]">
@@ -723,13 +763,9 @@ export default function SettingsPage() {
                   <span className="mt-1 block font-normal text-[#7b8580]">Shown to customers while this campaign is in planning mode. Leave blank for the standard planning message.</span>
                 </label>
               </div>
-            </div>
-            <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
-              <div>
-                <p className="font-bold text-[#17201c]">KYC tier limits</p>
-                <p className="mt-0.5 text-xs text-[#7b8580]">These limits apply immediately to wallet and savings enforcement.</p>
-              </div>
-              <div className="mt-4 space-y-4">
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard title="KYC tier limits" description="These limits apply immediately to wallet and savings enforcement." isExpanded={!collapsedFeeCards.includes("kyc-tiers")} onToggle={() => toggleFeeCard("kyc-tiers")}>
+              <div className="space-y-4">
                 {(config?.tiers || []).map((tier) => {
                   const tierKey = `${tier.provider}-${tier.tierLevel}`
                   const draft = tierDrafts[tierKey]
@@ -754,27 +790,19 @@ export default function SettingsPage() {
                   )
                 })}
               </div>
-            </div>
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
-              <div className="max-w-md">
-                <p className="font-bold text-[#17201c]">Missed payment grace period</p>
-                <p className="mt-0.5 text-xs text-[#7b8580]">Days before a missed savings milestone is flagged for restructuring.</p>
-              </div>
-              <div className="flex items-center gap-2">
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard title="Missed payment grace period" description="Days before a missed savings milestone is flagged for restructuring." isExpanded={!collapsedFeeCards.includes("grace-period")} onToggle={() => toggleFeeCard("grace-period")}>
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <input type="number" min="1" max="30" defaultValue={gracePeriodDays} key={`grace-${gracePeriodDays}`} onBlur={(event) => { const val = parseInt(event.target.value, 10); if (!Number.isNaN(val)) void saveFeeField("savingsConfig", "gracePeriodDays", val) }} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">days</span>
               </div>
-            </div>
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
-              <div className="max-w-md">
-                <p className="font-bold text-[#17201c]">Drop threshold limit</p>
-                <p className="mt-0.5 text-xs text-[#7b8580]">Days before departure where users below 80% funding are dropped from the package.</p>
-              </div>
-              <div className="flex items-center gap-2">
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard title="Drop threshold limit" description="Days before departure where users below 80% funding are dropped from the package." isExpanded={!collapsedFeeCards.includes("drop-threshold")} onToggle={() => toggleFeeCard("drop-threshold")}>
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <input type="number" min="1" max="90" defaultValue={dropThresholdDays} key={`drop-${dropThresholdDays}`} onBlur={(event) => { const val = parseInt(event.target.value, 10); if (!Number.isNaN(val)) void saveFeeField("savingsConfig", "dropThresholdDays", val) }} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">days</span>
               </div>
-            </div>
+            </CollapsibleFeeCard>
           </div>
         </section>
       )}
