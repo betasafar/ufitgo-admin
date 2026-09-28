@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react"
 import {
   BarChart3,
+  BadgeDollarSign,
+  CheckCircle2,
+  CalendarDays,
   Eye,
   Loader2,
   Megaphone,
@@ -10,6 +13,8 @@ import {
   Pencil,
   Plus,
   Power,
+  ReceiptText,
+  Settings2,
   Trash2,
   X,
 } from "lucide-react"
@@ -21,7 +26,9 @@ type Ad = {
   title: string
   description?: string
   imageUrl?: string
-  redirectUrl: string
+  redirectUrl?: string
+  destinationType?: "external_url" | "package" | "operator" | "landing_page"
+  destinationId?: string
   placement: string
   isSponsored: boolean
   businessName: string
@@ -31,6 +38,11 @@ type Ad = {
   startDate: string
   endDate: string
   active: boolean
+  pricingMode?: "plan" | "custom"
+  planId?: string
+  planName?: string
+  chargeAmount?: number
+  approvalStatus?: "draft" | "pending_review" | "approved" | "rejected"
   impressions?: number
   clicks?: number
   targetBudgetMin?: number
@@ -41,6 +53,28 @@ type Ad = {
 
 type AdMetrics = { impressions: number; clicks: number; ctr: number; daily: Array<{ date: string; impressions: number; clicks: number }> }
 
+type AdPlan = {
+  id: string
+  name: string
+  placement: string
+  durationDays: number
+  price: number
+  active: boolean
+}
+
+type SystemConfig = {
+  features?: { enableHomeAds?: boolean }
+  savingsConfig?: { ads?: { plans?: AdPlan[] } }
+}
+
+type AdForm = {
+  title: string; description: string; imageUrl: string; redirectUrl: string; destinationType: "external_url" | "package" | "operator" | "landing_page"; destinationId: string; placement: string
+  isSponsored: boolean; businessName: string; businessLogo: string; cta: string; priority: string
+  startDate: string; endDate: string; active: boolean; targetBudgetMin: string; targetBudgetMax: string
+  targetTravelType: string; targetLocation: string; pricingMode: "plan" | "custom"; planId: string
+  planName: string; chargeAmount: string; approvalStatus: "draft" | "pending_review" | "approved" | "rejected"
+}
+
 const placementOptions = [
   { value: "all", label: "All placements" },
   { value: "homepage_hero", label: "Homepage hero" },
@@ -50,11 +84,12 @@ const placementOptions = [
   { value: "default_placement", label: "Default" },
 ]
 
-const emptyForm = {
-  title: "", description: "", imageUrl: "", redirectUrl: "", placement: "homepage_hero",
+const emptyForm: AdForm = {
+  title: "", description: "", imageUrl: "", redirectUrl: "", destinationType: "external_url", destinationId: "", placement: "homepage_hero",
   isSponsored: true, businessName: "", businessLogo: "", cta: "Learn more", priority: "0",
   startDate: "", endDate: "", active: true, targetBudgetMin: "", targetBudgetMax: "",
-  targetTravelType: "", targetLocation: "",
+  targetTravelType: "", targetLocation: "", pricingMode: "custom", planId: "", planName: "",
+  chargeAmount: "", approvalStatus: "pending_review",
 }
 
 function toLocalInput(value?: string) {
@@ -119,13 +154,26 @@ export default function AdsPage() {
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [config, setConfig] = useState<SystemConfig>({})
+  const [plans, setPlans] = useState<AdPlan[]>([])
+  const [savingCatalogue, setSavingCatalogue] = useState(false)
+  const [savingDelivery, setSavingDelivery] = useState(false)
 
   const load = async () => {
     setLoading(true)
     try {
-      const response = await fetch("/api/admin/ads", { cache: "no-store" })
-      const payload = await response.json().catch(() => null)
+      const [response, configResponse] = await Promise.all([
+        fetch("/api/admin/ads", { cache: "no-store" }),
+        fetch("/api/admin/customers/system/config", { cache: "no-store" }),
+      ])
+      const [payload, configPayload] = await Promise.all([
+        response.json().catch(() => null),
+        configResponse.json().catch(() => null),
+      ])
       setAds(Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [])
+      const nextConfig = configPayload?.data || configPayload || {}
+      setConfig(nextConfig)
+      setPlans(Array.isArray(nextConfig?.savingsConfig?.ads?.plans) ? nextConfig.savingsConfig.ads.plans : [])
     } finally {
       setLoading(false)
     }
@@ -142,12 +190,15 @@ export default function AdsPage() {
   function startEdit(ad: Ad) {
     setEditingId(ad.id)
     setForm({
-      title: ad.title || "", description: ad.description || "", imageUrl: ad.imageUrl || "", redirectUrl: ad.redirectUrl || "",
+      title: ad.title || "", description: ad.description || "", imageUrl: ad.imageUrl || "", redirectUrl: ad.redirectUrl || "", destinationType: ad.destinationType || "external_url", destinationId: ad.destinationId || "",
       placement: ad.placement || "homepage_hero", isSponsored: ad.isSponsored ?? true, businessName: ad.businessName || "",
       businessLogo: ad.businessLogo || "", cta: ad.cta || "Learn more", priority: String(ad.priority ?? 0),
       startDate: toLocalInput(ad.startDate), endDate: toLocalInput(ad.endDate), active: ad.active ?? true,
       targetBudgetMin: ad.targetBudgetMin != null ? String(ad.targetBudgetMin) : "", targetBudgetMax: ad.targetBudgetMax != null ? String(ad.targetBudgetMax) : "",
       targetTravelType: ad.targetTravelType || "", targetLocation: ad.targetLocation || "",
+      pricingMode: ad.pricingMode || "custom", planId: ad.planId || "", planName: ad.planName || "",
+      chargeAmount: ad.chargeAmount != null ? String(ad.chargeAmount) : "",
+      approvalStatus: ad.approvalStatus || "approved",
     })
     setShowForm(true)
   }
@@ -160,7 +211,9 @@ export default function AdsPage() {
         title: form.title,
         description: form.description || undefined,
         imageUrl: form.imageUrl || undefined,
-        redirectUrl: form.redirectUrl,
+        redirectUrl: form.redirectUrl || undefined,
+        destinationType: form.destinationType,
+        destinationId: form.destinationId || undefined,
         placement: form.placement,
         isSponsored: form.isSponsored,
         businessName: form.businessName,
@@ -174,6 +227,11 @@ export default function AdsPage() {
         targetBudgetMax: form.targetBudgetMax === "" ? undefined : Number(form.targetBudgetMax),
         targetTravelType: form.targetTravelType || undefined,
         targetLocation: form.targetLocation || undefined,
+        pricingMode: form.pricingMode,
+        planId: form.planId || undefined,
+        planName: form.planName || undefined,
+        chargeAmount: form.chargeAmount === "" ? undefined : Number(form.chargeAmount),
+        approvalStatus: form.approvalStatus,
         isPushCampaign: false,
       }
       const response = await fetch(editingId ? `/api/admin/ads/${editingId}` : "/api/admin/ads", {
@@ -188,6 +246,78 @@ export default function AdsPage() {
       window.alert("Could not save this sponsored ad.")
     } finally {
       setSaving(false)
+    }
+  }
+
+  function applyPlan(planId: string) {
+    const plan = plans.find((item) => item.id === planId)
+    if (!plan) return
+    const start = form.startDate ? new Date(form.startDate) : new Date()
+    const end = new Date(start)
+    end.setDate(end.getDate() + Math.max(1, Number(plan.durationDays) || 1))
+    setForm((current) => ({
+      ...current,
+      pricingMode: "plan",
+      planId: plan.id,
+      planName: plan.name,
+      chargeAmount: String(plan.price),
+      placement: plan.placement,
+      startDate: current.startDate || toLocalInput(start.toISOString()),
+      endDate: toLocalInput(end.toISOString()),
+    }))
+  }
+
+  function updatePlan(id: string, field: keyof AdPlan, value: string | boolean) {
+    setPlans((current) => current.map((plan) => plan.id === id ? {
+      ...plan,
+      [field]: field === "durationDays" || field === "price" ? Number(value) : value,
+    } : plan))
+  }
+
+  function addPlan() {
+    setPlans((current) => [...current, {
+      id: `plan-${Date.now()}`,
+      name: "New campaign plan",
+      placement: "homepage_hero",
+      durationDays: 7,
+      price: 0,
+      active: true,
+    }])
+  }
+
+  async function saveCatalogue() {
+    setSavingCatalogue(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ savingsConfig: { ads: { plans } } }),
+      })
+      if (!response.ok) throw new Error()
+      const payload = await response.json().catch(() => null)
+      setConfig(payload?.data || payload || config)
+    } catch {
+      window.alert("Could not save the ad catalogue.")
+    } finally {
+      setSavingCatalogue(false)
+    }
+  }
+
+  async function toggleDelivery() {
+    setSavingDelivery(true)
+    const enableHomeAds = !config.features?.enableHomeAds
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ features: { enableHomeAds } }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((current) => ({ ...current, features: { ...current.features, enableHomeAds } }))
+    } catch {
+      window.alert("Could not update ad delivery.")
+    } finally {
+      setSavingDelivery(false)
     }
   }
 
@@ -234,6 +364,8 @@ export default function AdsPage() {
     impressions: ads.reduce((sum, ad) => sum + Number(ad.impressions || 0), 0),
     clicks: ads.reduce((sum, ad) => sum + Number(ad.clicks || 0), 0),
   }), [ads])
+  const deliveryEnabled = config.features?.enableHomeAds ?? true
+  const activePlans = plans.filter((plan) => plan.active)
 
   return (
     <main className="space-y-6 p-5 sm:p-8">
@@ -241,12 +373,44 @@ export default function AdsPage() {
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#07845f]">Growth & marketing</p>
           <h1 className="mt-2 font-brand text-3xl font-bold text-[#17201c]">Sponsored ads</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">Manage mobile placements, schedules, targeting, and engagement for sponsored placements.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">Control inventory, campaign approval, rates, schedules, and engagement in one place.</p>
         </div>
         <button type="button" onClick={startCreate} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0d7d5f] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#0b6b51]">
           <Plus className="size-4" /> Create ad
         </button>
       </header>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div className={`border p-5 ${deliveryEnabled ? "border-[#bce5d4] bg-[#f2fbf6]" : "border-[#e4d8a2] bg-[#fffcf1]"}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2"><Power className={`size-4 ${deliveryEnabled ? "text-[#0c6b50]" : "text-[#8a6500]"}`} /><h2 className="text-sm font-bold text-[#17201c]">Home ad delivery</h2></div>
+              <p className="mt-2 text-sm leading-5 text-[#5d6964]">{deliveryEnabled ? "Approved campaigns can appear in the mobile Home feed." : "All Home ad placements are hidden from customers."}</p>
+            </div>
+            <button type="button" onClick={() => void toggleDelivery()} disabled={savingDelivery} className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-bold disabled:opacity-50 ${deliveryEnabled ? "bg-[#0d7d5f] text-white" : "border border-[#c8b66b] bg-white text-[#785b00]"}`}>
+              {savingDelivery ? <Loader2 className="size-3.5 animate-spin" /> : <Power className="size-3.5" />}{deliveryEnabled ? "On" : "Off"}
+            </button>
+          </div>
+        </div>
+
+        <div className="border border-[#dbe2de] bg-white p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div><div className="flex items-center gap-2"><ReceiptText className="size-4 text-[#0f74c1]" /><h2 className="text-sm font-bold text-[#17201c]">Ad rate card</h2></div><p className="mt-1 text-xs text-[#78817d]">Fixed plans for regular sales. Custom quotes stay available per campaign.</p></div>
+            <div className="flex gap-2"><button type="button" onClick={addPlan} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#cddbd5] bg-white px-3 text-xs font-bold text-[#0d7d5f] hover:bg-[#eef7f3]"><Plus className="size-3.5" /> Add plan</button><button type="button" onClick={() => void saveCatalogue()} disabled={savingCatalogue} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#17201c] px-3 text-xs font-bold text-white disabled:opacity-50">{savingCatalogue ? <Loader2 className="size-3.5 animate-spin" /> : <Settings2 className="size-3.5" />} Save rates</button></div>
+          </div>
+          {plans.length === 0 ? <p className="border border-dashed border-[#dbe2de] px-4 py-5 text-sm text-[#78817d]">No fixed plans yet. Add one when you are ready to publish public rates.</p> : (
+            <div className="space-y-2">
+              {plans.map((plan) => <div key={plan.id} className="grid gap-2 border border-[#edf1ef] p-3 sm:grid-cols-[minmax(140px,1fr)_150px_92px_110px_auto] sm:items-center">
+                <input value={plan.name} onChange={(event) => updatePlan(plan.id, "name", event.target.value)} aria-label="Plan name" className="h-9 min-w-0 border border-[#d3dad7] bg-[#f8faf9] px-2 text-sm" />
+                <AppSelect value={plan.placement} onValueChange={(value) => updatePlan(plan.id, "placement", value)} options={placementOptions.slice(1)} />
+                <input type="number" min="1" value={plan.durationDays} onChange={(event) => updatePlan(plan.id, "durationDays", event.target.value)} aria-label="Duration in days" className="h-9 border border-[#d3dad7] bg-[#f8faf9] px-2 text-sm" />
+                <input type="number" min="0" value={plan.price} onChange={(event) => updatePlan(plan.id, "price", event.target.value)} aria-label="Price in naira" className="h-9 border border-[#d3dad7] bg-[#f8faf9] px-2 text-sm" />
+                <div className="flex items-center justify-end gap-2"><label className="text-xs font-semibold text-[#52605a]"><input type="checkbox" checked={plan.active} onChange={(event) => updatePlan(plan.id, "active", event.target.checked)} className="mr-1.5" />Live</label><button type="button" onClick={() => setPlans((current) => current.filter((item) => item.id !== plan.id))} aria-label={`Remove ${plan.name}`} className="p-1 text-[#a43229] hover:bg-[#fff0ee]"><Trash2 className="size-3.5" /></button></div>
+              </div>)}
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
@@ -287,9 +451,25 @@ export default function AdsPage() {
               <input type="url" value={form.imageUrl} onChange={(event) => setForm((current) => ({ ...current, imageUrl: event.target.value }))} placeholder="https://…" className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Destination URL</label>
-              <input required type="url" value={form.redirectUrl} onChange={(event) => setForm((current) => ({ ...current, redirectUrl: event.target.value }))} placeholder="https://…" className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+              <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Destination</label>
+              <AppSelect value={form.destinationType} onValueChange={(value) => setForm((current) => ({ ...current, destinationType: value as AdForm["destinationType"], destinationId: "", redirectUrl: "" }))} options={[{ value: "external_url", label: "External website or WhatsApp" }, { value: "package", label: "UfitGo package" }, { value: "operator", label: "UfitGo operator" }, { value: "landing_page", label: "Hosted sponsored page" }]} />
             </div>
+            {form.destinationType === "external_url" ? (
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">External URL</label>
+                <input required type="url" value={form.redirectUrl} onChange={(event) => setForm((current) => ({ ...current, redirectUrl: event.target.value }))} placeholder="https://…" className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+              </div>
+            ) : form.destinationType === "landing_page" ? (
+              <div className="space-y-2">
+                <div className="border border-[#cdeef5] bg-[#f4fcfe] px-3 py-2.5 text-xs leading-5 text-[#276172]">UfitGo hosts this campaign at a shareable sponsored page using the campaign content below.</div>
+                <input type="url" value={form.redirectUrl} onChange={(event) => setForm((current) => ({ ...current, redirectUrl: event.target.value }))} placeholder="Optional action URL for the hosted page" className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">{form.destinationType === "package" ? "Package ID" : "Operator ID"}</label>
+                <input required value={form.destinationId} onChange={(event) => setForm((current) => ({ ...current, destinationId: event.target.value }))} placeholder="Paste the UfitGo record ID" className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+              </div>
+            )}
             <div>
               <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Placement</label>
               <AppSelect value={form.placement} onValueChange={(value) => setForm((current) => ({ ...current, placement: value }))} options={placementOptions.slice(1)} />
@@ -305,6 +485,21 @@ export default function AdsPage() {
             <div>
               <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Ends</label>
               <input required type="datetime-local" value={form.endDate} onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))} className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Pricing</label>
+              <AppSelect value={form.pricingMode === "plan" && form.planId ? form.planId : "custom"} onValueChange={(value) => {
+                if (value === "custom") setForm((current) => ({ ...current, pricingMode: "custom", planId: "", planName: "" }))
+                else applyPlan(value)
+              }} options={[{ value: "custom", label: "Custom quote" }, ...activePlans.map((plan) => ({ value: plan.id, label: `${plan.name} · ₦${Number(plan.price).toLocaleString("en-NG")} / ${plan.durationDays}d` }))]} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Campaign charge (₦)</label>
+              <input type="number" min="0" value={form.chargeAmount} onChange={(event) => setForm((current) => ({ ...current, chargeAmount: event.target.value }))} placeholder="Negotiated amount" className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Approval</label>
+              <AppSelect value={form.approvalStatus} onValueChange={(value) => setForm((current) => ({ ...current, approvalStatus: value as AdForm["approvalStatus"] }))} options={[{ value: "draft", label: "Draft" }, { value: "pending_review", label: "Pending review" }, { value: "approved", label: "Approved" }, { value: "rejected", label: "Rejected" }]} />
             </div>
             <div>
               <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Travel type</label>
@@ -328,7 +523,7 @@ export default function AdsPage() {
               <input required type="number" min="0" value={form.priority} onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))} className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
             </div>
             <label className="flex items-center gap-2 self-end pb-1 text-sm font-semibold text-[#36413d]">
-              <input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} className="size-4 rounded border-[#d3dad7]" /> Active when schedule begins
+              <input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} className="size-4 rounded border-[#d3dad7]" /> Eligible when scheduled
             </label>
             <div className="sm:col-span-2 flex justify-end">
               <button type="submit" disabled={saving} className="inline-flex h-11 min-w-[160px] items-center justify-center gap-2 rounded-lg bg-[#0d7d5f] px-5 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">
