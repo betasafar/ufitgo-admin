@@ -38,9 +38,14 @@ export default function CreatePackagePage() {
     type: "umrah",
     serviceLevel: "standard",
     price: "",
+    priceOnRequest: "false",
+    duration: "",
     capacity: "",
+    status: "draft",
+    salesStatus: "open",
     departureDate: "",
     returnDate: "",
+    inclusions: "",
     paymentPlan: "FULL_PAYMENT",
     registrationFee: "",
     registrationCloseDate: "",
@@ -49,7 +54,12 @@ export default function CreatePackagePage() {
     initialPayment: "",
     finalBalance: "",
     finalPaymentDueDate: "",
+    paymentNote: "",
+    groupDiscountEnabled: "false",
+    groupDiscountThreshold: "",
+    groupDiscountPercentage: "",
   });
+  const [bookedSlots, setBookedSlots] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -82,15 +92,21 @@ export default function CreatePackagePage() {
           );
           const hasInstallments = Boolean(pkg?.installmentEligible);
           setOperatorId(String(pkg?.operator?.id || pkg?.operatorId || ""));
+          setBookedSlots(Number(pkg?.booked || 0));
           setForm({
             title: pkg?.title || "",
             description: pkg?.description || "",
             type: pkg?.type || "umrah",
             serviceLevel: pkg?.serviceLevel || "standard",
             price: String(pkg?.price || ""),
+            priceOnRequest: String(Boolean(pkg?.priceOnRequest)),
+            duration: String(pkg?.duration || ""),
             capacity: String(pkg?.capacity || ""),
+            status: pkg?.status || "draft",
+            salesStatus: pkg?.salesStatus || "open",
             departureDate: pkg?.departureDate?.slice?.(0, 10) || "",
             returnDate: pkg?.returnDate?.slice?.(0, 10) || "",
+            inclusions: Array.isArray(pkg?.inclusions) ? pkg.inclusions.join("\n") : "",
             paymentPlan:
               hasRegistration && hasInstallments
                 ? "REGISTRATION_AND_INSTALLMENTS"
@@ -115,6 +131,10 @@ export default function CreatePackagePage() {
             finalPaymentDueDate: hasInstallments
               ? pkg.finalPaymentDueDate?.slice?.(0, 10) || ""
               : "",
+            paymentNote: pkg?.paymentNote || "",
+            groupDiscountEnabled: String(Boolean(pkg?.groupDiscountEnabled)),
+            groupDiscountThreshold: pkg?.groupDiscountThreshold ? String(pkg.groupDiscountThreshold) : "",
+            groupDiscountPercentage: pkg?.groupDiscountPercentage ? String(pkg.groupDiscountPercentage) : "",
           });
         })
         .catch(() => setError("Unable to load package for editing"));
@@ -140,6 +160,9 @@ export default function CreatePackagePage() {
   const usesRegistration = form.paymentPlan.startsWith("REGISTRATION");
   const usesInstallments = form.paymentPlan.endsWith("INSTALLMENTS");
   const packagePrice = Number(form.price || 0);
+  const priceOnRequest = form.priceOnRequest === "true";
+  const groupDiscountEnabled = form.groupDiscountEnabled === "true";
+  const availableSlots = Math.max(0, Number(form.capacity || 0) - bookedSlots);
   const installmentTotal =
     Number(form.initialPayment || 0) + Number(form.finalBalance || 0);
   const installmentValid =
@@ -162,7 +185,8 @@ export default function CreatePackagePage() {
     if (
       !operatorId ||
       !form.title ||
-      !packagePrice ||
+      (!priceOnRequest && !packagePrice) ||
+      !form.duration ||
       !form.capacity ||
       !installmentValid
     )
@@ -174,10 +198,15 @@ export default function CreatePackagePage() {
     body.append("description", form.description);
     body.append("type", form.type);
     body.append("serviceLevel", form.serviceLevel);
-    body.append("price", String(packagePrice));
+    body.append("price", String(priceOnRequest ? 0 : packagePrice));
+    body.append("priceOnRequest", String(priceOnRequest));
+    body.append("duration", form.duration);
     body.append("capacity", form.capacity);
+    body.append("status", form.status);
+    body.append("salesStatus", form.salesStatus);
     body.append("departureDate", form.departureDate);
     body.append("returnDate", form.returnDate);
+    body.append("inclusions", JSON.stringify(form.inclusions.split("\n").map((item) => item.trim()).filter(Boolean)));
     body.append("registrationFeeEnabled", String(usesRegistration));
     body.append(
       "registrationFeeAmount",
@@ -204,6 +233,12 @@ export default function CreatePackagePage() {
       "finalPaymentDueDate",
       usesInstallments ? form.finalPaymentDueDate : "",
     );
+    body.append("paymentNote", form.paymentNote);
+    body.append("groupDiscountEnabled", String(groupDiscountEnabled));
+    if (groupDiscountEnabled) {
+      body.append("groupDiscountThreshold", form.groupDiscountThreshold);
+      body.append("groupDiscountPercentage", form.groupDiscountPercentage);
+    }
     try {
       const response = isEdit
         ? await fetch(`/api/admin/operator-auth/packages/${editId}`, {
@@ -295,15 +330,30 @@ export default function CreatePackagePage() {
                 type="number"
                 value={form.price}
                 onChange={(value) => update("price", value)}
+                required={!priceOnRequest}
+                disabled={priceOnRequest}
+              />
+              <label className="flex items-center gap-2 self-end pb-2 text-sm font-semibold text-[#52605a]">
+                <input type="checkbox" checked={priceOnRequest} onChange={(event) => update("priceOnRequest", String(event.target.checked))} className="size-4 accent-[#0d7d5f]" />
+                Price on request
+              </label>
+              <Field
+                label="Duration (days)"
+                type="number"
+                value={form.duration}
+                onChange={(value) => update("duration", value)}
                 required
+                min={1}
               />
               <Field
-                label="Capacity"
+                label="Total capacity"
                 type="number"
                 value={form.capacity}
                 onChange={(value) => update("capacity", value)}
                 required
+                min={bookedSlots || 1}
               />
+              {isEdit && <div className="rounded-lg border border-[#dbe2de] bg-[#f8faf9] p-3 text-sm text-[#52605a] sm:col-span-2"><span className="font-bold text-[#17201c]">Availability:</span> {bookedSlots} booked · {availableSlots} available. Available slots are calculated automatically; confirmed bookings cannot be changed here.</div>}
               <label className="text-sm font-semibold text-[#52605a]">
                 Package type
                 <select
@@ -344,6 +394,10 @@ export default function CreatePackagePage() {
                 rows={5}
                 className="mt-1.5 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm font-normal outline-none focus:border-[#0d7d5f]"
               />
+            </label>
+            <label className="mt-4 block text-sm font-semibold text-[#52605a]">
+              Package inclusions
+              <textarea value={form.inclusions} onChange={(event) => update("inclusions", event.target.value)} rows={5} placeholder="One inclusion per line" className="mt-1.5 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm font-normal outline-none focus:border-[#0d7d5f]" />
             </label>
           </section>
           <section className="rounded-2xl border border-[#cfeee0] bg-white p-6 shadow-sm">
@@ -461,6 +515,16 @@ export default function CreatePackagePage() {
               </div>
             )}
           </section>
+          <section className="rounded-2xl border border-[#dbe2de] bg-white p-6 shadow-sm">
+            <h2 className="font-brand text-lg font-bold text-[#17201c]">Sales and offers</h2>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-semibold text-[#52605a]">Package status<select value={form.status} onChange={(event) => update("status", event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm font-normal"><option value="draft">Draft</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+              <label className="text-sm font-semibold text-[#52605a]">Sales status<select value={form.salesStatus} onChange={(event) => update("salesStatus", event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm font-normal"><option value="open">Open</option><option value="paused">Paused</option><option value="closed">Closed</option></select></label>
+              <label className="flex items-center gap-2 self-end pb-2 text-sm font-semibold text-[#52605a] sm:col-span-2"><input type="checkbox" checked={groupDiscountEnabled} onChange={(event) => update("groupDiscountEnabled", String(event.target.checked))} className="size-4 accent-[#0d7d5f]" /> Enable group discount</label>
+              {groupDiscountEnabled && <><Field label="Minimum pilgrims" type="number" value={form.groupDiscountThreshold} onChange={(value) => update("groupDiscountThreshold", value)} required min={1} /><Field label="Discount percentage" type="number" value={form.groupDiscountPercentage} onChange={(value) => update("groupDiscountPercentage", value)} required min={0} /></>}
+              <label className="text-sm font-semibold text-[#52605a] sm:col-span-2">Payment instructions<textarea value={form.paymentNote} onChange={(event) => update("paymentNote", event.target.value)} rows={3} className="mt-1.5 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm font-normal outline-none focus:border-[#0d7d5f]" /></label>
+            </div>
+          </section>
         </div>
         <aside className="h-fit rounded-2xl border border-[#dbe2de] bg-white p-6 shadow-sm">
           <div className="flex items-center gap-2">
@@ -485,7 +549,7 @@ export default function CreatePackagePage() {
             className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50"
           >
             {saving && <Loader2 className="size-4 animate-spin" />}{" "}
-            {saving ? "Creating..." : "Create package"}
+            {saving ? (isEdit ? "Saving..." : "Creating...") : (isEdit ? "Save package" : "Create package")}
           </button>
         </aside>
       </form>
@@ -499,12 +563,16 @@ function Field({
   onChange,
   type = "text",
   required = false,
+  disabled = false,
+  min,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
   required?: boolean;
+  disabled?: boolean;
+  min?: number;
 }) {
   return (
     <label className="text-sm font-semibold text-[#52605a]">
@@ -514,6 +582,8 @@ function Field({
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+        min={min}
         className="mt-1.5 h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm font-normal text-[#17201c] outline-none focus:border-[#0d7d5f]"
       />
     </label>
