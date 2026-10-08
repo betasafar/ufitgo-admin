@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { AppSelect } from "@/components/ui/app-select"
 import { PaginationBar } from "@/components/ui/pagination-bar"
-import { BriefcaseBusiness, Building2, Filter, Mail, Phone, Search, ShieldAlert, ShieldCheck, Users } from "lucide-react"
+import Link from "next/link"
+import { BriefcaseBusiness, Building2, Filter, Mail, Phone, Plus, Search, ShieldAlert, ShieldCheck, Users } from "lucide-react"
 
 type OperatorRecord = {
   id?: string | number
@@ -212,9 +213,15 @@ export default function OperatorsPage() {
           <h1 className="mt-2 font-brand text-3xl font-bold text-[#17201c]">Partner management</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">Monitor partner quality, verification status, fulfillment, and partner health across all approved business types.</p>
         </div>
-        <button type="button" onClick={() => void refetch()} className="inline-flex items-center justify-center rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">
-          Refresh
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button type="button" onClick={() => void refetch()} className="inline-flex items-center justify-center rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">
+            Refresh
+          </button>
+          <Link href="/dashboard/operators/create" className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#07845f] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#056b4d]">
+            <Plus className="size-4" />
+            Add partner
+          </Link>
+        </div>
       </header>
 
 

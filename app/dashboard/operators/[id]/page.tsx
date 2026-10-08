@@ -558,6 +558,9 @@ export default function OperatorDetailPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <VerificationPill status={verificationStatus} />
+          <Link href={`/dashboard/operators/${operatorId}/edit`} className="inline-flex items-center gap-2 rounded-lg bg-[#07845f] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#056b4d]">
+            <Pencil className="size-4" /> Edit partner
+          </Link>
           <Link href="/dashboard/operators" className="inline-flex items-center gap-2 rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">
             Back to list <ArrowRight className="size-4" />
           </Link>
