@@ -36,6 +36,8 @@ export default function CreatePackagePage() {
     title: "",
     description: "",
     type: "umrah",
+    season: "",
+    seasonYear: "",
     serviceLevel: "standard",
     price: "",
     priceOnRequest: "false",
@@ -97,6 +99,8 @@ export default function CreatePackagePage() {
             title: pkg?.title || "",
             description: pkg?.description || "",
             type: pkg?.type || "umrah",
+            season: pkg?.season || "",
+            seasonYear: pkg?.seasonYear == null ? "" : String(pkg.seasonYear),
             serviceLevel: pkg?.serviceLevel || "standard",
             price: String(pkg?.price || ""),
             priceOnRequest: String(Boolean(pkg?.priceOnRequest)),
@@ -197,6 +201,8 @@ export default function CreatePackagePage() {
     body.append("title", form.title);
     body.append("description", form.description);
     body.append("type", form.type);
+    if (form.season) body.append("season", form.season);
+    if (form.seasonYear) body.append("seasonYear", form.seasonYear);
     body.append("serviceLevel", form.serviceLevel);
     body.append("price", String(priceOnRequest ? 0 : packagePrice));
     body.append("priceOnRequest", String(priceOnRequest));
@@ -244,7 +250,11 @@ export default function CreatePackagePage() {
         ? await fetch(`/api/admin/operator-auth/packages/${editId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(Object.fromEntries(body.entries())),
+            body: JSON.stringify({
+              ...Object.fromEntries(body.entries()),
+              season: form.season || null,
+              seasonYear: form.seasonYear ? Number(form.seasonYear) : null,
+            }),
           })
         : await fetch(
             `/api/admin/operator-auth/packages/for-operator/${operatorId}`,
@@ -358,7 +368,11 @@ export default function CreatePackagePage() {
                 Package type
                 <select
                   value={form.type}
-                  onChange={(event) => update("type", event.target.value)}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    type: event.target.value,
+                    season: event.target.value === "umrah" ? current.season : "",
+                  }))}
                   className="mt-1.5 h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm font-normal"
                 >
                   <option value="umrah">Umrah</option>
@@ -366,6 +380,26 @@ export default function CreatePackagePage() {
                   <option value="tour">Tour</option>
                 </select>
               </label>
+              <label className="text-sm font-semibold text-[#52605a]">
+                Season classification
+                <select
+                  value={form.season}
+                  disabled={form.type !== "umrah"}
+                  onChange={(event) => update("season", event.target.value)}
+                  className="mt-1.5 h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm font-normal"
+                >
+                  <option value="">No seasonal classification</option>
+                  <option value="ramadan">Ramadan Umrah</option>
+                </select>
+                <span className="mt-1 block text-xs font-normal">Ramadan is a season of Umrah, not a separate package type.</span>
+              </label>
+              <Field
+                label="Selling season year (optional)"
+                type="number"
+                value={form.seasonYear}
+                onChange={(value) => update("seasonYear", value)}
+                min={2000}
+              />
               <Field
                 label="Service level"
                 value={form.serviceLevel}

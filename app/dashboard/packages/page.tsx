@@ -39,7 +39,7 @@ const collectionOptions = [
   { value: "all", label: "All collections" },
   { value: "hajj", label: "Hajj" },
   { value: "ramadan", label: "Ramadan" },
-  { value: "deal-of-week", label: "Deal of the week" },
+  { value: "deal-of-week", label: "Featured campaign" },
   { value: "others", label: "Others" },
 ] as const
 

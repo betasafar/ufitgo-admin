@@ -94,8 +94,10 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     items: [
       { label: "Referrals", href: "/dashboard/referrals", icon: Gift, permissions: ["referrals.manage"], available: true },
       { label: "Sponsored ads", href: "/dashboard/ads", icon: Megaphone, permissions: ["marketing.manage"], available: true },
+      { label: "Home content", href: "/dashboard/home-content", icon: LayoutDashboard, permissions: ["marketing.manage"], available: true },
       { label: "Broadcast", href: "/dashboard/broadcast", icon: Send, permissions: ["marketing.manage"], available: true },
       { label: "Email templates", href: "/dashboard/notification-templates", icon: Mail, permissions: ["marketing.manage"], available: true },
+      { label: "App waitlist", href: "/dashboard/app-waitlist", icon: Users, permissions: ["marketing.manage"], available: true },
     ],
   },
   {

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { BarChart3, CalendarDays, Mail, RefreshCw, SearchX, Users, type LucideIcon } from "lucide-react"
 import { AppSelect } from "@/components/ui/app-select"
+import { useCan } from "@/components/auth/permission-gate"
 
 const rangeOptions = [
   { value: "7", label: "Last 7 days" },
@@ -36,6 +37,25 @@ function RankedList({ title, items }: { title: string; items?: CountItem[] }) {
 }
 
 export default function AdvisorDemandPage() {
+  const can = useCan()
+  const emailSettings = useQuery<{ enabled: boolean; recipient: string }>({
+    queryKey: ["advisor-report-email-settings"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/advisor-demand/email-settings", { cache: "no-store" })
+      if (!response.ok) throw new Error("Unable to load report email settings.")
+      return response.json()
+    },
+  })
+  const settingsMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const response = await fetch("/api/admin/advisor-demand/email-settings", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }),
+      })
+      if (!response.ok) throw new Error("Unable to save report email settings.")
+      return response.json()
+    },
+    onSuccess: () => { void emailSettings.refetch() },
+  })
   const [rangeDays, setRangeDays] = useState("30")
   const dates = useMemo(() => dateRange(Number(rangeDays)), [rangeDays])
   const { data, isLoading, isFetching, error, refetch } = useQuery<DemandReport>({
@@ -52,6 +72,7 @@ export default function AdvisorDemandPage() {
   })
   const emailMutation = useMutation({
     mutationFn: async () => {
+      if (!emailSettings.data?.enabled) throw new Error("Report emails are switched off.")
       const response = await fetch("/api/admin/advisor-demand/send-weekly-report", { method: "POST" })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(payload?.message || "Could not send weekly report")
@@ -59,6 +80,7 @@ export default function AdvisorDemandPage() {
     },
   })
   const summary = data?.summary
+  const emailSwitchLabel = emailSettings.data?.enabled ? "Switch off" : "Switch on"
   const trendMaximum = Math.max(...(data?.trend || []).map((item) => item.count), 1)
   const metrics: Array<{ label: string; value: string | number; note: string; Icon: LucideIcon }> = [
     { label: "Requests", value: summary?.totalRequests ?? 0, note: `Across ${rangeDays} days`, Icon: BarChart3 },
@@ -67,9 +89,23 @@ export default function AdvisorDemandPage() {
     { label: "Average budget", value: summary?.averageBudget ? `N${Number(summary.averageBudget).toLocaleString("en-NG")}` : "Not enough data", note: "Where users stated a budget", Icon: CalendarDays },
   ]
 
-  return <main className="space-y-6 p-5 sm:p-8"><header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#07845f]">Analytics</p><h1 className="mt-2 font-brand text-3xl font-bold text-[#17201c]">Lima demand insights</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">Use anonymized requests from Lima to understand what pilgrims want and help partners shape packages around real demand.</p></div><div className="flex flex-wrap items-center gap-3"><AppSelect value={rangeDays} onValueChange={setRangeDays} options={rangeOptions} className="w-44" /><button type="button" onClick={() => void refetch()} disabled={isFetching} className="inline-flex items-center gap-2 rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0] disabled:opacity-50"><RefreshCw className={`size-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh</button><button type="button" onClick={() => emailMutation.mutate()} disabled={emailMutation.isPending} className="inline-flex items-center gap-2 rounded-lg bg-[#0d7d5f] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50"><Mail className="size-4" /> {emailMutation.isPending ? "Sending..." : "Send weekly report"}</button></div></header>
+  return <main className="space-y-6 p-5 sm:p-8"><header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#07845f]">Analytics</p><h1 className="mt-2 font-brand text-3xl font-bold text-[#17201c]">Lima demand insights</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">Use anonymized requests from Lima to understand what pilgrims want and help partners shape packages around real demand.</p></div><div className="flex flex-wrap items-center gap-3"><AppSelect value={rangeDays} onValueChange={setRangeDays} options={rangeOptions} className="w-44" /><button type="button" onClick={() => void refetch()} disabled={isFetching} className="inline-flex items-center gap-2 rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0] disabled:opacity-50"><RefreshCw className={`size-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh</button><button type="button" onClick={() => emailMutation.mutate()} disabled={emailMutation.isPending || !emailSettings.data?.enabled || emailSettings.isError || settingsMutation.isPending || emailSettings.isFetching} className="inline-flex items-center gap-2 rounded-lg bg-[#0d7d5f] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50"><Mail className="size-4" /> {emailMutation.isPending ? "Sending..." : "Send weekly report"}</button></div></header>
 
-    {emailMutation.isSuccess && <div className="rounded-xl border border-[#cfeee0] bg-[#eaf9f3] p-4 text-sm font-semibold text-[#0c6b50]">Weekly demand report sent to {emailMutation.data?.recipients ?? "the selected"} admin recipients.</div>}
+    <section className="rounded-xl border border-[#dbe2de] bg-white p-5">
+      <h2 className="font-brand text-lg font-bold text-[#17201c]">Report emails</h2>
+      <p className="mt-2 text-sm text-[#68716d]">When enabled, send the weekly report to {emailSettings.data?.recipient || "hello@ufitgo.ng"} every Monday at 8 AM Lagos time. Switching off blocks both scheduled and manual report emails. Analytics remain available.</p>
+      {emailSettings.isPending && <output className="mt-3 block text-sm">Loading email settings...</output>}
+      {emailSettings.isError && <p role="alert" className="mt-3 text-sm text-[#a43229]">{emailSettings.error.message} <button onClick={() => void emailSettings.refetch()} className="underline">Retry</button></p>}
+      {emailSettings.isSuccess && (
+        <div className="mt-4 flex items-center gap-4">
+          <span className="text-sm font-semibold">Emails are {emailSettings.data?.enabled ? "on" : "off"}</span>
+          {can(["settings.manage"]) && <button type="button" role="switch" aria-label="Enable Lima report emails" aria-checked={emailSettings.data?.enabled ?? false} disabled={settingsMutation.isPending || emailSettings.isFetching} onClick={() => settingsMutation.mutate(!emailSettings.data?.enabled)} className="rounded-lg border border-[#cbd5d0] px-4 py-2 text-sm font-bold disabled:opacity-50">{settingsMutation.isPending ? "Saving..." : emailSwitchLabel}</button>}
+          {!can(["settings.manage"]) && <span className="text-xs text-[#68716d]">An admin with settings permission can change this.</span>}
+        </div>
+      )}
+      {settingsMutation.isError && <p role="alert" className="mt-3 text-sm text-[#a43229]">{settingsMutation.error.message}</p>}
+    </section>
+    {emailMutation.isSuccess && <div className="rounded-xl border border-[#cfeee0] bg-[#eaf9f3] p-4 text-sm font-semibold text-[#0c6b50]">Weekly demand report sent to {emailSettings.data?.recipient}.</div>}
     {emailMutation.isError && <div className="rounded-xl border border-[#f4d0ca] bg-[#fff0ee] p-4 text-sm font-semibold text-[#a43229]">{emailMutation.error instanceof Error ? emailMutation.error.message : "Could not send report"}</div>}
     {error ? <div className="rounded-xl border border-[#f4d0ca] bg-[#fff0ee] p-8 text-center"><SearchX className="mx-auto size-8 text-[#a43229]" /><p className="mt-3 text-sm font-semibold text-[#a43229]">{error instanceof Error ? error.message : "Demand report unavailable"}</p></div> : isLoading ? <div className="grid place-items-center rounded-xl border border-[#dbe2de] bg-white p-16"><RefreshCw className="size-6 animate-spin text-[#0d7d5f]" /></div> : <>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{metrics.map(({ label, value, note, Icon }) => <div key={label} className="rounded-xl border border-[#dbe2de] bg-white p-4"><div className="flex items-center justify-between gap-3"><span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">{label}</span><Icon className="size-4 text-[#07845f]" /></div><p className="mt-4 text-2xl font-bold text-[#17201c]">{value}</p><p className="mt-1 text-xs text-[#7b8580]">{note}</p></div>)}</div>
