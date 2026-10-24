@@ -6,6 +6,18 @@ import { useCan } from "@/components/auth/permission-gate"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
+const SCHEDULE_PRESETS = [
+  { value: "* * * * *", label: "Every minute" },
+  { value: "*/5 * * * *", label: "Every 5 minutes" },
+  { value: "*/15 * * * *", label: "Every 15 minutes" },
+  { value: "0 * * * *", label: "Every hour" },
+  { value: "0 */6 * * *", label: "Every 6 hours" },
+  { value: "0 8 * * *", label: "Every day at 8:00 AM" },
+  { value: "0 8 * * 1", label: "Every Monday at 8:00 AM" },
+] as const
+
+const TIME_ZONES = ["Africa/Lagos", "UTC", "Europe/London", "Europe/Berlin", "America/New_York"] as const
+
 type Job = {
   key: string
   name: string
@@ -40,6 +52,48 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 function date(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "Not scheduled"
+}
+
+function scheduleSummary(expression: string) {
+  const preset = SCHEDULE_PRESETS.find((item) => item.value === expression)
+  if (preset) return preset.label
+  return `Custom schedule: ${expression || "enter a five-part cron expression"}`
+}
+
+function ScheduleEditor({ job, saving, onSave }: { job: Job; saving: boolean; onSave: (schedule: { cronExpression: string; timeZone: string }) => void }) {
+  const [cronExpression, setCronExpression] = useState(job.cronExpression)
+  const [timeZone, setTimeZone] = useState(job.timeZone)
+  const [advanced, setAdvanced] = useState(!SCHEDULE_PRESETS.some((item) => item.value === job.cronExpression))
+  const [customTimeZone, setCustomTimeZone] = useState(!TIME_ZONES.includes(job.timeZone as typeof TIME_ZONES[number]))
+  const changed = cronExpression !== job.cronExpression || timeZone !== job.timeZone
+
+  return <div className="space-y-2">
+    <p className="font-medium text-foreground">{scheduleSummary(cronExpression)}</p>
+    <label className="block text-xs text-muted-foreground">Frequency
+      <select className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={advanced ? "custom" : cronExpression} onChange={(event) => {
+        setAdvanced(event.target.value === "custom")
+        if (event.target.value !== "custom") setCronExpression(event.target.value)
+      }}>
+        {SCHEDULE_PRESETS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        <option value="custom">Advanced cron expression</option>
+      </select>
+    </label>
+    {advanced && <label className="block text-xs text-muted-foreground">Cron expression
+      <Input className="mt-1" aria-label={`${job.name} cron expression`} value={cronExpression} placeholder="minute hour day-of-month month day-of-week" onChange={(event) => setCronExpression(event.target.value)} />
+      <span className="mt-1 block">Five fields: minute, hour, day of month, month, day of week.</span>
+    </label>}
+    <label className="block text-xs text-muted-foreground">Time zone
+      <select className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={customTimeZone ? "custom" : timeZone} onChange={(event) => {
+        setCustomTimeZone(event.target.value === "custom")
+        if (event.target.value !== "custom") setTimeZone(event.target.value)
+      }}>
+        {TIME_ZONES.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+        <option value="custom">Custom IANA time zone</option>
+      </select>
+    </label>
+    {customTimeZone && <Input aria-label={`${job.name} custom time zone`} value={timeZone} placeholder="Continent/City" onChange={(event) => setTimeZone(event.target.value)} />}
+    <Button size="sm" variant="outline" disabled={!changed || saving} onClick={() => onSave({ cronExpression, timeZone })}>Save schedule</Button>
+  </div>
 }
 
 export default function SchedulerPage() {
@@ -81,14 +135,7 @@ export default function SchedulerPage() {
         <tbody>
           {jobs.data?.map((job) => <tr key={job.key} className="border-t align-top">
             <td className="p-3"><p className="font-medium">{job.name}</p><p className="mt-1 max-w-xs text-xs text-muted-foreground">{job.description}</p></td>
-            <td className="space-y-2 p-3">
-              <Input aria-label={`${job.name} cron expression`} defaultValue={job.cronExpression} onBlur={(event) => {
-                if (event.target.value !== job.cronExpression) mutate.mutate({ path: `/${job.key}`, method: "PATCH", body: { cronExpression: event.target.value } })
-              }} />
-              <Input aria-label={`${job.name} time zone`} defaultValue={job.timeZone} onBlur={(event) => {
-                if (event.target.value !== job.timeZone) mutate.mutate({ path: `/${job.key}`, method: "PATCH", body: { timeZone: event.target.value } })
-              }} />
-            </td>
+            <td className="p-3"><ScheduleEditor key={`${job.key}:${job.cronExpression}:${job.timeZone}`} job={job} saving={mutate.isPending} onSave={(schedule) => mutate.mutate({ path: `/${job.key}`, method: "PATCH", body: schedule })} /></td>
             <td className="p-3"><span className={job.enabled ? "font-medium text-emerald-700" : "text-muted-foreground"}>{job.enabled ? "Enabled" : "Disabled"}{job.lastStatus ? ` · last ${job.lastStatus}` : ""}</span></td>
             <td className="p-3">{date(job.nextRunAt)}<br/><span className="text-xs text-muted-foreground">Last: {date(job.lastRunAt)}</span></td>
             <td className="flex flex-wrap gap-2 p-3">
