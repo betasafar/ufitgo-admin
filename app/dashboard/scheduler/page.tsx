@@ -18,6 +18,8 @@ const SCHEDULE_PRESETS = [
 
 const TIME_ZONES = ["Africa/Lagos", "UTC", "Europe/London", "Europe/Berlin", "America/New_York"] as const
 
+const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
 type Job = {
   key: string
   name: string
@@ -57,7 +59,35 @@ function date(value?: string | null) {
 function scheduleSummary(expression: string) {
   const preset = SCHEDULE_PRESETS.find((item) => item.value === expression)
   if (preset) return preset.label
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = expression.trim().split(/\s+/)
+  if (![minute, hour, dayOfMonth, month, dayOfWeek].every(Boolean)) {
+    return "Enter a five-part cron expression"
+  }
+  if (minute === "*" && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return "Every minute"
+  }
+  if (/^\*\/\d+$/.test(minute) && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Every ${minute.slice(2)} minutes`
+  }
+  if (/^\d+$/.test(minute) && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Every hour at :${minute.padStart(2, "0")}`
+  }
+  if (/^\d+$/.test(minute) && /^\*\/\d+$/.test(hour) && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Every ${hour.slice(2)} hours at :${minute.padStart(2, "0")}`
+  }
+  if (/^\d+$/.test(minute) && /^\d+$/.test(hour) && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Every day at ${formatTime(hour, minute)}`
+  }
+  if (/^\d+$/.test(minute) && /^\d+$/.test(hour) && dayOfMonth === "*" && month === "*" && /^\d$/.test(dayOfWeek)) {
+    return `Every ${DAYS_OF_WEEK[Number(dayOfWeek) % 7]} at ${formatTime(hour, minute)}`
+  }
   return `Custom schedule: ${expression || "enter a five-part cron expression"}`
+}
+
+function formatTime(hour: string, minute: string) {
+  const numericHour = Number(hour)
+  const suffix = numericHour >= 12 ? "PM" : "AM"
+  return `${numericHour % 12 || 12}:${minute.padStart(2, "0")} ${suffix}`
 }
 
 function ScheduleEditor({ job, saving, onSave }: { job: Job; saving: boolean; onSave: (schedule: { cronExpression: string; timeZone: string }) => void }) {
