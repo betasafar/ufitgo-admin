@@ -14,9 +14,12 @@ interface EmailTemplate {
   subject: string
   htmlBody: string
   textBody?: string
+  headerTheme?: "default" | "ramadan" | "eid" | "hijrah"
+  headerMessage?: string
 }
 
-type FormState = { slug: string; category: string; subject: string; htmlBody: string; textBody: string }
+type HeaderTheme = "default" | "ramadan" | "eid" | "hijrah"
+type FormState = { slug: string; category: string; subject: string; htmlBody: string; textBody: string; headerTheme: HeaderTheme; headerMessage: string }
 
 const SYSTEM_SLUGS = ["welcome", "forgot_password", "password_reset_success", "kyc_approved", "kyc_rejected", "savings_reminder"]
 
@@ -26,6 +29,41 @@ const EMPTY_FORM: FormState = {
   subject: "",
   htmlBody: '<h2 style="color: #0F4C5C;">Hello {{userName}},</h2>\n<p style="color: #4A5568;">Type your email body here...</p>',
   textBody: "",
+  headerTheme: "default",
+  headerMessage: "",
+}
+
+const HEADER_THEME_OPTIONS: { value: HeaderTheme; label: string }[] = [
+  { value: "default", label: "UfitGo Green" },
+  { value: "ramadan", label: "Ramadan" },
+  { value: "eid", label: "Eid Mubarak" },
+  { value: "hijrah", label: "Hijrah New Year" },
+]
+
+function defaultHeaderMessage(theme: HeaderTheme) {
+  switch (theme) {
+    case "ramadan":
+      return "Ramadan Kareem"
+    case "eid":
+      return "Eid Mubarak"
+    case "hijrah":
+      return "Happy Hijrah New Year"
+    default:
+      return "Your Platform for Hajj & Umrah Planning"
+  }
+}
+
+function headerThemeClass(theme: HeaderTheme) {
+  switch (theme) {
+    case "ramadan":
+      return "bg-[#064e3b]"
+    case "eid":
+      return "bg-[#075b36]"
+    case "hijrah":
+      return "bg-[#12345b]"
+    default:
+      return "bg-[#046a38]"
+  }
 }
 
 function isSystemTemplate(tmpl: EmailTemplate) {
@@ -82,9 +120,9 @@ export default function NotificationTemplatesPage() {
   })
 
   const testEmailMutation = useMutation({
-    mutationFn: () => apiRequest<{ success?: boolean }>("/api/admin/notifications/broadcast", {
+    mutationFn: () => apiRequest<{ success?: boolean }>(`/api/admin/notifications/templates/${editingSlug}/test`, {
       method: "POST",
-      body: JSON.stringify({ targetType: "specific", channel: "email", title: form.subject || "Test send", body: form.htmlBody, recipients: [{ email: testEmail.trim() }] }),
+      body: JSON.stringify({ to: testEmail.trim() }),
     }),
     onSuccess: () => {
       setNotice(`Test email sent to ${testEmail.trim()}.`)
@@ -100,7 +138,15 @@ export default function NotificationTemplatesPage() {
   }
 
   function openEdit(tmpl: EmailTemplate) {
-    setForm({ slug: tmpl.slug, category: tmpl.category || "feature", subject: tmpl.subject, htmlBody: tmpl.htmlBody, textBody: tmpl.textBody || "" })
+    setForm({
+      slug: tmpl.slug,
+      category: tmpl.category || "feature",
+      subject: tmpl.subject,
+      htmlBody: tmpl.htmlBody,
+      textBody: tmpl.textBody || "",
+      headerTheme: HEADER_THEME_OPTIONS.some((option) => option.value === tmpl.headerTheme) ? tmpl.headerTheme as HeaderTheme : "default",
+      headerMessage: tmpl.headerMessage || "",
+    })
     setPreviewMode("preview")
     setEditingSlug(tmpl.slug)
   }
@@ -116,6 +162,7 @@ export default function NotificationTemplatesPage() {
 
   function handleSendTest() {
     setError("")
+    if (!editingSlug) return setError("Save this template before sending a test email.")
     if (!testEmail.trim() || !testEmail.includes("@")) return setError("Please enter a valid recipient email address.")
     testEmailMutation.mutate()
   }
@@ -216,11 +263,32 @@ export default function NotificationTemplatesPage() {
                   </label>
                 </div>
 
+                <div className="rounded-xl border border-[#d7e7de] bg-[#f7faf9] p-4">
+                  <div className="mb-3">
+                    <h4 className="text-sm font-bold text-[#17201c]">Email header</h4>
+                    <p className="mt-0.5 text-xs text-[#68716d]">Choose a controlled UfitGo theme and optional campaign greeting. The brand frame and legal footer remain consistent.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <label className="block text-xs font-bold text-[#68716d]">Header theme
+                      <AppSelect value={form.headerTheme} onValueChange={(value) => setForm((current) => ({ ...current, headerTheme: HEADER_THEME_OPTIONS.some((option) => option.value === value) ? value as HeaderTheme : "default" }))} className="mt-1" options={HEADER_THEME_OPTIONS} />
+                    </label>
+                    <label className="block text-xs font-bold text-[#68716d]">Header greeting (optional)
+                      <Input value={form.headerMessage} maxLength={160} onChange={(event) => setForm((current) => ({ ...current, headerMessage: event.target.value }))} placeholder={defaultHeaderMessage(form.headerTheme)} className="mt-1 h-10 text-xs" />
+                    </label>
+                  </div>
+                </div>
+
                 <label className="block text-xs font-bold text-[#68716d]">HTML body *
                   {previewMode === "code" ? (
                     <textarea required rows={12} value={form.htmlBody} onChange={(event) => setForm((current) => ({ ...current, htmlBody: event.target.value }))} className="mt-1 w-full rounded-lg border border-[#d3dad7] px-3 py-2 font-mono text-xs outline-none focus:border-[#07845f]" />
                   ) : (
-                    <div className="mt-1 max-h-80 overflow-y-auto rounded-lg border border-[#eef2f0] bg-[#f7faf9] p-4" dangerouslySetInnerHTML={{ __html: form.htmlBody || "<p style='color:#9aa19e'>No content yet</p>" }} />
+                    <div className="mt-1 max-h-80 overflow-y-auto rounded-lg border border-[#eef2f0] bg-[#f7faf9]">
+                      <div className={`px-6 py-5 text-center ${headerThemeClass(form.headerTheme)}`}>
+                        <img src="https://notification-service-oiob.onrender.com/assets/ufitgo-logo-light.png" alt="UfitGo" className="mx-auto h-auto w-44 max-w-full" />
+                        <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#fff7d6]">{form.headerMessage || defaultHeaderMessage(form.headerTheme)}</p>
+                      </div>
+                      <div className="p-4" dangerouslySetInnerHTML={{ __html: form.htmlBody || "<p style='color:#9aa19e'>No content yet</p>" }} />
+                    </div>
                   )}
                 </label>
 
@@ -230,8 +298,9 @@ export default function NotificationTemplatesPage() {
 
                 <div className="flex flex-col gap-2 rounded-xl border border-[#eef2f0] bg-[#f7faf9] p-4 sm:flex-row sm:items-center">
                   <Input value={testEmail} onChange={(event) => setTestEmail(event.target.value)} placeholder="Send a test to this email address" className="h-10 flex-1 bg-white text-xs" />
-                  <Button type="button" variant="outline" onClick={handleSendTest} disabled={testEmailMutation.isPending} className="h-10 rounded-lg text-xs"><Send className="size-3.5" /> {testEmailMutation.isPending ? "Sending..." : "Send test email"}</Button>
+                  <Button type="button" variant="outline" onClick={handleSendTest} disabled={testEmailMutation.isPending || !editingSlug} className="h-10 rounded-lg text-xs" title={!editingSlug ? "Save the template before sending a test." : undefined}><Send className="size-3.5" /> {testEmailMutation.isPending ? "Sending..." : "Send saved template"}</Button>
                 </div>
+                {!editingSlug && <p className="text-xs text-[#68716d]">Save the template first to send a test email with its selected header.</p>}
 
                 <div className="flex justify-end gap-3 border-t border-[#eef2f0] pt-4">
                   <Button type="button" variant="outline" onClick={closeModal} className="h-10 rounded-lg">Cancel</Button>
