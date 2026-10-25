@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" role="img" aria-labelledby="title">
+  <title id="title">UfitGo</title>
+  <path d="M88 68A42 42 0 1 1 40 18a34 34 0 1 0 48 50Z" fill="#dcb232"/>
+  <path d="M37 92V54c0-25 22-32 22-47 0 15 22 22 22 47v38Z" fill="#005f34"/>
+  <path d="M31 92h56v8H31z" fill="#005f34"/>
+  <text x="105" y="82" fill="#17201c" font-family="Georgia, 'Times New Roman', serif" font-size="68" font-weight="700">Ufit</text>
+  <text x="249" y="82" fill="#005f34" font-family="Georgia, 'Times New Roman', serif" font-size="68" font-weight="700">Go</text>
+</svg>

@@ -71,8 +71,8 @@ function headerThemeClass(theme: HeaderTheme) {
 
 function headerLogoSrc(theme: HeaderTheme) {
   return theme === "ivory"
-    ? "https://notification-service-oiob.onrender.com/assets/ufitgo-logo-colored.svg"
-    : "https://notification-service-oiob.onrender.com/assets/ufitgo-logo-light.svg"
+    ? "/branding/ufitgo-logo-colored.svg"
+    : "/branding/ufitgo-logo-light.svg"
 }
 
 function isSystemTemplate(tmpl: EmailTemplate) {
