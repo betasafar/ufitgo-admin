@@ -92,6 +92,8 @@ export default function NotificationTemplatesPage() {
   const templatesQuery = useQuery({
     queryKey: ["notification-templates"],
     queryFn: () => apiRequest<EmailTemplate[]>("/api/admin/notifications/templates"),
+    retry: false,
+    refetchOnWindowFocus: false,
   })
   const templates = templatesQuery.data || []
 
