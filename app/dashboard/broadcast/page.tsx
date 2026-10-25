@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AppSelect } from "@/components/ui/app-select"
 import { PermissionGate } from "@/components/auth/permission-gate"
+import { useToast } from "@/components/feedback/toast-provider"
 
 interface EmailTemplate {
   slug: string
@@ -22,6 +23,16 @@ interface ScheduledBroadcast {
   channel: string
   scheduledAt: string
   status: string
+}
+
+interface DeliveryLog {
+  id: string
+  channel: string
+  recipient: string
+  status: "sent" | "failed"
+  errorMessage?: string
+  metadata?: string
+  createdAt: string
 }
 
 const FALLBACK_TEMPLATES: EmailTemplate[] = [
@@ -56,6 +67,7 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export default function BroadcastPage() {
+  const { toast } = useToast()
   const queryClient = useQueryClient()
   const [form, setForm] = useState(EMPTY_FORM)
   const [sendMode, setSendMode] = useState<"now" | "schedule">("now")
@@ -63,6 +75,8 @@ export default function BroadcastPage() {
   const [selectedTemplateSlug, setSelectedTemplateSlug] = useState("")
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
+  const [deliveryBroadcastId, setDeliveryBroadcastId] = useState<string | null>(null)
+  const [expectedDeliveryCount, setExpectedDeliveryCount] = useState(0)
 
   const templatesQuery = useQuery({
     queryKey: ["notification-templates"],
@@ -75,6 +89,18 @@ export default function BroadcastPage() {
     queryFn: () => apiRequest<{ data: ScheduledBroadcast[] }>("/api/admin/notifications/scheduled"),
   })
   const scheduledBroadcasts = scheduledQuery.data?.data || []
+  const deliveryLogsQuery = useQuery({
+    queryKey: ["broadcast-delivery-logs", deliveryBroadcastId],
+    queryFn: () => apiRequest<{ data: DeliveryLog[]; total: number }>(`/api/admin/notifications/logs?broadcastId=${encodeURIComponent(deliveryBroadcastId!)}`),
+    enabled: Boolean(deliveryBroadcastId),
+    refetchInterval: (query) => {
+      const logs = query.state.data?.data || []
+      return logs.length < expectedDeliveryCount ? 2000 : false
+    },
+  })
+  const deliveryLogs = deliveryLogsQuery.data?.data || []
+  const sentCount = deliveryLogs.filter((log) => log.status === "sent").length
+  const failedCount = deliveryLogs.filter((log) => log.status === "failed").length
 
   function resetForm() {
     setForm(EMPTY_FORM)
@@ -107,27 +133,44 @@ export default function BroadcastPage() {
   }
 
   const sendMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) => apiRequest<{ success: boolean; targetsReached?: number; pushError?: string | null }>("/api/admin/notifications/broadcast", { method: "POST", body: JSON.stringify(payload) }),
+    mutationFn: (payload: Record<string, unknown>) => apiRequest<{ success: boolean; targetsReached?: number; pushError?: string | null; deliveryBroadcastId?: string }>("/api/admin/notifications/broadcast", { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: (result, payload) => {
       const recipients = payload.recipients as Array<unknown> | undefined
       const count = recipients?.length ?? result.targetsReached ?? 0
-      setNotice(`Broadcast sent to ${count} recipient(s).`)
+      const message = `Broadcast accepted for ${count} recipient(s). Delivery results are loading below.`
+      setNotice(message)
+      toast(message)
+      setDeliveryBroadcastId(result.deliveryBroadcastId || null)
+      setExpectedDeliveryCount(count)
       window.setTimeout(() => setNotice(""), 6000)
-      if (result.pushError) setError(`Push notification failed: ${result.pushError}`)
+      if (result.pushError) {
+        const message = `Push notification failed: ${result.pushError}`
+        setError(message)
+        toast(message, "error")
+      }
       resetForm()
     },
-    onError: (requestError) => setError(requestError instanceof Error ? requestError.message : "Failed to send broadcast."),
+    onError: (requestError) => {
+      const message = requestError instanceof Error ? requestError.message : "Failed to send broadcast."
+      setError(message)
+      toast(message, "error")
+    },
   })
 
   const scheduleMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) => apiRequest<{ success: boolean }>("/api/admin/notifications/schedule", { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: () => {
       setNotice("Broadcast scheduled successfully.")
+      toast("Broadcast scheduled successfully.")
       window.setTimeout(() => setNotice(""), 6000)
       resetForm()
       queryClient.invalidateQueries({ queryKey: ["scheduled-broadcasts"] })
     },
-    onError: (requestError) => setError(requestError instanceof Error ? requestError.message : "Failed to schedule broadcast."),
+    onError: (requestError) => {
+      const message = requestError instanceof Error ? requestError.message : "Failed to schedule broadcast."
+      setError(message)
+      toast(message, "error")
+    },
   })
 
   const cancelMutation = useMutation({
@@ -180,6 +223,18 @@ export default function BroadcastPage() {
 
         {error && <p role="alert" className="flex items-center gap-2 rounded-lg border border-[#f4c7c3] bg-[#fff4f2] px-4 py-3 text-sm text-[#9f261f]"><CircleAlert className="size-4 shrink-0" /> {error}</p>}
         {notice && <p role="status" className="flex items-center gap-2 rounded-lg border border-[#cfeee0] bg-[#eaf9f3] px-4 py-3 text-sm text-[#0c6b50]"><CheckCircle2 className="size-4 shrink-0" /> {notice}</p>}
+        {deliveryBroadcastId && <section className="rounded-xl border border-[#d9dfdc] bg-white p-5 shadow-sm" aria-label="Broadcast delivery results">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="font-brand text-lg font-bold text-[#17201c]">Delivery results</h2><p className="text-xs text-[#68716d]">Provider dispatch status for this broadcast. “Sent” means the provider accepted the message; check Postmark for final delivery events.</p></div>
+            <Button type="button" variant="outline" size="sm" onClick={() => deliveryLogsQuery.refetch()} disabled={deliveryLogsQuery.isFetching}>Refresh</Button>
+          </div>
+          <div className="mt-3 flex gap-3 text-sm"><span className="rounded bg-[#dff7ee] px-2 py-1 text-[#0c6b50]">{sentCount} provider accepted</span><span className="rounded bg-[#fff4f2] px-2 py-1 text-[#9f261f]">{failedCount} failed</span>{deliveryLogsQuery.isFetching && <span className="text-[#68716d]">Checking…</span>}</div>
+          <ul className="mt-3 divide-y divide-[#eef2f0]">{deliveryLogs.map((log) => {
+            const metadata = (() => { try { return JSON.parse(log.metadata || "{}") as { provider?: string; messageId?: string } } catch { return {} } })()
+            return <li key={log.id} className="py-2 text-sm"><span className={log.status === "sent" ? "font-semibold text-[#0c6b50]" : "font-semibold text-[#9f261f]"}>{log.status === "sent" ? "Provider accepted" : "Failed"}</span> · {log.recipient} · {metadata.provider || log.channel}{metadata.messageId && <span className="block text-xs text-[#68716d]">Postmark message ID: {metadata.messageId}</span>}{log.errorMessage && <span className="block text-xs text-[#9f261f]">{log.errorMessage}</span>}</li>
+          })}</ul>
+          {!deliveryLogsQuery.isFetching && deliveryLogs.length === 0 && <p className="mt-3 text-sm text-[#68716d]">Waiting for Notification Service to record delivery results…</p>}
+        </section>}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
