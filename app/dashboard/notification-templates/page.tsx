@@ -14,11 +14,11 @@ interface EmailTemplate {
   subject: string
   htmlBody: string
   textBody?: string
-  headerTheme?: "default" | "ramadan" | "eid" | "hijrah"
+  headerTheme?: "default" | "ivory" | "ramadan" | "eid" | "hijrah"
   headerMessage?: string
 }
 
-type HeaderTheme = "default" | "ramadan" | "eid" | "hijrah"
+type HeaderTheme = "default" | "ivory" | "ramadan" | "eid" | "hijrah"
 type FormState = { slug: string; category: string; subject: string; htmlBody: string; textBody: string; headerTheme: HeaderTheme; headerMessage: string }
 
 const SYSTEM_SLUGS = ["welcome", "forgot_password", "password_reset_success", "kyc_approved", "kyc_rejected", "savings_reminder"]
@@ -35,6 +35,7 @@ const EMPTY_FORM: FormState = {
 
 const HEADER_THEME_OPTIONS: { value: HeaderTheme; label: string }[] = [
   { value: "default", label: "UfitGo Green" },
+  { value: "ivory", label: "UfitGo Ivory" },
   { value: "ramadan", label: "Ramadan" },
   { value: "eid", label: "Eid Mubarak" },
   { value: "hijrah", label: "Hijrah New Year" },
@@ -61,9 +62,17 @@ function headerThemeClass(theme: HeaderTheme) {
       return "bg-[#075b36]"
     case "hijrah":
       return "bg-[#12345b]"
+    case "ivory":
+      return "bg-[#f8f3e7]"
     default:
       return "bg-[#046a38]"
   }
+}
+
+function headerLogoSrc(theme: HeaderTheme) {
+  return theme === "ivory"
+    ? "https://notification-service-oiob.onrender.com/assets/ufitgo-logo-colored.svg"
+    : "https://notification-service-oiob.onrender.com/assets/ufitgo-logo-light.svg"
 }
 
 function isSystemTemplate(tmpl: EmailTemplate) {
@@ -286,8 +295,8 @@ export default function NotificationTemplatesPage() {
                   ) : (
                     <div className="mt-1 max-h-80 overflow-y-auto rounded-lg border border-[#eef2f0] bg-[#f7faf9]">
                       <div className={`px-6 py-5 text-center ${headerThemeClass(form.headerTheme)}`}>
-                        <img src="https://notification-service-oiob.onrender.com/assets/ufitgo-logo-light.png" alt="UfitGo" className="mx-auto h-auto w-44 max-w-full" />
-                        <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#fff7d6]">{form.headerMessage || defaultHeaderMessage(form.headerTheme)}</p>
+                        <img src={headerLogoSrc(form.headerTheme)} alt="UfitGo" className="mx-auto h-auto w-44 max-w-full" />
+                        <p className={`mt-2 text-[10px] font-bold uppercase tracking-[0.16em] ${form.headerTheme === "ivory" ? "text-[#046a38]" : "text-[#fff7d6]"}`}>{form.headerMessage || defaultHeaderMessage(form.headerTheme)}</p>
                       </div>
                       <div className="p-4" dangerouslySetInnerHTML={{ __html: form.htmlBody || "<p style='color:#9aa19e'>No content yet</p>" }} />
                     </div>
