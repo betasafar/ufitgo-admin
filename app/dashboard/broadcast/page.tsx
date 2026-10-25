@@ -35,12 +35,6 @@ interface DeliveryLog {
   createdAt: string
 }
 
-const FALLBACK_TEMPLATES: EmailTemplate[] = [
-  { slug: "lead_early_savings", subject: "🕋 Start Your Hajj & Umrah Journey Early: Smart Savings Tips", htmlBody: "Salam! Fulfilling your dream of visiting the Holy Land begins with small, consistent steps today. Set up an EasySavings goal on UfitGo and save gradually at your own pace." },
-  { slug: "lead_trending_packages", subject: "✨ Top-Rated Hajj & Umrah Packages This Month", htmlBody: "Discover our top-rated travel packages from verified, NAHCON-licensed tour operators! Explore verified packages on UfitGo today." },
-  { slug: "lead_hajj_checklist", subject: "📋 Essential Checklist for First-Time Pilgrims", htmlBody: "Preparing for your first Hajj or Umrah? Check out our essential guide on packing, health tips, and spiritual preparation on UfitGo." },
-]
-
 const CHANNELS = [
   { id: "email", label: "Email only", icon: Mail },
   { id: "push", label: "Push notification", icon: Bell },
@@ -81,21 +75,27 @@ export default function BroadcastPage() {
   const templatesQuery = useQuery({
     queryKey: ["notification-templates"],
     queryFn: () => apiRequest<EmailTemplate[]>("/api/admin/notifications/templates"),
+    retry: false,
+    refetchOnWindowFocus: false,
   })
-  const templates = templatesQuery.data && templatesQuery.data.length > 0 ? templatesQuery.data : FALLBACK_TEMPLATES
+  const templates = templatesQuery.data || []
 
   const scheduledQuery = useQuery({
     queryKey: ["scheduled-broadcasts"],
     queryFn: () => apiRequest<{ data: ScheduledBroadcast[] }>("/api/admin/notifications/scheduled"),
+    retry: false,
+    refetchOnWindowFocus: false,
   })
   const scheduledBroadcasts = scheduledQuery.data?.data || []
   const deliveryLogsQuery = useQuery({
     queryKey: ["broadcast-delivery-logs", deliveryBroadcastId],
     queryFn: () => apiRequest<{ data: DeliveryLog[]; total: number }>(`/api/admin/notifications/logs?broadcastId=${encodeURIComponent(deliveryBroadcastId!)}`),
     enabled: Boolean(deliveryBroadcastId),
+    retry: false,
+    refetchOnWindowFocus: false,
     refetchInterval: (query) => {
       const logs = query.state.data?.data || []
-      return logs.length < expectedDeliveryCount ? 2000 : false
+      return query.state.status !== "error" && logs.length < expectedDeliveryCount ? 2000 : false
     },
   })
   const deliveryLogs = deliveryLogsQuery.data?.data || []
@@ -233,7 +233,8 @@ export default function BroadcastPage() {
             const metadata = (() => { try { return JSON.parse(log.metadata || "{}") as { provider?: string; messageId?: string } } catch { return {} } })()
             return <li key={log.id} className="py-2 text-sm"><span className={log.status === "sent" ? "font-semibold text-[#0c6b50]" : "font-semibold text-[#9f261f]"}>{log.status === "sent" ? "Provider accepted" : "Failed"}</span> · {log.recipient} · {metadata.provider || log.channel}{metadata.messageId && <span className="block text-xs text-[#68716d]">Postmark message ID: {metadata.messageId}</span>}{log.errorMessage && <span className="block text-xs text-[#9f261f]">{log.errorMessage}</span>}</li>
           })}</ul>
-          {!deliveryLogsQuery.isFetching && deliveryLogs.length === 0 && <p className="mt-3 text-sm text-[#68716d]">Waiting for Notification Service to record delivery results…</p>}
+          {deliveryLogsQuery.isError && <p role="alert" className="mt-3 text-sm text-[#9f261f]">Could not load delivery results: {deliveryLogsQuery.error instanceof Error ? deliveryLogsQuery.error.message : "Please retry."}</p>}
+          {!deliveryLogsQuery.isFetching && !deliveryLogsQuery.isError && deliveryLogs.length === 0 && <p className="mt-3 text-sm text-[#68716d]">Waiting for Notification Service to record delivery results…</p>}
         </section>}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -290,6 +291,7 @@ export default function BroadcastPage() {
                     <label className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#8a6500]"><Sparkles className="size-4" /> Load template preset</label>
                     {templatesQuery.isFetching && <span className="flex items-center gap-1 text-[10px] font-semibold text-[#8a6500]"><LoaderCircle className="size-3 animate-spin" /> Fetching...</span>}
                   </div>
+                  {templatesQuery.isError && <div role="alert" className="mt-2 flex items-center justify-between gap-3 text-xs text-[#9f261f]"><span>Live templates are unavailable: {templatesQuery.error instanceof Error ? templatesQuery.error.message : "Please retry."}</span><button type="button" onClick={() => templatesQuery.refetch()} className="shrink-0 font-semibold underline" disabled={templatesQuery.isFetching}>Retry</button></div>}
                   <AppSelect
                     value={selectedTemplateSlug}
                     onValueChange={handleTemplateSelect}
@@ -346,7 +348,7 @@ export default function BroadcastPage() {
         <div className="space-y-4 rounded-2xl border border-[#d9dfdc] bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <h3 className="flex items-center gap-2 font-brand text-lg font-bold text-[#17201c]"><Clock className="size-4 text-[#07845f]" /> Upcoming & past scheduled broadcasts</h3>
-            <button onClick={() => queryClient.invalidateQueries({ queryKey: ["scheduled-broadcasts"] })} className="text-xs font-semibold text-[#07845f] hover:underline">Refresh</button>
+            <button onClick={() => scheduledQuery.refetch()} className="text-xs font-semibold text-[#07845f] hover:underline disabled:opacity-50" disabled={scheduledQuery.isFetching}>Refresh</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -363,6 +365,8 @@ export default function BroadcastPage() {
               <tbody className="divide-y divide-[#eef2f0]">
                 {scheduledQuery.isLoading ? (
                   <tr><td colSpan={6} className="px-4 py-6 text-center text-[#9aa19e]">Loading scheduled broadcasts...</td></tr>
+                ) : scheduledQuery.isError ? (
+                  <tr><td colSpan={6} role="alert" className="px-4 py-6 text-center text-[#9f261f]">Could not load scheduled broadcasts: {scheduledQuery.error instanceof Error ? scheduledQuery.error.message : "Please refresh and try again."}</td></tr>
                 ) : scheduledBroadcasts.length === 0 ? (
                   <tr><td colSpan={6} className="px-4 py-6 text-center text-[#9aa19e]">No scheduled broadcasts found.</td></tr>
                 ) : (
