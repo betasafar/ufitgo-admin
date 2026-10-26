@@ -1,5 +1,6 @@
 import {
   Activity,
+  BellRing,
   Banknote,
   BarChart3,
   BookOpenCheck,
@@ -98,6 +99,7 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
       { label: "Broadcast", href: "/dashboard/broadcast", icon: Send, permissions: ["marketing.manage"], available: true },
       { label: "Email templates", href: "/dashboard/notification-templates", icon: Mail, permissions: ["marketing.manage"], available: true },
       { label: "App waitlist", href: "/dashboard/app-waitlist", icon: Users, permissions: ["marketing.manage"], available: true },
+      { label: "Journey alerts", href: "/dashboard/journey-alerts", icon: BellRing, permissions: ["marketing.manage"], available: true },
     ],
   },
   {
