@@ -624,7 +624,7 @@ export default function SettingsPage() {
           {configLoading ? (
             <div className="mt-8 grid place-items-center"><div className="size-6 animate-spin rounded-full border-2 border-[#0d7d5f] border-t-transparent" /></div>
           ) : (
-            <div className="mt-5 space-y-3">
+            <div className="mt-5">
               <div className="flex items-center justify-between gap-4 rounded-xl border border-[#e9bc72] bg-[#fff8e8] p-4">
                 <div>
                   <p className="flex items-center gap-2 font-bold text-[#17201c]"><CircleAlert className="size-4 text-[#a95b00]" /> Demo mode</p>
@@ -632,24 +632,31 @@ export default function SettingsPage() {
                 </div>
                 <ToggleSwitch checked={Boolean(config?.demoMode)} disabled={savingDemoMode} onChange={() => void toggleDemoMode(Boolean(config?.demoMode))} />
               </div>
-              {featureToggles.map((feature) => {
-                const isActive = feature.key === "enableHomeAds"
-                  ? config?.features?.[feature.key] !== false
-                  : config?.features?.[feature.key] === true
-                const showNewBadge = feature.badgeId ? Boolean((config?.features?.newFeatureBadges as string[] | undefined)?.includes(feature.badgeId)) : false
-                return (
-                  <div key={feature.key} className="flex items-center justify-between gap-4 rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
-                    <div>
-                      <p className="font-bold text-[#17201c]">{feature.label}</p>
-                      <p className="mt-0.5 text-xs text-[#7b8580]">{feature.desc}</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                {featureToggles.map((feature) => {
+                  const isActive = feature.key === "enableHomeAds"
+                    ? config?.features?.[feature.key] !== false
+                    : config?.features?.[feature.key] === true
+                  const showNewBadge = feature.badgeId ? Boolean((config?.features?.newFeatureBadges as string[] | undefined)?.includes(feature.badgeId)) : false
+                  return (
+                    <div key={feature.key} className="flex min-h-40 flex-col rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
+                      <div>
+                        <p className="font-bold text-[#17201c]">{feature.label}</p>
+                        <p className="mt-0.5 text-xs leading-5 text-[#7b8580]">{feature.desc}</p>
+                      </div>
+                      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-[#dbe2de] pt-3">
+                        {feature.badgeId && isActive ? (
+                          <label className="flex items-center gap-2 text-xs font-bold text-[#a62b2b]">
+                            <span>Show NEW badge</span>
+                            <ToggleSwitch checked={showNewBadge} disabled={savingFeature === `badge-${feature.badgeId}`} onChange={() => void toggleNewBadge(feature.badgeId!, showNewBadge)} />
+                          </label>
+                        ) : <span />}
+                        <ToggleSwitch checked={isActive} disabled={savingFeature === feature.key} onChange={() => void toggleFeature(feature.key, isActive)} />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      {feature.badgeId && isActive && <label className="flex items-center gap-2 text-xs font-bold text-[#a62b2b]"><span>Show NEW badge</span><ToggleSwitch checked={showNewBadge} disabled={savingFeature === `badge-${feature.badgeId}`} onChange={() => void toggleNewBadge(feature.badgeId!, showNewBadge)} /></label>}
-                      <ToggleSwitch checked={isActive} disabled={savingFeature === feature.key} onChange={() => void toggleFeature(feature.key, isActive)} />
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
           )}
         </section>
