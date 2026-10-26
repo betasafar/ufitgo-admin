@@ -32,11 +32,13 @@ interface JourneyAlertResult {
 
 type AlertPurpose = "HAJJ_OPENING" | "TARGET_SAVINGS"
 type CampaignStatus = "DRAFT" | "SCHEDULED" | "SENDING" | "SENT" | "PARTIALLY_FAILED" | "CANCELLED"
+type CampaignAudience = "ALL_ACTIVE" | "UNNOTIFIED"
 
 interface Campaign {
   id: string
   purpose: AlertPurpose
   status: CampaignStatus
+  audience: CampaignAudience
   title: string
   message: string
   emailSubject: string
@@ -49,11 +51,14 @@ interface Campaign {
   failedCount: number
   scheduledAt: string | null
   sentAt: string | null
+  availabilityLive: boolean
+  availabilityEndedAt: string | null
   createdAt: string
 }
 
 type CampaignDraft = {
   purpose: AlertPurpose
+  audience: CampaignAudience
   title: string
   message: string
   emailSubject: string
@@ -96,6 +101,7 @@ function createDraft(purpose: AlertPurpose): CampaignDraft {
   const isHajj = purpose === "HAJJ_OPENING"
   return {
     purpose,
+    audience: "ALL_ACTIVE",
     title: isHajj ? "Hajj packages are now available" : "Target Savings is now available",
     message: isHajj
       ? "Verified Hajj packages are now available. View current options and compare departures from your city."
@@ -171,6 +177,13 @@ export default function JourneyAlertsPage() {
       await refreshCampaignData()
     },
   })
+  const closeAvailability = useMutation({
+    mutationFn: (campaignId: string) => request<Campaign>(`journey-alerts/campaigns/${campaignId}/close-availability`, { method: "POST" }),
+    onSuccess: async () => {
+      setNotice("Live availability ended. New subscribers will no longer receive this announcement automatically.")
+      await refreshCampaignData()
+    },
+  })
   const testCampaign = useMutation({
     mutationFn: ({ campaignId, recipientEmail }: { campaignId: string; recipientEmail: string }) => request<{ recipientEmail: string }>(`journey-alerts/campaigns/${campaignId}/test`, {
       method: "POST",
@@ -222,6 +235,9 @@ export default function JourneyAlertsPage() {
             <label className="space-y-1.5 text-sm font-medium text-[#36413d]">Audience
               <AppSelect value={draft.purpose} onValueChange={(value) => setDraft(createDraft(value as AlertPurpose))} options={[{ value: "HAJJ_OPENING", label: "Active Hajj-opening subscribers" }, { value: "TARGET_SAVINGS", label: "Active Target Savings subscribers" }]} />
             </label>
+            <label className="space-y-1.5 text-sm font-medium text-[#36413d]">Recipients
+              <AppSelect value={draft.audience} onValueChange={(value) => setDraft({ ...draft, audience: value as CampaignAudience })} options={[{ value: "ALL_ACTIVE", label: "All active subscribers" }, { value: "UNNOTIFIED", label: "Only subscribers not yet notified" }]} />
+            </label>
             <label className="space-y-1.5 text-sm font-medium text-[#36413d]">Schedule for later <span className="font-normal text-[#68716d]">(optional)</span>
               <Input type="datetime-local" value={draft.scheduledAt} onChange={(event) => setDraft({ ...draft, scheduledAt: event.target.value })} />
             </label>
@@ -241,9 +257,9 @@ export default function JourneyAlertsPage() {
       <section className="overflow-hidden rounded-xl border border-[#d9dfdc] bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1ef] px-5 py-4"><div><h3 className="text-sm font-bold text-[#36413d]">Campaign history</h3><p className="mt-1 text-xs text-[#68716d]">Test before sending. Publishing delivers a persistent in-app notice, requests push where available, and sends email through Notification Service.</p></div>{canPublish && <Button size="sm" variant="outline" onClick={() => openComposer("TARGET_SAVINGS")}><Mail className="size-4" /> New Target Savings campaign</Button>}</div>
         {campaignsQuery.isPending ? <div role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-[#68716d]"><Loader2 className="size-5 animate-spin" /> Loading campaigns...</div> : campaignsQuery.isError ? <p role="alert" className="px-5 py-6 text-sm text-[#a43229]">{campaignsQuery.error.message}</p> : campaignsQuery.data?.length === 0 ? <p className="px-5 py-10 text-center text-sm text-[#68716d]">No campaigns have been created yet.</p> : (
-          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-[#f7faf9] text-xs text-[#68716d]"><tr>{["Campaign", "Audience", "Delivery", "Status", "Actions"].map((heading) => <th key={heading} scope="col" className="whitespace-nowrap px-5 py-3 font-semibold">{heading}</th>)}</tr></thead><tbody className="divide-y divide-[#edf1ef]">{campaignsQuery.data?.map((campaign) => <tr key={campaign.id}><td className="min-w-72 px-5 py-4"><p className="font-medium text-[#36413d]">{campaign.title}</p><p className="mt-0.5 text-xs text-[#68716d]">{purposeLabel(campaign.purpose)} · {campaign.scheduledAt ? `Scheduled ${formatDate(campaign.scheduledAt)}` : `Created ${formatDate(campaign.createdAt)}`}</p></td><td className="whitespace-nowrap px-5 py-4 text-[#68716d]">{campaign.audienceCount.toLocaleString()} active subscribers</td><td className="whitespace-nowrap px-5 py-4 text-xs text-[#68716d]"><p>In-app: {campaign.inAppDeliveredCount}</p><p>Push requested: {campaign.pushRequestedCount}</p><p>Email accepted: {campaign.emailAcceptedCount}</p>{campaign.failedCount > 0 && <p className="text-[#a43229]">Failures: {campaign.failedCount}</p>}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle(campaign.status)}`}>{campaign.status.replace("_", " ")}</span></td><td className="min-w-56 px-5 py-4">{canPublish && (campaign.status === "DRAFT" || campaign.status === "SCHEDULED") ? <div className="space-y-2"><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { const email = testRecipientEmail.trim(); if (email) testCampaign.mutate({ campaignId: campaign.id, recipientEmail: email }) }} disabled={testCampaign.isPending || !testRecipientEmail.trim()}><Mail className="size-3.5" /> Test</Button><Button size="sm" onClick={() => sendCampaign.mutate(campaign.id)} disabled={sendCampaign.isPending} className="bg-[#07845f] text-white hover:bg-[#0c6b50]"><Send className="size-3.5" /> Send now</Button><Button size="sm" variant="ghost" onClick={() => cancelCampaign.mutate(campaign.id)} disabled={cancelCampaign.isPending}>Cancel</Button></div><Input aria-label="Test recipient email" type="email" placeholder="Test customer email" value={testRecipientEmail} onChange={(event) => setTestRecipientEmail(event.target.value)} /></div> : <span className="text-xs text-[#68716d]">{campaign.sentAt ? `Sent ${formatDate(campaign.sentAt)}` : "No actions available"}</span>}</td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-[#f7faf9] text-xs text-[#68716d]"><tr>{["Campaign", "Audience", "Delivery", "Status", "Actions"].map((heading) => <th key={heading} scope="col" className="whitespace-nowrap px-5 py-3 font-semibold">{heading}</th>)}</tr></thead><tbody className="divide-y divide-[#edf1ef]">{campaignsQuery.data?.map((campaign) => <tr key={campaign.id}><td className="min-w-72 px-5 py-4"><p className="font-medium text-[#36413d]">{campaign.title}</p><p className="mt-0.5 text-xs text-[#68716d]">{purposeLabel(campaign.purpose)} · {campaign.scheduledAt ? `Scheduled ${formatDate(campaign.scheduledAt)}` : `Created ${formatDate(campaign.createdAt)}`}</p></td><td className="px-5 py-4 text-[#68716d]"><p className="whitespace-nowrap">{campaign.audienceCount.toLocaleString()} recipients</p><p className="mt-0.5 text-xs">{campaign.audience === "UNNOTIFIED" ? "Not yet notified only" : "All active subscribers"}</p></td><td className="whitespace-nowrap px-5 py-4 text-xs text-[#68716d]"><p>In-app: {campaign.inAppDeliveredCount}</p><p>Push requested: {campaign.pushRequestedCount}</p><p>Email accepted: {campaign.emailAcceptedCount}</p>{campaign.failedCount > 0 && <p className="text-[#a43229]">Failures: {campaign.failedCount}</p>}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle(campaign.status)}`}>{campaign.status.replace("_", " ")}</span>{campaign.availabilityLive && <p className="mt-2 whitespace-nowrap text-xs font-semibold text-[#0c6b50]">Availability live</p>}</td><td className="min-w-56 px-5 py-4">{canPublish && (campaign.status === "DRAFT" || campaign.status === "SCHEDULED") ? <div className="space-y-2"><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { const email = testRecipientEmail.trim(); if (email) testCampaign.mutate({ campaignId: campaign.id, recipientEmail: email }) }} disabled={testCampaign.isPending || !testRecipientEmail.trim()}><Mail className="size-3.5" /> Test</Button><Button size="sm" onClick={() => sendCampaign.mutate(campaign.id)} disabled={sendCampaign.isPending} className="bg-[#07845f] text-white hover:bg-[#0c6b50]"><Send className="size-3.5" /> Send now</Button><Button size="sm" variant="ghost" onClick={() => cancelCampaign.mutate(campaign.id)} disabled={cancelCampaign.isPending}>Cancel</Button></div><Input aria-label="Test recipient email" type="email" placeholder="Test customer email" value={testRecipientEmail} onChange={(event) => setTestRecipientEmail(event.target.value)} /></div> : canPublish && campaign.availabilityLive ? <Button size="sm" variant="outline" onClick={() => closeAvailability.mutate(campaign.id)} disabled={closeAvailability.isPending}>End availability</Button> : <span className="text-xs text-[#68716d]">{campaign.sentAt ? `Sent ${formatDate(campaign.sentAt)}` : "No actions available"}</span>}</td></tr>)}</tbody></table></div>
         )}
-        {(sendCampaign.isError || cancelCampaign.isError || testCampaign.isError) && <p role="alert" className="border-t border-[#f4c7c3] bg-[#fff4f2] px-5 py-3 text-sm text-[#a43229]">{sendCampaign.error?.message || cancelCampaign.error?.message || testCampaign.error?.message}</p>}
+        {(sendCampaign.isError || cancelCampaign.isError || closeAvailability.isError || testCampaign.isError) && <p role="alert" className="border-t border-[#f4c7c3] bg-[#fff4f2] px-5 py-3 text-sm text-[#a43229]">{sendCampaign.error?.message || cancelCampaign.error?.message || closeAvailability.error?.message || testCampaign.error?.message}</p>}
       </section>
 
       <section className="space-y-4">
