@@ -20,7 +20,7 @@ export const PERMISSION_GROUPS = {
   Support: ["leads.manage"],
   Growth: ["referrals.manage"],
   Monitoring: ["monitoring.read", "infrastructure.read"],
-  "Marketing & Tools": ["marketing.manage", "extensions.manage"],
+  "Marketing & Tools": ["marketing.manage", "communications.publish", "extensions.manage"],
   Platform: ["settings.manage", "audit.read"],
 } as const
 
