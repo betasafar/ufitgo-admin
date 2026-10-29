@@ -1,7 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CheckCircle2, CircleAlert, Database, ExternalLink, ListChecks, Loader2, Play, RefreshCw, Radio, XCircle } from "lucide-react"
+import { CheckCircle2, CircleAlert, Database, ExternalLink, ListChecks, Loader2, Play, RefreshCw, Radio, ShieldAlert, Shuffle, XCircle } from "lucide-react"
+
+type ProviderHealthSnapshot = {
+  provider: string
+  state: string
+  manualOverride?: boolean
+  consecutiveFailures?: number
+  lastSuccessAt?: string
+  lastFailureAt?: string
+  lastLatencyMs?: number
+}
 
 type WebhookEvent = {
   id: string
@@ -61,6 +71,10 @@ export default function FcmbWebhooksPage() {
   const [events, setEvents] = useState<WebhookEvent[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([])
+  const [providers, setProviders] = useState<ProviderHealthSnapshot[]>([])
+  const [routingStrategy, setRoutingStrategy] = useState<string>("round_robin")
+  const [updatingProvider, setUpdatingProvider] = useState<string | null>(null)
+  const [updatingStrategy, setUpdatingStrategy] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<WebhookEvent | null>(null)
   const [accountNumber, setAccountNumber] = useState("4000138405")
   const [amount, setAmount] = useState("1200")
@@ -74,23 +88,77 @@ export default function FcmbWebhooksPage() {
     setLoading(true)
     setError("")
     try {
-      const [webhooksResponse, accountsResponse, ledgerResponse] = await Promise.all([
+      const [webhooksResponse, accountsResponse, ledgerResponse, healthResponse] = await Promise.all([
         fetch("/api/admin/fcmb-diagnostics/webhooks", { cache: "no-store" }),
         fetch("/api/admin/fcmb-diagnostics/accounts", { cache: "no-store" }),
         fetch("/api/admin/fcmb-diagnostics/ledger?limit=50", { cache: "no-store" }),
+        fetch("/api/admin/fcmb-diagnostics/providers/health", { cache: "no-store" }).catch(() => null),
       ])
       const webhooksPayload = await webhooksResponse.json().catch(() => null)
       const accountsPayload = await accountsResponse.json().catch(() => null)
       const ledgerPayload = await ledgerResponse.json().catch(() => null)
-      if (!webhooksResponse.ok || !accountsResponse.ok || !ledgerResponse.ok) throw new Error(webhooksPayload?.message || accountsPayload?.message || ledgerPayload?.message || "Unable to load FCMB diagnostics.")
+      const healthPayload = healthResponse ? await healthResponse.json().catch(() => null) : null
+      if (!webhooksResponse.ok || !accountsResponse.ok || !ledgerResponse.ok) throw new Error(webhooksPayload?.message || accountsPayload?.message || ledgerPayload?.message || "Unable to load BaaS diagnostics.")
       setEvents(Array.isArray(webhooksPayload?.events) ? webhooksPayload.events : [])
       setAccounts(Array.isArray(accountsPayload?.accounts) ? accountsPayload.accounts : [])
       setLedgerEntries(Array.isArray(ledgerPayload?.entries) ? ledgerPayload.entries : [])
+      if (Array.isArray(healthPayload?.providers)) {
+        setProviders(healthPayload.providers)
+      }
+      if (healthPayload?.routingStrategy) {
+        setRoutingStrategy(healthPayload.routingStrategy)
+      }
       setSelectedEvent((current) => current ?? webhooksPayload?.events?.[0] ?? null)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load diagnostics.")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const toggleProviderState = async (providerName: string, nextState: "HEALTHY" | "UNAVAILABLE") => {
+    setUpdatingProvider(providerName)
+    setError("")
+    setNotice("")
+    try {
+      const response = await fetch(`/api/admin/fcmb-diagnostics/providers/${encodeURIComponent(providerName)}/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          state: nextState,
+          reason: nextState === "UNAVAILABLE" ? "Manual admin kill-switch activated" : "Manual admin restore to healthy",
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.message || "Failed to update provider state.")
+      if (Array.isArray(payload?.providers)) setProviders(payload.providers)
+      setNotice(`Provider ${providerName.toUpperCase()} set to ${nextState}.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update provider state.")
+    } finally {
+      setUpdatingProvider(null)
+    }
+  }
+
+  const changeRoutingStrategy = async (strategy: "round_robin" | "primary_fallback") => {
+    setUpdatingStrategy(true)
+    setError("")
+    setNotice("")
+    try {
+      const response = await fetch("/api/admin/fcmb-diagnostics/providers/routing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strategy }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.message || "Failed to update routing strategy.")
+      if (payload?.routingStrategy) setRoutingStrategy(payload.routingStrategy)
+      if (Array.isArray(payload?.providers)) setProviders(payload.providers)
+      setNotice(`Routing strategy updated to ${strategy === "round_robin" ? "Round-Robin (50/50 distribution)" : "Primary + Fallback"}.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update routing strategy.")
+    } finally {
+      setUpdatingStrategy(false)
     }
   }
 
@@ -143,14 +211,122 @@ export default function FcmbWebhooksPage() {
       <div className="mx-auto max-w-[1480px]">
         <header className="flex flex-col gap-5 border-b border-[#d7e2dc] pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-[#07845f]"><Radio className="size-4" /> FCMB sandbox</div>
-            <h1 className="mt-2 text-3xl font-bold">Webhook Diagnostics</h1>
-            <p className="mt-2 text-sm text-[#5c6d64]">Callback: https://api.ufitgo.ng/api/internal/baas/webhooks/fcmb</p>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-[#07845f]"><Radio className="size-4" /> Multi-Provider BaaS Control & Diagnostics</div>
+            <h1 className="mt-2 text-3xl font-bold">BaaS Providers, Failover & Webhooks</h1>
+            <p className="mt-2 text-sm text-[#5c6d64]">Callbacks: /api/internal/baas/webhooks/fcmb · /api/internal/baas/webhooks/providus</p>
           </div>
           <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#b9ccc2] bg-white px-4 text-sm font-bold text-[#204236] hover:bg-[#edf5f0] disabled:opacity-60">
             <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} /> Refresh
           </button>
         </header>
+
+        <section className="mt-6 rounded-xl border border-[#d7e2dc] bg-white p-5 shadow-[0_10px_30px_rgba(20,55,40,0.06)]">
+          <div className="flex flex-col gap-4 border-b border-[#e5ede8] pb-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-2.5">
+              <ShieldAlert className="size-5 text-[#07845f]" />
+              <div>
+                <h2 className="text-lg font-bold">BaaS Provider Health & Outage Kill-Switch</h2>
+                <p className="text-xs text-[#63736b]">
+                  Putting a bank into Maintenance immediately routes new signups and payouts to the healthy backup bank and promotes backup NUBANs in customers&apos; mobile apps.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#5c6d64]">
+                <Shuffle className="size-3.5" /> Routing:
+              </span>
+              <button
+                type="button"
+                disabled={updatingStrategy}
+                onClick={() => void changeRoutingStrategy("round_robin")}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                  routingStrategy === "round_robin"
+                    ? "border-[#07845f] bg-[#07845f] text-white"
+                    : "border-[#c9d8d0] bg-white text-[#204236] hover:bg-[#edf5f0]"
+                }`}
+              >
+                Round-Robin (50/50)
+              </button>
+              <button
+                type="button"
+                disabled={updatingStrategy}
+                onClick={() => void changeRoutingStrategy("primary_fallback")}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                  routingStrategy === "primary_fallback"
+                    ? "border-[#07845f] bg-[#07845f] text-white"
+                    : "border-[#c9d8d0] bg-white text-[#204236] hover:bg-[#edf5f0]"
+                }`}
+              >
+                Primary + Fallback
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {(providers.length > 0
+              ? providers
+              : [
+                  { provider: "fcmb", state: "HEALTHY", consecutiveFailures: 0, lastLatencyMs: 0 },
+                  { provider: "providus", state: "HEALTHY", consecutiveFailures: 0, lastLatencyMs: 0 },
+                ]
+            ).map((prov) => {
+              const isHealthy = prov.state === "HEALTHY" || prov.state === "RECOVERY"
+              const isBusy = updatingProvider === prov.provider
+              return (
+                <div
+                  key={prov.provider}
+                  className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${
+                    isHealthy ? "border-[#b8e2cc] bg-[#f6fcf9]" : "border-[#f1c4bd] bg-[#fff5f4]"
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-extrabold uppercase tracking-wide">
+                        {prov.provider}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                          isHealthy
+                            ? "bg-[#dcfce7] text-[#146c38]"
+                            : "bg-[#fee2e2] text-[#991b1b]"
+                        }`}
+                      >
+                        {prov.state}
+                        {prov.manualOverride ? " (Manual)" : ""}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-[#5c6d64]">
+                      Failures: {prov.consecutiveFailures ?? 0} · Last Latency: {prov.lastLatencyMs ?? 0}ms
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isHealthy ? (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => void toggleProviderState(prov.provider, "UNAVAILABLE")}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#e08b82] bg-white px-3 text-xs font-bold text-[#a83b31] hover:bg-[#fff0ee] disabled:opacity-60"
+                      >
+                        {isBusy && <Loader2 className="size-3.5 animate-spin" />}
+                        Activate Kill-Switch (Pause)
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => void toggleProviderState(prov.provider, "HEALTHY")}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#07845f] px-3 text-xs font-bold text-white hover:bg-[#05684a] disabled:opacity-60"
+                      >
+                        {isBusy && <Loader2 className="size-3.5 animate-spin" />}
+                        Restore to Healthy
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-xl border border-[#d7e2dc] bg-white p-5 shadow-[0_10px_30px_rgba(20,55,40,0.06)]">
