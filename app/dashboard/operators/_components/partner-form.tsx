@@ -32,6 +32,16 @@ type PartnerFormState = {
   guideLanguages: string
   guideExperience: string
   guideExpertise: string
+  bdcLicense: string
+  dailyVolume: string
+  state: string
+  airport_proximity: string
+  location_tier: string
+  supported_currencies: string
+  stock_status: string
+  google_maps_url: string
+  cbn_license_verified: boolean
+  is_premium_partner: boolean
 }
 
 const initialForm: PartnerFormState = {
@@ -59,6 +69,16 @@ const initialForm: PartnerFormState = {
   guideLanguages: "",
   guideExperience: "",
   guideExpertise: "",
+  bdcLicense: "",
+  dailyVolume: "",
+  state: "Lagos",
+  airport_proximity: "MMIA Lagos",
+  location_tier: "A",
+  supported_currencies: "USD, SAR",
+  stock_status: "In Stock",
+  google_maps_url: "",
+  cbn_license_verified: true,
+  is_premium_partner: false,
 }
 
 const partnerTypes = [
@@ -115,13 +135,23 @@ export function PartnerForm({ operatorId }: PartnerFormProps) {
           guideLanguages: textValue(operator.guideLanguages || operator.guide_languages),
           guideExperience: textValue(operator.guideExperience || operator.guide_experience),
           guideExpertise: Array.isArray(operator.guideExpertise || operator.guide_expertise) ? (operator.guideExpertise || operator.guide_expertise).join(", ") : textValue(operator.guideExpertise || operator.guide_expertise),
+          bdcLicense: textValue(operator.bdcLicense || operator.bdc_license),
+          dailyVolume: textValue(operator.dailyVolume || operator.daily_volume),
+          state: textValue(operator.state || operator.location || "Lagos"),
+          airport_proximity: textValue(operator.airport_proximity || "MMIA Lagos"),
+          location_tier: textValue(operator.location_tier || "A"),
+          supported_currencies: Array.isArray(operator.supported_currencies) ? operator.supported_currencies.join(", ") : textValue(operator.supported_currencies || "USD, SAR"),
+          stock_status: textValue(operator.stock_status || "In Stock"),
+          google_maps_url: textValue(operator.google_maps_url),
+          cbn_license_verified: operator.cbn_license_verified !== undefined ? Boolean(operator.cbn_license_verified) : true,
+          is_premium_partner: Boolean(operator.is_premium_partner),
         })
       })
       .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "Unable to load partner."))
       .finally(() => setLoading(false))
   }, [operatorId])
 
-  const updateField = (field: keyof PartnerFormState, value: string) => setForm((current) => ({ ...current, [field]: value }))
+  const updateField = <K extends keyof PartnerFormState>(field: K, value: PartnerFormState[K]) => setForm((current) => ({ ...current, [field]: value }))
   const inputClass = "mt-1.5 h-11 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm text-[#17201c] outline-none transition focus:border-[#07845f]"
   const labelClass = "block text-sm font-bold text-[#32443d]"
 
@@ -138,6 +168,7 @@ export function PartnerForm({ operatorId }: PartnerFormProps) {
       foundedAt: form.foundedAt ? Number(form.foundedAt) : undefined,
       yearsOfExperience: form.foundedAt ? Math.max(0, new Date().getFullYear() - Number(form.foundedAt)) : undefined,
       guideExpertise: form.guideExpertise.split(",").map((item) => item.trim()).filter(Boolean),
+      supported_currencies: form.supported_currencies.split(",").map((item) => item.trim().toUpperCase()).filter(Boolean),
     }
     delete payload.officeAddress
     if (isEdit) {
@@ -206,7 +237,64 @@ export function PartnerForm({ operatorId }: PartnerFormProps) {
           {form.partnerType === "transport" && <><label className={labelClass}>Transport registration<input value={form.transportReg} onChange={(event) => updateField("transportReg", event.target.value)} className={inputClass} /></label><label className={labelClass}>Fleet size<input value={form.fleetSize} onChange={(event) => updateField("fleetSize", event.target.value)} className={inputClass} /></label></>}
           {form.partnerType === "sim-seller" && <><label className={labelClass}>Telecom permit<input value={form.telecomPermit} onChange={(event) => updateField("telecomPermit", event.target.value)} className={inputClass} /></label><label className={labelClass}>Supported networks<input value={form.supportedNetworks} onChange={(event) => updateField("supportedNetworks", event.target.value)} className={inputClass} /></label></>}
           {form.partnerType === "tour-guide" && <><label className={labelClass}>Languages<input value={form.guideLanguages} onChange={(event) => updateField("guideLanguages", event.target.value)} className={inputClass} /></label><label className={labelClass}>Experience<input value={form.guideExperience} onChange={(event) => updateField("guideExperience", event.target.value)} className={inputClass} /></label><label className={`${labelClass} md:col-span-2`}>Expertise<input value={form.guideExpertise} onChange={(event) => updateField("guideExpertise", event.target.value)} placeholder="Separate areas with commas" className={inputClass} /></label></>}
-          {form.partnerType === "exchange-agent" && <p className="text-sm text-[#68716d] md:col-span-2">No additional profile fields are required for FX agents. Compliance documents are managed from the partner dossier.</p>}
+          {form.partnerType === "exchange-agent" && (
+            <>
+              <label className={labelClass}>
+                CBN BDC licence number
+                <input value={form.bdcLicense} onChange={(event) => updateField("bdcLicense", event.target.value)} placeholder="e.g., CBN/BDC/2024/091" className={inputClass} />
+              </label>
+              <label className={labelClass}>
+                State
+                <select value={form.state} onChange={(event) => updateField("state", event.target.value)} className={inputClass}>
+                  <option value="Lagos">Lagos</option>
+                  <option value="Abuja">Abuja</option>
+                  <option value="Kano">Kano</option>
+                  <option value="Port Harcourt">Port Harcourt</option>
+                </select>
+              </label>
+              <label className={labelClass}>
+                Departure airport proximity
+                <select value={form.airport_proximity} onChange={(event) => updateField("airport_proximity", event.target.value)} className={inputClass}>
+                  <option value="MMIA Lagos">MMIA Lagos</option>
+                  <option value="NAIA Abuja">NAIA Abuja</option>
+                  <option value="MAKIA Kano">MAKIA Kano</option>
+                  <option value="PHIA Port Harcourt">PHIA Port Harcourt</option>
+                </select>
+              </label>
+              <label className={labelClass}>
+                Supported currencies (comma-separated)
+                <input value={form.supported_currencies} onChange={(event) => updateField("supported_currencies", event.target.value)} placeholder="USD, SAR, GBP" className={inputClass} />
+              </label>
+              <label className={labelClass}>
+                Stock availability status
+                <select value={form.stock_status} onChange={(event) => updateField("stock_status", event.target.value)} className={inputClass}>
+                  <option value="In Stock">In Stock</option>
+                  <option value="Limited Stock">Limited Stock</option>
+                  <option value="Pre-Order Only">Pre-Order Only</option>
+                </select>
+              </label>
+              <label className={labelClass}>
+                Location tier
+                <select value={form.location_tier} onChange={(event) => updateField("location_tier", event.target.value)} className={inputClass}>
+                  <option value="A">Tier A (Inside / Immediate Airport Corridor)</option>
+                  <option value="B">Tier B (Major Commercial Hub)</option>
+                  <option value="C">Tier C (City Branch)</option>
+                </select>
+              </label>
+              <label className={`${labelClass} md:col-span-2`}>
+                Google Maps directions URL
+                <input value={form.google_maps_url} onChange={(event) => updateField("google_maps_url", event.target.value)} placeholder="https://maps.google.com/?q=..." className={inputClass} />
+              </label>
+              <label className="flex items-center gap-2.5 text-sm font-bold text-[#32443d]">
+                <input type="checkbox" checked={form.cbn_license_verified} onChange={(event) => updateField("cbn_license_verified", event.target.checked)} className="size-4 accent-[#07845f]" />
+                CBN licence verified (show in Travel FX Directory)
+              </label>
+              <label className="flex items-center gap-2.5 text-sm font-bold text-[#32443d]">
+                <input type="checkbox" checked={form.is_premium_partner} onChange={(event) => updateField("is_premium_partner", event.target.checked)} className="size-4 accent-[#07845f]" />
+                Premium Partner placement (pinned at top of FX results)
+              </label>
+            </>
+          )}
         </div></section>
 
         <div className="flex flex-wrap justify-end gap-3"><Link href={isEdit ? `/dashboard/operators/${operatorId}` : "/dashboard/operators"} className="rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">Cancel</Link><button disabled={saving} type="submit" className="inline-flex items-center gap-2 rounded-lg bg-[#07845f] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60">{saving ? <Loader2 className="size-4 animate-spin" /> : isEdit ? <Save className="size-4" /> : <UserPlus className="size-4" />}{saving ? "Saving…" : isEdit ? "Save changes" : "Create partner"}</button></div>
