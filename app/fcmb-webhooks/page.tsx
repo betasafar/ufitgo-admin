@@ -262,10 +262,11 @@ export default function FcmbWebhooksPage() {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
             {(providers.length > 0
               ? providers
               : [
+                  { provider: "paystack", state: "HEALTHY", consecutiveFailures: 0, lastLatencyMs: 0 },
                   { provider: "fcmb", state: "HEALTHY", consecutiveFailures: 0, lastLatencyMs: 0 },
                   { provider: "providus", state: "HEALTHY", consecutiveFailures: 0, lastLatencyMs: 0 },
                 ]
