@@ -75,6 +75,7 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     items: [
       { label: "Payments", href: "/dashboard/payments", icon: CreditCard, permissions: ["payments.read"], available: true },
       { label: "Commissions", href: "/dashboard/commissions", icon: Banknote, permissions: ["commissions.manage"], available: true },
+      { label: "Treasury & Float", href: "/fcmb-webhooks", icon: Activity, permissions: ["payments.read", "reconciliation.manage"], mode: "any", available: true },
     ],
   },
   {
