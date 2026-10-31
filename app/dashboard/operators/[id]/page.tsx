@@ -112,6 +112,7 @@ type OperatorRecord = {
   tier?: string
   country?: string
   location?: string
+  state?: string
   address?: string
   description?: string
   nahconId?: string
@@ -123,12 +124,49 @@ type OperatorRecord = {
   guideLanguages?: string
   guideExperience?: string
   guideExpertise?: string[] | string
+  bdcLicense?: string
+  dailyVolume?: string
+  airport_proximity?: string
+  location_tier?: string
+  supported_currencies?: string[] | string
+  stock_status?: string
+  google_maps_url?: string
+  cbn_license_verified?: boolean
+  is_premium_partner?: boolean
   businessOwner?: BusinessOwner | null
   packages?: PackageRecord[]
   documents?: DocumentRecord[]
   totalBookings?: number | string
   totalRevenue?: number | string
   trustScore?: number | string
+}
+
+type FxLeadSummary = {
+  bdcId: number
+  totalLeads: number
+  calls: number
+  whatsappClicks: number
+  directions: number
+}
+
+type OperatorSettlementConfig = {
+  inAppWalletEnabled?: boolean
+  paystackSubaccountId?: string | null
+  settlementStatus?: string
+  virtualAccountDetails?: {
+    provider?: string
+    accountNumber?: string
+    bankName?: string
+    accountName?: string
+    reference?: string
+    inAppWalletEnabled?: boolean
+  } | null
+  settlementBankAccount?: {
+    bankCode?: string
+    bankName?: string
+    accountNumber?: string
+    accountName?: string
+  } | null
 }
 
 function pick<T>(...values: Array<T | null | undefined>): T | undefined {
@@ -218,6 +256,84 @@ function VerificationPill({ status }: { status?: string }) {
   )
 }
 
+function normalizeOperatorDetail(detail: any, operatorId: string): OperatorRecord {
+  const documentSource = Array.isArray(detail?.tierDocuments)
+    ? detail.tierDocuments
+    : Array.isArray(detail?.documents)
+      ? detail.documents
+      : []
+  const documents = documentSource.map((doc: any) => ({
+    id: pick(doc?.id, doc?.documentId),
+    type: pick(doc?.type, doc?.documentType),
+    status: pick(doc?.status, doc?.documentStatus),
+    filename: pick(doc?.filename, doc?.name),
+    url: pick(doc?.url, doc?.documentUrl, doc?.fileUrl),
+    createdAt: pick(doc?.createdAt, doc?.created_at),
+    metadata: doc?.metadata || {},
+  }))
+
+  return {
+    id: pick(detail?.id, operatorId),
+    companyName: pick(detail?.companyName, detail?.company_name, detail?.name),
+    email: pick(detail?.email, detail?.emailAddress),
+    phone: pick(detail?.phone, detail?.phoneNumber, detail?.whatsappNumber, detail?.mobile),
+    whatsappNumber: pick(detail?.whatsappNumber, detail?.whatsapp_number),
+    partnerType: pick(detail?.partnerType, detail?.partner_type, detail?.type),
+    verificationStatus: pick(detail?.verificationStatus, detail?.verification_status, detail?.status, "pending"),
+    isActive: Boolean(detail?.isActive ?? detail?.active ?? true),
+    createdAt: pick(detail?.createdAt, detail?.created_at, detail?.joinedAt),
+    tier: pick(detail?.tier, detail?.commissionTier),
+    country: pick(detail?.country, detail?.countryCode),
+    location: pick(detail?.location, detail?.city),
+    state: pick(detail?.state, detail?.location),
+    address: pick(detail?.address, detail?.physicalAddress),
+    description: pick(detail?.description, detail?.bio),
+    nahconId: pick(detail?.nahconId, detail?.nahcon_id),
+    capacity: pick(detail?.capacity, detail?.operatorCapacity),
+    transportReg: pick(detail?.transportReg, detail?.transport_reg),
+    fleetSize: pick(detail?.fleetSize, detail?.fleet_size),
+    telecomPermit: pick(detail?.telecomPermit, detail?.telecom_permit),
+    supportedNetworks: pick(detail?.supportedNetworks, detail?.supported_networks),
+    guideLanguages: pick(detail?.guideLanguages, detail?.guide_languages),
+    guideExperience: pick(detail?.guideExperience, detail?.guide_experience),
+    guideExpertise: pick(detail?.guideExpertise, detail?.guide_expertise),
+    bdcLicense: pick(detail?.bdcLicense, detail?.bdc_license),
+    dailyVolume: pick(detail?.dailyVolume, detail?.daily_volume),
+    airport_proximity: pick(detail?.airport_proximity, detail?.airportProximity),
+    location_tier: pick(detail?.location_tier, detail?.locationTier),
+    supported_currencies: pick(detail?.supported_currencies, detail?.supportedCurrencies),
+    stock_status: pick(detail?.stock_status, detail?.stockStatus, "In Stock"),
+    google_maps_url: pick(detail?.google_maps_url, detail?.googleMapsUrl),
+    cbn_license_verified: Boolean(detail?.cbn_license_verified ?? detail?.cbnLicenseVerified),
+    is_premium_partner: Boolean(detail?.is_premium_partner ?? detail?.isPremiumPartner),
+    businessOwner: detail?.businessOwner || null,
+    packages: (Array.isArray(detail?.packages) ? detail.packages : []).map((pkg: any) => ({
+      id: pick(pkg?.id, pkg?.packageId),
+      title: pick(pkg?.title, pkg?.name),
+      type: pick(pkg?.type, pkg?.packageType),
+      price: pick(pkg?.price, pkg?.amount, pkg?.startingPrice),
+      departureDate: pick(pkg?.departureDate, pkg?.departure_date),
+      returnDate: pick(pkg?.returnDate, pkg?.return_date),
+      isActive: Boolean(pkg?.isActive ?? pkg?.active ?? true),
+    })),
+    documents,
+    totalBookings: pick(detail?.totalBookings, detail?.bookingsCount),
+    totalRevenue: pick(detail?.totalRevenue, detail?.revenue, detail?.grossRevenue),
+    trustScore: pick(detail?.trustScore, detail?.rating, detail?.score),
+  }
+}
+
+async function fetchOptionalData<T>(url: string): Promise<T | null> {
+  try {
+    const response = await fetch(url, { cache: "no-store" })
+    const payload = await response.json().catch(() => null)
+    const data = payload?.data || payload
+    return data && typeof data === "object" ? data as T : null
+  } catch {
+    return null
+  }
+}
+
 export default function OperatorDetailPage() {
   const params = useParams<{ id: string }>()
   const operatorId = params.id
@@ -232,6 +348,15 @@ export default function OperatorDetailPage() {
   const [editingMediaId, setEditingMediaId] = useState<number | null>(null)
   const [accountActionLoading, setAccountActionLoading] = useState(false)
   const [accountActionError, setAccountActionError] = useState("")
+  const [fxLeads, setFxLeads] = useState<FxLeadSummary>({
+    bdcId: Number(operatorId || 0),
+    totalLeads: 0,
+    calls: 0,
+    whatsappClicks: 0,
+    directions: 0,
+  })
+  const [settlementConfig, setSettlementConfig] = useState<OperatorSettlementConfig | null>(null)
+  const [togglingPayoutMode, setTogglingPayoutMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -261,69 +386,16 @@ export default function OperatorDetailPage() {
         if (!response.ok) throw new Error(payload?.message || "Unable to load operator")
 
         const detail = payload?.data || payload || {}
-        const packages = Array.isArray(detail?.packages) ? detail.packages : []
+        const normalizedOperator = normalizeOperatorDetail(detail, operatorId)
+        setOperator(normalizedOperator)
 
-        const documents = Array.isArray(detail?.tierDocuments)
-          ? detail.tierDocuments.map((doc: any) => ({
-              id: pick(doc?.id, doc?.documentId),
-              type: pick(doc?.type, doc?.documentType),
-              status: pick(doc?.status, doc?.documentStatus),
-              filename: pick(doc?.filename, doc?.name),
-              url: pick(doc?.url, doc?.documentUrl, doc?.fileUrl),
-              createdAt: pick(doc?.createdAt, doc?.created_at),
-              metadata: doc?.metadata || {},
-            }))
-          : Array.isArray(detail?.documents)
-            ? detail.documents.map((doc: any) => ({
-                id: pick(doc?.id, doc?.documentId),
-                type: pick(doc?.type, doc?.documentType),
-                status: pick(doc?.status, doc?.documentStatus),
-                filename: pick(doc?.filename, doc?.name),
-                url: pick(doc?.url, doc?.documentUrl, doc?.fileUrl),
-                createdAt: pick(doc?.createdAt, doc?.created_at),
-                metadata: doc?.metadata || {},
-              }))
-            : []
+        const settlement = await fetchOptionalData<OperatorSettlementConfig>(`/api/admin/operator-auth/operators/${operatorId}/settlement-config`)
+        if (settlement) setSettlementConfig(settlement)
 
-        setOperator({
-          id: pick(detail?.id, operatorId),
-          companyName: pick(detail?.companyName, detail?.company_name, detail?.name),
-          email: pick(detail?.email, detail?.emailAddress),
-          phone: pick(detail?.phone, detail?.phoneNumber, detail?.whatsappNumber, detail?.mobile),
-          whatsappNumber: pick(detail?.whatsappNumber, detail?.whatsapp_number),
-          partnerType: pick(detail?.partnerType, detail?.partner_type, detail?.type),
-          verificationStatus: pick(detail?.verificationStatus, detail?.verification_status, detail?.status, "pending"),
-          isActive: Boolean(detail?.isActive ?? detail?.active ?? true),
-          createdAt: pick(detail?.createdAt, detail?.created_at, detail?.joinedAt),
-          tier: pick(detail?.tier, detail?.commissionTier),
-          country: pick(detail?.country, detail?.countryCode),
-          location: pick(detail?.location, detail?.city),
-          address: pick(detail?.address, detail?.physicalAddress),
-          description: pick(detail?.description, detail?.bio),
-          nahconId: pick(detail?.nahconId, detail?.nahcon_id),
-          capacity: pick(detail?.capacity, detail?.operatorCapacity),
-          transportReg: pick(detail?.transportReg, detail?.transport_reg),
-          fleetSize: pick(detail?.fleetSize, detail?.fleet_size),
-          telecomPermit: pick(detail?.telecomPermit, detail?.telecom_permit),
-          supportedNetworks: pick(detail?.supportedNetworks, detail?.supported_networks),
-          guideLanguages: pick(detail?.guideLanguages, detail?.guide_languages),
-          guideExperience: pick(detail?.guideExperience, detail?.guide_experience),
-          guideExpertise: pick(detail?.guideExpertise, detail?.guide_expertise),
-          businessOwner: detail?.businessOwner || null,
-          packages: packages.map((pkg: any) => ({
-            id: pick(pkg?.id, pkg?.packageId),
-            title: pick(pkg?.title, pkg?.name),
-            type: pick(pkg?.type, pkg?.packageType),
-            price: pick(pkg?.price, pkg?.amount, pkg?.startingPrice),
-            departureDate: pick(pkg?.departureDate, pkg?.departure_date),
-            returnDate: pick(pkg?.returnDate, pkg?.return_date),
-            isActive: Boolean(pkg?.isActive ?? pkg?.active ?? true),
-          })),
-          documents,
-          totalBookings: pick(detail?.totalBookings, detail?.bookingsCount),
-          totalRevenue: pick(detail?.totalRevenue, detail?.revenue, detail?.grossRevenue),
-          trustScore: pick(detail?.trustScore, detail?.rating, detail?.score),
-        })
+        if (normalizedOperator.partnerType === "exchange-agent") {
+          const leads = await fetchOptionalData<FxLeadSummary>(`/api/admin/operator-auth/operators/${operatorId}/fx-leads`)
+          if (typeof leads?.totalLeads === "number") setFxLeads(leads)
+        }
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : "Unable to load operator.")
       } finally {
@@ -382,7 +454,7 @@ export default function OperatorDetailPage() {
     }))
   }
 
-  const saveMedia = async (event: React.FormEvent<HTMLFormElement>) => {
+  const saveMedia: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
     if (!operatorId || !mediaDraft.videoUrl.trim()) return
 
@@ -625,43 +697,244 @@ export default function OperatorDetailPage() {
                 {operator.businessOwner?.nin && <div>NIN: {operator.businessOwner.nin}</div>}
               </div>
             </section>
+
+            <section className="rounded-2xl border border-[#dbe2de] bg-white p-5">
+              <div className="flex items-center justify-between">
+                <h3 className="font-brand flex items-center gap-2 text-lg font-bold text-[#17201c]">
+                  <Wallet className="size-4 text-[#07845f]" /> Settlement routing
+                </h3>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                    settlementConfig?.inAppWalletEnabled
+                      ? "bg-[#dcfce7] text-[#15803d]"
+                      : "bg-[#fef3c7] text-[#b45309]"
+                  }`}
+                >
+                  {settlementConfig?.inAppWalletEnabled
+                    ? "Primary: In-App Wallet"
+                    : "Secondary: Direct Bank"}
+                </span>
+              </div>
+
+              <div className="mt-3 space-y-3 text-xs text-[#68716d]">
+                <div className="rounded-xl border border-[#e5ede8] bg-[#f9fbfa] p-3">
+                  <div className="font-bold text-[#17201c]">
+                    1. Primary Account (In-App Wallet & DVA)
+                  </div>
+                  {settlementConfig?.virtualAccountDetails?.accountNumber ? (
+                    <div className="mt-1 space-y-0.5">
+                      <div>
+                        Bank: <strong>{settlementConfig.virtualAccountDetails.bankName}</strong>
+                      </div>
+                      <div>
+                        DVA:{" "}
+                        <strong className="font-mono">
+                          {settlementConfig.virtualAccountDetails.accountNumber}
+                        </strong>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-[#78817d]">
+                      Auto-provisioned on settlement setup or when toggled below.
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-[#e5ede8] bg-[#f9fbfa] p-3">
+                  <div className="font-bold text-[#17201c]">
+                    2. Secondary Account (Locked Payout Bank)
+                  </div>
+                  {settlementConfig?.settlementBankAccount?.accountNumber ? (
+                    <div className="mt-1 space-y-0.5">
+                      <div>
+                        Bank:{" "}
+                        <strong>
+                          {settlementConfig.settlementBankAccount.bankName ||
+                            settlementConfig.settlementBankAccount.bankCode}
+                        </strong>
+                      </div>
+                      <div>
+                        NUBAN:{" "}
+                        <strong className="font-mono">
+                          {settlementConfig.settlementBankAccount.accountNumber}
+                        </strong>
+                      </div>
+                      <div className="truncate">
+                        {settlementConfig.settlementBankAccount.accountName}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-[#78817d]">
+                      Subaccount: {settlementConfig?.paystackSubaccountId || "Not set yet"}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={togglingPayoutMode}
+                  onClick={async () => {
+                    if (!operatorId) return
+                    const nextMode = !settlementConfig?.inAppWalletEnabled
+                    setTogglingPayoutMode(true)
+                    try {
+                      const res = await fetch(
+                        `/api/admin/operator-auth/operators/${operatorId}/payout-mode`,
+                        {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ inAppWalletEnabled: nextMode }),
+                        }
+                      )
+                      const data = await res.json().catch(() => null)
+                      if (res.ok && data) {
+                        setSettlementConfig((prev) => ({
+                          ...prev,
+                          inAppWalletEnabled: Boolean(data.inAppWalletEnabled),
+                          virtualAccountDetails:
+                            data.virtualAccountDetails || prev?.virtualAccountDetails || null,
+                        }))
+                      }
+                    } finally {
+                      setTogglingPayoutMode(false)
+                    }
+                  }}
+                  className="w-full rounded-lg border border-[#07845f] bg-white px-3 py-2 text-xs font-bold text-[#07845f] transition hover:bg-[#edf5f0] disabled:opacity-50"
+                >
+                  {togglingPayoutMode
+                    ? "Updating..."
+                    : settlementConfig?.inAppWalletEnabled
+                      ? "Switch to Secondary (Direct Bank Payout)"
+                      : "Enable Primary (In-App Wallet + DVA)"}
+                </button>
+              </div>
+            </section>
           </aside>
 
           <section className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
-                <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
-                  <span>Packages</span>
-                  <BriefcaseBusiness className="size-4 text-[#07845f]" />
+            {operator.partnerType === "exchange-agent" ? (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
+                    <span>Total FX Leads</span>
+                    <BriefcaseBusiness className="size-4 text-[#07845f]" />
+                  </div>
+                  <p className="mt-4 text-3xl font-bold text-[#17201c]">{fxLeads.totalLeads}</p>
+                  <p className="mt-1 text-xs text-[#7b8580]">Traveler inquiries</p>
                 </div>
-                <p className="mt-4 text-3xl font-bold text-[#17201c]">{summary.packages}</p>
-                <p className="mt-1 text-xs text-[#7b8580]">Live board</p>
-              </div>
-              <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
-                <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
-                  <span>Bookings</span>
-                  <Wallet className="size-4 text-[#0d7d5f]" />
+                <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
+                    <span>Phone Calls</span>
+                    <Phone className="size-4 text-[#0d7d5f]" />
+                  </div>
+                  <p className="mt-4 text-3xl font-bold text-[#17201c]">{fxLeads.calls}</p>
+                  <p className="mt-1 text-xs text-[#7b8580]">Direct call clicks</p>
                 </div>
-                <p className="mt-4 text-3xl font-bold text-[#17201c]">{summary.bookings}</p>
-                <p className="mt-1 text-xs text-[#7b8580]">Total</p>
-              </div>
-              <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
-                <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
-                  <span>Revenue</span>
-                  <CircleDollarSign className="size-4 text-[#07845f]" />
+                <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
+                    <span>WhatsApp Inquiries</span>
+                    <CircleDollarSign className="size-4 text-[#07845f]" />
+                  </div>
+                  <p className="mt-4 text-3xl font-bold text-[#17201c]">{fxLeads.whatsappClicks}</p>
+                  <p className="mt-1 text-xs text-[#7b8580]">Rate & BTA chats</p>
                 </div>
-                <p className="mt-4 text-2xl font-bold text-[#17201c]">{formatCurrency(summary.revenue)}</p>
-                <p className="mt-1 text-xs text-[#7b8580]">Gross</p>
-              </div>
-              <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
-                <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
-                  <span>Trust</span>
-                  <ShieldCheck className="size-4 text-[#0c6b50]" />
+                <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
+                    <span>Map Directions</span>
+                    <MapPin className="size-4 text-[#0c6b50]" />
+                  </div>
+                  <p className="mt-4 text-3xl font-bold text-[#17201c]">{fxLeads.directions}</p>
+                  <p className="mt-1 text-xs text-[#7b8580]">Branch navigation</p>
                 </div>
-                <p className="mt-4 text-3xl font-bold text-[#17201c]">{operator.trustScore ?? "—"}</p>
-                <p className="mt-1 text-xs text-[#7b8580]">Score</p>
               </div>
-            </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
+                    <span>Packages</span>
+                    <BriefcaseBusiness className="size-4 text-[#07845f]" />
+                  </div>
+                  <p className="mt-4 text-3xl font-bold text-[#17201c]">{summary.packages}</p>
+                  <p className="mt-1 text-xs text-[#7b8580]">Live board</p>
+                </div>
+                <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
+                    <span>Bookings</span>
+                    <Wallet className="size-4 text-[#0d7d5f]" />
+                  </div>
+                  <p className="mt-4 text-3xl font-bold text-[#17201c]">{summary.bookings}</p>
+                  <p className="mt-1 text-xs text-[#7b8580]">Total</p>
+                </div>
+                <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
+                    <span>Revenue</span>
+                    <CircleDollarSign className="size-4 text-[#07845f]" />
+                  </div>
+                  <p className="mt-4 text-2xl font-bold text-[#17201c]">{formatCurrency(summary.revenue)}</p>
+                  <p className="mt-1 text-xs text-[#7b8580]">Gross</p>
+                </div>
+                <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">
+                    <span>Trust</span>
+                    <ShieldCheck className="size-4 text-[#0c6b50]" />
+                  </div>
+                  <p className="mt-4 text-3xl font-bold text-[#17201c]">{operator.trustScore ?? "—"}</p>
+                  <p className="mt-1 text-xs text-[#7b8580]">Score</p>
+                </div>
+              </div>
+            )}
+
+            {operator.partnerType === "exchange-agent" && (
+              <div className="rounded-2xl border border-[#dbe2de] bg-white p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-brand text-xl font-bold text-[#17201c]">Travel FX Directory Profile</h3>
+                    <p className="mt-1 text-sm text-[#68716d]">CBN Bureau De Change verification, currency availability, and airport corridor placement.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-bold ${operator.cbn_license_verified ? "bg-[#eaf9f3] text-[#0c6b50]" : "bg-[#fff6dc] text-[#8a6500]"}`}>
+                      {operator.cbn_license_verified ? "CBN Licence Verified" : "CBN Unverified"}
+                    </span>
+                    {operator.is_premium_partner && (
+                      <span className="rounded-full border border-[#f1e0a9] bg-[#fff9c4] px-3 py-1 text-xs font-bold text-[#8a6500]">
+                        ★ Premium Partner
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">CBN BDC Licence</div>
+                    <div className="mt-2 text-sm font-bold text-[#17201c]">{operator.bdcLicense || "Not provided"}</div>
+                  </div>
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Airport Proximity</div>
+                    <div className="mt-2 text-sm font-bold text-[#17201c]">{operator.airport_proximity || "Not configured"}</div>
+                  </div>
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Stock Status</div>
+                    <div className="mt-2 text-sm font-bold text-[#0c6b50]">{operator.stock_status || "In Stock"}</div>
+                  </div>
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Supported Currencies</div>
+                    <div className="mt-2 text-sm font-bold text-[#17201c]">
+                      {Array.isArray(operator.supported_currencies)
+                        ? operator.supported_currencies.join(", ")
+                        : operator.supported_currencies || "USD, SAR"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Location Tier</div>
+                    <div className="mt-2 text-sm font-bold text-[#17201c]">Tier {operator.location_tier || "A"}</div>
+                  </div>
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">State / Corridor</div>
+                    <div className="mt-2 text-sm font-bold text-[#17201c]">{operator.state || operator.location || "Nigeria"}</div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="rounded-2xl border border-[#dbe2de] bg-white p-5">
               <h3 className="font-brand text-xl font-bold text-[#17201c]">Operator essentials</h3>
@@ -746,6 +1019,15 @@ export default function OperatorDetailPage() {
               <div className="mt-3 text-sm font-bold text-[#17201c]">{operator.isActive ? "Active" : "Suspended"}</div>
             </div>
             {operator.nahconId && <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">NAHCON</div><div className="mt-3 text-sm font-bold text-[#17201c]">{operator.nahconId}</div></div>}
+            {operator.bdcLicense && <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">CBN BDC Licence</div><div className="mt-3 text-sm font-bold text-[#17201c]">{operator.bdcLicense}</div></div>}
+            {operator.partnerType === "exchange-agent" && (
+              <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">CBN Directory Status</div>
+                <div className="mt-3 text-sm font-bold text-[#0c6b50]">
+                  {operator.cbn_license_verified ? "Verified & Listed in FX Finder" : "Unverified (Hidden from FX Finder)"}
+                </div>
+              </div>
+            )}
             {operator.telecomPermit && <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Telecom permit</div><div className="mt-3 text-sm font-bold text-[#17201c]">{operator.telecomPermit}</div></div>}
             {operator.transportReg && <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Transport reg</div><div className="mt-3 text-sm font-bold text-[#17201c]">{operator.transportReg}</div></div>}
             {operator.capacity && <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Capacity</div><div className="mt-3 text-sm font-bold text-[#17201c]">{operator.capacity}</div></div>}
