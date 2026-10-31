@@ -667,7 +667,7 @@ export default function SettingsPage() {
           <h2 className="font-brand text-lg font-bold text-[#17201c]">Fees & savings automation</h2>
           <p className="mt-1 text-sm text-[#68716d]">Numbers that drive early-exit service charges and savings-plan enforcement.</p>
           <div className="mt-5 space-y-3">
-            <CollapsibleFeeCard title="Early exit service charge" description="Applied to an early cash withdrawal, up to the configured maximum charge." isExpanded={!collapsedFeeCards.includes("early-exit")} onToggle={() => toggleFeeCard("early-exit")}>
+            <CollapsibleFeeCard title="Target Savings Platform Service Charge (UfitSave & WefitSave)" description="Applied per individual cash withdrawal from UfitSave or WefitSave (both early and matured non-package cash-outs), up to the configured NGN cap. Booking an Umrah, Hajj, or Tour package on UfitGo is always 0% (Free)." isExpanded={!collapsedFeeCards.includes("early-exit")} onToggle={() => toggleFeeCard("early-exit")}>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <input aria-label="Early exit charge percentage" type="number" step="0.01" min="0" max="100" value={earlyExitChargePercentDraft ?? earlyExitChargePercent.toFixed(2)} onChange={(event) => setEarlyExitChargePercentDraft(event.target.value)} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">%</span>
