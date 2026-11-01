@@ -50,6 +50,67 @@ type HajjSeasonCampaignConfig = {
   rolloverAnnouncement?: string | null
 }
 
+type HalalLockTierConfig = {
+  days: 90 | 180 | 270 | 365
+  label: string
+  shortLabel: string
+  annualRatePercent: number
+  badge?: string
+  subtitle: string
+  enabled: boolean
+}
+
+type HalalLockConfig = {
+  minAmount: number
+  allowMudarabahProfit: boolean
+  allowPrincipalOnly: boolean
+  tiers: HalalLockTierConfig[]
+}
+
+const defaultHalalLockConfig: HalalLockConfig = {
+  minAmount: 100000,
+  allowMudarabahProfit: true,
+  allowPrincipalOnly: true,
+  tiers: [
+    {
+      days: 90,
+      label: "90 Days (3 Months)",
+      shortLabel: "90 Days",
+      annualRatePercent: 10,
+      badge: "Minimum",
+      subtitle: "Ideal for upcoming Umrah visa & ticket funds",
+      enabled: true,
+    },
+    {
+      days: 180,
+      label: "180 Days (6 Months)",
+      shortLabel: "180 Days",
+      annualRatePercent: 12,
+      badge: "Popular",
+      subtitle: "Best balance for 6-month travel & goals",
+      enabled: true,
+    },
+    {
+      days: 270,
+      label: "270 Days (9 Months)",
+      shortLabel: "270 Days",
+      annualRatePercent: 13.5,
+      badge: "",
+      subtitle: "Higher profit share for 9-month Hajj prep",
+      enabled: true,
+    },
+    {
+      days: 365,
+      label: "365 Days (1 Year)",
+      shortLabel: "365 Days",
+      annualRatePercent: 15,
+      badge: "Max Yield",
+      subtitle: "Lock lump sum for next year Hajj pilgrimage",
+      enabled: true,
+    },
+  ],
+}
+
 type SystemConfig = {
   features?: Record<string, boolean | string[]>
   demoMode?: boolean
@@ -63,6 +124,7 @@ type SystemConfig = {
     dropThresholdDays?: number
     intelligence?: IntelligenceConfig
     hajjSeasonCampaign?: HajjSeasonCampaignConfig
+    halalLock?: HalalLockConfig
   }
   tiers?: Array<{
     provider: string
@@ -78,7 +140,7 @@ type SystemConfig = {
 type PlatformSetting = { key: string; value?: string; description?: string }
 type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit"
 type TierLimitDraft = Partial<Record<TierLimitKey, string>>
-const feeCardIds = ["early-exit", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
+const feeCardIds = ["early-exit", "halal-lock", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
 type FeeCardId = (typeof feeCardIds)[number]
 
 const featureToggles = [
@@ -90,6 +152,7 @@ const featureToggles = [
   { key: "enablePassportAssist", badgeId: "passport", label: "Passport assist", desc: "Enable passport application and renewal services." },
   { key: "enableTravelDocs", badgeId: "docs", label: "Travel documents", desc: "Enable visa processing and travel document services." },
   { key: "enableTargetSavings", badgeId: "savings", label: "Target savings", desc: "Enable user target savings plans for travel." },
+  { key: "enableHalalLock", badgeId: "halal-lock", label: "Halal Lock (Fixed Tenor)", desc: "Enable fixed-tenor Halal lump-sum locks (90–365 days) with Mudarabah profit or 0% Wadiah safekeeping." },
   { key: "enableTravelIntelligence", badgeId: "intelligence", label: "Hajj Intelligence", desc: "Enable Find Open Slots, availability alerts, and Hajj package comparison." },
   { key: "enableProactiveAdvisorNudge", label: "Proactive AI nudge", desc: "Show a bottom-sheet inviting users to chat with the AI Advisor after repeated zero-result searches." },
   { key: "enableReferralProgram", label: "Referral & rewards", desc: "Enable the refer & earn program (signup and package-sale bonuses) across the app." },
@@ -202,6 +265,8 @@ export default function SettingsPage() {
   const [savingIntelligence, setSavingIntelligence] = useState(false)
   const [campaignDraft, setCampaignDraft] = useState<HajjSeasonCampaignConfig | null>(null)
   const [savingCampaign, setSavingCampaign] = useState(false)
+  const [halalLockDraft, setHalalLockDraft] = useState<HalalLockConfig | null>(null)
+  const [savingHalalLock, setSavingHalalLock] = useState(false)
   const [tierDrafts, setTierDrafts] = useState<Record<string, TierLimitDraft>>({})
   const [savingTier, setSavingTier] = useState<string | null>(null)
 
@@ -483,6 +548,42 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveHalalLockConfig() {
+    const value = halalLockDraft ?? halalLockConfig
+    if (!Number.isFinite(value.minAmount) || value.minAmount < 1000) {
+      showToast("error", "Enter a valid minimum lock amount (at least ₦1,000).")
+      return
+    }
+    if (!value.allowMudarabahProfit && !value.allowPrincipalOnly) {
+      showToast("error", "At least one Shariah return option (Mudarabah or Principal Only) must be enabled.")
+      return
+    }
+    if (!value.tiers.some((tier) => tier.enabled)) {
+      showToast("error", "At least one lock duration tier must be enabled.")
+      return
+    }
+    if (value.tiers.some((tier) => !Number.isFinite(tier.annualRatePercent) || tier.annualRatePercent < 0 || tier.annualRatePercent > 100)) {
+      showToast("error", "Enter valid annual profit rates between 0% and 100%.")
+      return
+    }
+    setSavingHalalLock(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ savingsConfig: { halalLock: value } }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((previous) => ({ ...previous, savingsConfig: { ...previous?.savingsConfig, halalLock: value } }))
+      setHalalLockDraft(null)
+      showToast("success", "Halal Lock configuration saved.")
+    } catch {
+      showToast("error", "Failed to save Halal Lock configuration.")
+    } finally {
+      setSavingHalalLock(false)
+    }
+  }
+
   async function saveWhatsappNumber() {
     const value = whatsappNumber.trim()
     if (!value) return
@@ -552,6 +653,26 @@ export default function SettingsPage() {
     mode: "planning" as const,
     seasonLabel: "Hajj 2027",
   }
+  const halalLockConfig: HalalLockConfig = useMemo(() => {
+    const remote = config?.savingsConfig?.halalLock
+    const mergedTiers = defaultHalalLockConfig.tiers.map((defaultTier) => {
+      const match = remote?.tiers?.find((t) => Number(t.days) === defaultTier.days)
+      return match
+        ? {
+            ...defaultTier,
+            ...match,
+            annualRatePercent: Number(match.annualRatePercent ?? defaultTier.annualRatePercent),
+            enabled: match.enabled !== false,
+          }
+        : defaultTier
+    })
+    return halalLockDraft ?? {
+      minAmount: Number(remote?.minAmount ?? defaultHalalLockConfig.minAmount),
+      allowMudarabahProfit: remote?.allowMudarabahProfit !== false,
+      allowPrincipalOnly: remote?.allowPrincipalOnly !== false,
+      tiers: mergedTiers,
+    }
+  }, [config, halalLockDraft])
 
   return (
     <main className="space-y-6 p-5 sm:p-8">
@@ -634,7 +755,7 @@ export default function SettingsPage() {
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                 {featureToggles.map((feature) => {
-                  const isActive = feature.key === "enableHomeAds"
+                  const isActive = (feature.key === "enableHomeAds" || feature.key === "enableHalalLock")
                     ? config?.features?.[feature.key] !== false
                     : config?.features?.[feature.key] === true
                   const showNewBadge = feature.badgeId ? Boolean((config?.features?.newFeatureBadges as string[] | undefined)?.includes(feature.badgeId)) : false
@@ -674,6 +795,193 @@ export default function SettingsPage() {
                 <input aria-label="Early exit charge cap" type="number" min="0" value={earlyExitChargeCapDraft ?? String(earlyExitChargeCap)} onChange={(event) => setEarlyExitChargeCapDraft(event.target.value)} className="h-10 w-28 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">NGN cap</span>
                 {earlyExitChargeHasChanges && <button type="button" onClick={() => void saveEarlyExitCharge()} disabled={savingEarlyExitCharge} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingEarlyExitCharge ? "Saving..." : "Save"}</button>}
+              </div>
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard
+              title="Halal Lock (Fixed-Tenor Mudarabah & Wadiah)"
+              description="Configure minimum lump-sum lock amount, Shariah return options, and indicative Mudarabah annual profit rates per tenor tier (90–365 days). Turn Halal Lock off globally from Platform features."
+              isExpanded={!collapsedFeeCards.includes("halal-lock")}
+              onToggle={() => toggleFeeCard("halal-lock")}
+              action={
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs font-bold text-[#17201c]">
+                    <span>Feature enabled</span>
+                    <ToggleSwitch
+                      checked={config?.features?.enableHalalLock !== false}
+                      disabled={savingFeature === "enableHalalLock"}
+                      onChange={() => void toggleFeature("enableHalalLock", config?.features?.enableHalalLock !== false)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void saveHalalLockConfig()}
+                    disabled={savingHalalLock}
+                    className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50"
+                  >
+                    {savingHalalLock ? "Saving..." : "Save Halal Lock"}
+                  </button>
+                </div>
+              }
+            >
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="text-xs font-semibold text-[#68716d]">
+                  Minimum lock amount (NGN)
+                  <input
+                    type="number"
+                    min="1000"
+                    step="1000"
+                    value={String(halalLockConfig.minAmount)}
+                    onChange={(event) =>
+                      setHalalLockDraft((current) => ({
+                        ...(current ?? halalLockConfig),
+                        minAmount: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                </label>
+
+                <div className="flex items-center justify-between rounded-lg border border-[#dbe2de] bg-white px-4 py-3">
+                  <div>
+                    <p className="text-xs font-bold text-[#17201c]">Mudarabah Profit Option</p>
+                    <p className="text-[11px] text-[#7b8580]">Allow users to earn Halal profit share at maturity</p>
+                  </div>
+                  <ToggleSwitch
+                    checked={halalLockConfig.allowMudarabahProfit}
+                    onChange={() =>
+                      setHalalLockDraft((current) => {
+                        const base = current ?? halalLockConfig
+                        return { ...base, allowMudarabahProfit: !base.allowMudarabahProfit }
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-[#dbe2de] bg-white px-4 py-3">
+                  <div>
+                    <p className="text-xs font-bold text-[#17201c]">Principal Only (0% Wadiah)</p>
+                    <p className="text-[11px] text-[#7b8580]">Allow users to lock principal with 0% return</p>
+                  </div>
+                  <ToggleSwitch
+                    checked={halalLockConfig.allowPrincipalOnly}
+                    onChange={() =>
+                      setHalalLockDraft((current) => {
+                        const base = current ?? halalLockConfig
+                        return { ...base, allowPrincipalOnly: !base.allowPrincipalOnly }
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="mt-5 border-t border-[#dbe2de] pt-5">
+                <p className="text-sm font-bold text-[#17201c]">Tenor tiers & indicative Mudarabah profit rates</p>
+                <p className="mt-0.5 text-xs text-[#68716d]">Enable or disable individual lock durations and adjust their annual profit rate (% p.a.), highlight badge, and subtitle.</p>
+
+                <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                  {halalLockConfig.tiers.map((tier) => {
+                    const effectiveReturn = Number(((tier.annualRatePercent * tier.days) / 365).toFixed(1))
+                    return (
+                      <div key={tier.days} className="rounded-lg border border-[#dbe2de] bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold text-[#17201c]">{tier.label}</p>
+                            <p className="text-xs text-[#68716d]">~{effectiveReturn}% effective return over {tier.days} days</p>
+                          </div>
+                          <label className="flex items-center gap-2 text-xs font-semibold text-[#68716d]">
+                            <span>{tier.enabled ? "Enabled" : "Disabled"}</span>
+                            <ToggleSwitch
+                              checked={tier.enabled}
+                              onChange={() =>
+                                setHalalLockDraft((current) => {
+                                  const base = current ?? halalLockConfig
+                                  return {
+                                    ...base,
+                                    tiers: base.tiers.map((item) =>
+                                      item.days === tier.days ? { ...item, enabled: !item.enabled } : item
+                                    ),
+                                  }
+                                })
+                              }
+                            />
+                          </label>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <label className="text-xs font-semibold text-[#68716d]">
+                            Annual rate (% p.a.)
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="100"
+                              value={String(tier.annualRatePercent)}
+                              onChange={(event) =>
+                                setHalalLockDraft((current) => {
+                                  const base = current ?? halalLockConfig
+                                  return {
+                                    ...base,
+                                    tiers: base.tiers.map((item) =>
+                                      item.days === tier.days
+                                        ? { ...item, annualRatePercent: Number(event.target.value) }
+                                        : item
+                                    ),
+                                  }
+                                })
+                              }
+                              className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]"
+                            />
+                          </label>
+
+                          <label className="text-xs font-semibold text-[#68716d]">
+                            Highlight badge (optional)
+                            <input
+                              type="text"
+                              placeholder="e.g. Minimum, Popular, Max Yield"
+                              value={tier.badge ?? ""}
+                              onChange={(event) =>
+                                setHalalLockDraft((current) => {
+                                  const base = current ?? halalLockConfig
+                                  return {
+                                    ...base,
+                                    tiers: base.tiers.map((item) =>
+                                      item.days === tier.days
+                                        ? { ...item, badge: event.target.value }
+                                        : item
+                                    ),
+                                  }
+                                })
+                              }
+                              className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="mt-3 block text-xs font-semibold text-[#68716d]">
+                          Customer subtitle
+                          <input
+                            type="text"
+                            value={tier.subtitle}
+                            onChange={(event) =>
+                              setHalalLockDraft((current) => {
+                                const base = current ?? halalLockConfig
+                                return {
+                                  ...base,
+                                  tiers: base.tiers.map((item) =>
+                                    item.days === tier.days
+                                      ? { ...item, subtitle: event.target.value }
+                                      : item
+                                  ),
+                                }
+                              })
+                            }
+                            className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]"
+                          />
+                        </label>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </CollapsibleFeeCard>
             <CollapsibleFeeCard title="Hajj & Umrah Intelligence" description="Control Finder availability. Configure customer-facing Base and Plus prices in the Open Slot Pass catalogue below." isExpanded={!collapsedFeeCards.includes("intelligence")} onToggle={() => toggleFeeCard("intelligence")} action={<button type="button" onClick={() => void saveIntelligenceConfig()} disabled={savingIntelligence} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingIntelligence ? "Saving..." : "Save Intelligence"}</button>}>
