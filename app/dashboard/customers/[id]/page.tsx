@@ -9,6 +9,7 @@ import {
   Building,
   CalendarDays,
   CreditCard,
+  ExternalLink,
   Loader2,
   Mail,
   Map,
@@ -17,6 +18,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   Target,
+  Trash2,
+  Upload,
   User,
   Wallet,
 } from "lucide-react"
@@ -98,6 +101,37 @@ type AuditEvent = {
   createdAt?: string
 }
 
+type TravelVaultDoc = {
+  id: string
+  type: "PASSPORT" | "VISA" | "HEALTH_CARD"
+  status?: string
+  viewUrl?: string
+  expiryDate?: string
+  createdAt?: string
+}
+
+const VAULT_DOC_TYPES: Array<{
+  type: "PASSPORT" | "VISA" | "HEALTH_CARD"
+  label: string
+  hint: string
+}> = [
+  {
+    type: "PASSPORT",
+    label: "International Passport",
+    hint: "Bio-data page · Min. 6 months validity",
+  },
+  {
+    type: "VISA",
+    label: "Visa",
+    hint: "Saudi Umrah / Hajj e-Visa image or PDF",
+  },
+  {
+    type: "HEALTH_CARD",
+    label: "Health Card",
+    hint: "Yellow Fever vaccination certificate",
+  },
+]
+
 function pick<T>(...values: Array<T | undefined | null>): T | undefined {
   return values.find((value): value is T => value !== undefined && value !== null && value !== "")
 }
@@ -152,8 +186,63 @@ export default function CustomerDetailPage() {
   const [kyc, setKyc] = useState<KycData | null>(null)
   const [auditAccounts, setAuditAccounts] = useState<AuditAccount[]>([])
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
+  const [travelDocs, setTravelDocs] = useState<TravelVaultDoc[]>([])
+  const [uploadingDocType, setUploadingDocType] = useState<string | null>(null)
+  const [docActionMessage, setDocActionMessage] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+
+  const loadTravelDocs = async () => {
+    if (!customerId) return
+    try {
+      const response = await fetch(`/api/admin/customers/${customerId}/travel-docs`, { cache: "no-store" })
+      const payload = await response.json().catch(() => null)
+      const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : []
+      setTravelDocs(list)
+    } catch {
+      // Non-blocking
+    }
+  }
+
+  const handleConciergeDocUpload = async (docType: "PASSPORT" | "VISA" | "HEALTH_CARD", file: File) => {
+    if (!customerId) return
+    setUploadingDocType(docType)
+    setDocActionMessage("")
+    try {
+      const formData = new FormData()
+      formData.append("type", docType)
+      formData.append("file", file)
+      const response = await fetch(`/api/admin/customers/${customerId}/travel-docs`, {
+        method: "POST",
+        body: formData,
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(payload?.details?.message || payload?.message || "Upload failed")
+      }
+      await loadTravelDocs()
+      setDocActionMessage(`${docType.replace("_", " ")} uploaded & synced to the customer's Travel Docs Vault.`)
+    } catch (uploadError) {
+      setDocActionMessage(uploadError instanceof Error ? uploadError.message : "Unable to upload document.")
+    } finally {
+      setUploadingDocType(null)
+    }
+  }
+
+  const handleConciergeDocDelete = async (docId: string) => {
+    if (!customerId || !window.confirm("Remove this document from the customer's Travel Docs Vault?")) return
+    setDocActionMessage("")
+    try {
+      const response = await fetch(`/api/admin/customers/${customerId}/travel-docs/${docId}`, {
+        method: "DELETE",
+      })
+      if (!response.ok) throw new Error("Unable to remove document")
+      await loadTravelDocs()
+      setDocActionMessage("Document removed from customer's Travel Docs Vault.")
+    } catch (deleteError) {
+      setDocActionMessage(deleteError instanceof Error ? deleteError.message : "Unable to remove document.")
+    }
+  }
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab")
@@ -271,7 +360,8 @@ export default function CustomerDetailPage() {
       }
     }
 
-    void load()
+      void load()
+      void loadTravelDocs()
   }, [customerId])
 
   const summary = useMemo(() => {
@@ -495,11 +585,86 @@ export default function CustomerDetailPage() {
             </div>
 
             <div className="space-y-4">
-              <h4 className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#78817d]">Documents</h4>
-              <div className="rounded-xl border border-dashed border-[#d9dfdc] bg-[#f9fbfa] p-8 text-center">
-                <ShieldCheck className="mx-auto size-10 text-[#75807b]" />
-                <p className="mt-3 text-sm font-semibold text-[#17201c]">{kyc?.docStatus || "No documents uploaded yet"}</p>
-                <p className="mt-1 text-xs text-[#7b8580]">Tier {kyc?.tier ?? 0} verification</p>
+              <div className="flex items-center justify-between">
+                <h4 className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#78817d]">
+                  Travel Docs Vault ({travelDocs.length} of 3 ready)
+                </h4>
+                <span className="text-xs font-semibold text-[#0d7d5f]">
+                  Synced with customer mobile app
+                </span>
+              </div>
+
+              {docActionMessage && (
+                <div className="rounded-lg border border-[#cfeee0] bg-[#eaf9f3] px-3 py-2 text-xs font-semibold text-[#0c6b50]">
+                  {docActionMessage}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {VAULT_DOC_TYPES.map((item) => {
+                  const uploaded = travelDocs.find((d) => d.type === item.type)
+                  const isUploading = uploadingDocType === item.type
+                  return (
+                    <div
+                      key={item.type}
+                      className="flex flex-col gap-3 rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-[#17201c]">{item.label}</span>
+                          {uploaded && (
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${statusTone(uploaded.status || "VERIFIED")}`}>
+                              {(uploaded.status || "VERIFIED").replaceAll("_", " ")}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-[#7b8580]">
+                          {uploaded ? `Uploaded ${formatDate(uploaded.createdAt)}` : item.hint}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {uploaded?.viewUrl && (
+                          <a
+                            href={uploaded.viewUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#cbd5d0] bg-white px-3 text-xs font-bold text-[#32443d] hover:bg-[#edf3f0]"
+                          >
+                            View <ExternalLink className="size-3.5" />
+                          </a>
+                        )}
+
+                        <label className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-[#07845f] px-3 text-xs font-bold text-white hover:bg-[#056b4d] ${isUploading ? "pointer-events-none opacity-60" : ""}`}>
+                          {isUploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                          {uploaded ? "Replace" : "Upload for user"}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,application/pdf"
+                            className="sr-only"
+                            disabled={isUploading}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0]
+                              event.target.value = ""
+                              if (file) void handleConciergeDocUpload(item.type, file)
+                            }}
+                          />
+                        </label>
+
+                        {uploaded && (
+                          <button
+                            type="button"
+                            onClick={() => void handleConciergeDocDelete(uploaded.id)}
+                            className="inline-flex h-9 items-center justify-center rounded-lg border border-[#f4d0ca] bg-[#fff0ee] px-2.5 text-[#a43229] hover:bg-[#ffe1dc]"
+                            title="Remove document"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -570,7 +735,7 @@ export default function CustomerDetailPage() {
             <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {auditAccounts.length === 0 ? (
                 <div className="col-span-full rounded-xl border border-dashed border-[#d9dfdc] bg-[#f9fbfa] p-8 text-center text-sm text-[#7b8580]">
-                  No FCMB account has been created for this customer.
+                  No Bank account has been created for this customer.
                 </div>
               ) : auditAccounts.map((account) => (
                 <div key={account.id || account.accountId} className="contents">

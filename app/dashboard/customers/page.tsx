@@ -8,9 +8,13 @@ import { PaginationBar } from "@/components/ui/pagination-bar"
 import {
   ArrowRight,
   CalendarDays,
+  CheckCircle2,
   CreditCard,
   Filter,
+  IdCard,
+  Loader2,
   Mail,
+  MessageSquare,
   Phone,
   Search,
   ShieldAlert,
@@ -18,6 +22,21 @@ import {
   Users,
   Wallet,
 } from "lucide-react"
+
+type PassportAssistRequest = {
+  id: string
+  userId: string
+  fullName: string
+  email: string
+  phone: string
+  kycStatus: string
+  requestDay: string
+  status: "PENDING" | "CONTACTED" | "RESOLVED" | string
+  adminNotes?: string
+  handledBy?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
 
 type CustomerRecord = {
   id?: string | number
@@ -124,10 +143,60 @@ async function fetchCustomers(params: { search: string; status: string; page: nu
 }
 
 export default function CustomersPage() {
+  const [activeView, setActiveView] = useState<"customers" | "passport-assist">("customers")
   const [search, setSearch] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [page, setPage] = useState(1)
+
+  // Passport Assist Queue state
+  const [passportStatusFilter, setPassportStatusFilter] = useState("all")
+  const [passportRequests, setPassportRequests] = useState<PassportAssistRequest[]>([])
+  const [passportCounts, setPassportCounts] = useState({ total: 0, pending: 0, contacted: 0, resolved: 0 })
+  const [passportLoading, setPassportLoading] = useState(false)
+  const [updatingRequestId, setUpdatingRequestId] = useState<string | null>(null)
+  const [editingNotesId, setEditingNotesId] = useState<string | null>(null)
+  const [draftNote, setDraftNote] = useState("")
+
+  const loadPassportRequests = async () => {
+    setPassportLoading(true)
+    try {
+      const qs = new URLSearchParams()
+      if (passportStatusFilter !== "all") qs.set("status", passportStatusFilter)
+      if (debouncedSearch.trim()) qs.set("search", debouncedSearch.trim())
+      const response = await fetch(`/api/admin/customers/passport-requests?${qs.toString()}`, { cache: "no-store" })
+      const payload = await response.json().catch(() => null)
+      const list = Array.isArray(payload?.data) ? payload.data : []
+      setPassportRequests(list)
+      if (payload?.counts) {
+        setPassportCounts(payload.counts)
+      }
+    } catch {
+      // Non-blocking
+    } finally {
+      setPassportLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadPassportRequests()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, passportStatusFilter, debouncedSearch])
+
+  const updatePassportRequest = async (id: string, body: { status?: string; adminNotes?: string }) => {
+    setUpdatingRequestId(id)
+    try {
+      await fetch(`/api/admin/customers/passport-requests/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      setEditingNotesId(null)
+      await loadPassportRequests()
+    } finally {
+      setUpdatingRequestId(null)
+    }
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 300)
@@ -162,13 +231,251 @@ export default function CustomersPage() {
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#07845f]">Operations</p>
           <h1 className="mt-2 font-brand text-3xl font-bold text-[#17201c]">Customer management</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">Stay close to customer trust, KYC quality, wallet health, and booking momentum without jumping across screens.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#68716d]">Stay close to customer trust, KYC quality, Passport Assist follow-ups, and booking momentum without jumping across screens.</p>
         </div>
-        <button type="button" onClick={() => void refetch()} className="inline-flex items-center justify-center rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">
-          Refresh
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl border border-[#dbe2de] bg-white p-1">
+            <button
+              type="button"
+              onClick={() => setActiveView("customers")}
+              className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-bold transition ${activeView === "customers" ? "bg-[#07845f] text-white" : "text-[#49615b] hover:text-[#17201c]"}`}
+            >
+              <Users className="size-3.5" /> All Customers
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("passport-assist")}
+              className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-bold transition ${activeView === "passport-assist" ? "bg-[#07845f] text-white" : "text-[#49615b] hover:text-[#17201c]"}`}
+            >
+              <IdCard className="size-3.5" /> Passport Assist Queue
+              {passportCounts.pending > 0 && (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${activeView === "passport-assist" ? "bg-white text-[#07845f]" : "bg-[#fff6dc] text-[#8a6500]"}`}>
+                  {passportCounts.pending}
+                </span>
+              )}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void refetch()
+              void loadPassportRequests()
+            }}
+            className="inline-flex items-center justify-center rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]"
+          >
+            Refresh
+          </button>
+        </div>
       </header>
 
+      {activeView === "passport-assist" ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">Total requests</span>
+                <IdCard className="size-4 text-[#07845f]" />
+              </div>
+              <p className="mt-4 text-3xl font-bold text-[#17201c]">{passportCounts.total}</p>
+              <p className="mt-1 text-xs text-[#7b8580]">Passport & Visa readiness guidance</p>
+            </div>
+            <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">Awaiting call</span>
+                <ShieldAlert className="size-4 text-[#b56a00]" />
+              </div>
+              <p className="mt-4 text-3xl font-bold text-[#17201c]">{passportCounts.pending}</p>
+              <p className="mt-1 text-xs text-[#7b8580]">Needs Concierge outreach</p>
+            </div>
+            <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">Contacted</span>
+                <MessageSquare className="size-4 text-[#0f74c1]" />
+              </div>
+              <p className="mt-4 text-3xl font-bold text-[#17201c]">{passportCounts.contacted}</p>
+              <p className="mt-1 text-xs text-[#7b8580]">Guidance in progress</p>
+            </div>
+            <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">Resolved</span>
+                <CheckCircle2 className="size-4 text-[#07845f]" />
+              </div>
+              <p className="mt-4 text-3xl font-bold text-[#17201c]">{passportCounts.resolved}</p>
+              <p className="mt-1 text-xs text-[#7b8580]">Passport ready / uploaded</p>
+            </div>
+          </div>
+
+          <section className="rounded-xl border border-[#dbe2de] bg-white p-4 shadow-sm sm:p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative w-full max-w-xl">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#7b8580]" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search pilgrim by name, email, or phone"
+                  className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] pl-10 pr-3 text-sm text-[#17201c] outline-none ring-0 transition focus:border-[#0d7d5f]"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <AppSelect
+                  value={passportStatusFilter}
+                  onValueChange={setPassportStatusFilter}
+                  icon={<Filter className="size-4" />}
+                  className="w-56"
+                  options={[
+                    { value: "all", label: "All Requests" },
+                    { value: "PENDING", label: "Pending Follow-up" },
+                    { value: "CONTACTED", label: "Contacted" },
+                    { value: "RESOLVED", label: "Resolved" },
+                  ]}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-xl border border-[#dbe2de] bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-[960px] w-full text-left text-sm">
+                <thead className="bg-[#f7f9f8] text-[10px] uppercase tracking-[0.12em] text-[#7b8580]">
+                  <tr>
+                    <th className="px-5 py-3 font-bold">Pilgrim</th>
+                    <th className="px-5 py-3 font-bold">Contact & Quick Reach</th>
+                    <th className="px-5 py-3 font-bold">Requested On</th>
+                    <th className="px-5 py-3 font-bold">Follow-Up Status</th>
+                    <th className="px-5 py-3 font-bold">Concierge Notes</th>
+                    <th className="px-5 py-3 font-bold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#edf1ef]">
+                  {passportLoading ? (
+                    <tr>
+                      <td colSpan={6} className="px-5 py-14 text-center text-sm text-[#7b8580]">
+                        Loading Passport Assist requests…
+                      </td>
+                    </tr>
+                  ) : passportRequests.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-5 py-14 text-center text-sm text-[#7b8580]">
+                        No Passport Assist requests found for the current filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    passportRequests.map((req) => {
+                      const cleanDigits = (req.phone || "").replace(/\D/g, "")
+                      const waPhone = cleanDigits.startsWith("0") ? `234${cleanDigits.slice(1)}` : cleanDigits
+                      const waUrl = waPhone
+                        ? `https://wa.me/${waPhone}?text=${encodeURIComponent(`As-salamu alaykum ${req.fullName}, this is UfitGo Concierge following up on your Passport & Visa Readiness request.`)}`
+                        : null
+
+                      return (
+                        <tr key={req.id} className="hover:bg-[#f7faf9]">
+                          <td className="px-5 py-4">
+                            <Link href={`/dashboard/customers/${req.userId}?tab=kyc`} className="group flex items-center gap-3">
+                              <span className="grid size-10 place-items-center rounded-full bg-[#eaf9f3] text-sm font-bold text-[#0d7d5f]">
+                                {req.fullName.slice(0, 1).toUpperCase()}
+                              </span>
+                              <span>
+                                <span className="block font-bold text-[#17201c] group-hover:text-[#07845f]">
+                                  {req.fullName}
+                                </span>
+                                <span className="mt-0.5 block text-xs text-[#72807b]">
+                                  View Vault & KYC →
+                                </span>
+                              </span>
+                            </Link>
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="space-y-1 text-xs text-[#68716d]">
+                              <div className="flex items-center gap-2">
+                                <Mail className="size-3.5 text-[#6a7771]" />
+                                <span>{req.email || "No email"}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Phone className="size-3.5 text-[#6a7771]" />
+                                <span>{req.phone || "No phone"}</span>
+                                {waUrl && (
+                                  <a
+                                    href={waUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded bg-[#eaf9f3] px-2 py-0.5 text-[10px] font-bold text-[#0c6b50] hover:bg-[#d7f3e6]"
+                                  >
+                                    WhatsApp
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-xs text-[#68716d]">
+                            {formatDate(req.createdAt || req.requestDay)}
+                          </td>
+                          <td className="px-5 py-4">
+                            <select
+                              value={req.status || "PENDING"}
+                              disabled={updatingRequestId === req.id}
+                              onChange={(event) => void updatePassportRequest(req.id, { status: event.target.value })}
+                              className={`h-9 rounded-lg border px-2.5 text-xs font-bold outline-none ${
+                                req.status === "RESOLVED"
+                                  ? "border-[#cfeee0] bg-[#eaf9f3] text-[#0c6b50]"
+                                  : req.status === "CONTACTED"
+                                    ? "border-[#bae6fd] bg-[#e0f2fe] text-[#0369a1]"
+                                    : "border-[#f1e0a9] bg-[#fff6dc] text-[#8a6500]"
+                              }`}
+                            >
+                              <option value="PENDING">PENDING</option>
+                              <option value="CONTACTED">CONTACTED</option>
+                              <option value="RESOLVED">RESOLVED</option>
+                            </select>
+                          </td>
+                          <td className="px-5 py-4">
+                            {editingNotesId === req.id ? (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  value={draftNote}
+                                  onChange={(event) => setDraftNote(event.target.value)}
+                                  placeholder="Add follow-up note…"
+                                  className="h-9 w-48 rounded-lg border border-[#cbd5d0] bg-white px-2.5 text-xs text-[#17201c] outline-none focus:border-[#07845f]"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => void updatePassportRequest(req.id, { adminNotes: draftNote })}
+                                  className="rounded-lg bg-[#07845f] px-2.5 py-1.5 text-xs font-bold text-white"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingNotesId(req.id)
+                                  setDraftNote(req.adminNotes || "")
+                                }}
+                                className="text-left text-xs text-[#49615b] hover:text-[#07845f]"
+                              >
+                                {req.adminNotes ? req.adminNotes : "+ Add follow-up note"}
+                              </button>
+                            )}
+                          </td>
+                          <td className="px-5 py-4">
+                            <Link
+                              href={`/dashboard/customers/${req.userId}?tab=kyc`}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-[#cbd5d0] bg-white px-3 py-1.5 text-xs font-bold text-[#32443d] hover:bg-[#edf3f0]"
+                            >
+                              Upload Docs <ArrowRight className="size-3.5" />
+                            </Link>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      ) : (
+        <>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
           <div className="flex items-center justify-between gap-3">
@@ -297,6 +604,8 @@ export default function CustomersPage() {
           <PaginationBar page={data.page} totalPages={data.totalPages} total={data.total} limit={data.limit} onPageChange={setPage} isFetching={isFetching} />
         )}
       </section>
+        </>
+      )}
     </main>
   )
 }
