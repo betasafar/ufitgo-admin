@@ -151,7 +151,7 @@ export function LoginForm() {
       <p className="mt-9 text-xs text-[#9ba29f]">
         © {new Date().getFullYear()} UfitGo —{" "}
         <a
-          href="https://ufitgo-admin-api.onrender.com"
+          href="https://ufitgo-admin-api.onrender.com/api/admin/auth/health"
           target="_blank"
           rel="noopener noreferrer"
           className="underline underline-offset-2 hover:text-[#68716d]"
