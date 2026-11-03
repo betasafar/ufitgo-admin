@@ -153,7 +153,7 @@ const featureToggles = [
   { key: "enableTravelDocs", badgeId: "docs", label: "Travel documents", desc: "Enable visa processing and travel document services." },
   { key: "enableTargetSavings", badgeId: "savings", label: "Target savings", desc: "Enable user target savings plans for travel." },
   { key: "enableHalalLock", badgeId: "halal-lock", label: "Halal Lock (Fixed Tenor)", desc: "Enable fixed-tenor Halal lump-sum locks (90–365 days) with Mudarabah profit or 0% Wadiah safekeeping." },
-  { key: "enableTravelIntelligence", badgeId: "intelligence", label: "Hajj Intelligence", desc: "Enable Find Open Slots, availability alerts, and Hajj package comparison." },
+  { key: "enableTravelIntelligence", badgeId: "intelligence", label: "Plan Open Slot (Hajj Intelligence)", desc: "Enable the Plan Open Slot banner/card on Home, availability alerts, and Hajj package comparison." },
   { key: "enableProactiveAdvisorNudge", label: "Proactive AI nudge", desc: "Show a bottom-sheet inviting users to chat with the AI Advisor after repeated zero-result searches." },
   { key: "enableReferralProgram", label: "Referral & rewards", desc: "Enable the refer & earn program (signup and package-sale bonuses) across the app." },
   { key: "enableOperatorDirectory", label: "Operator directory", desc: "Show the browsable \"All Operators\" list in the app. Consider keeping off while onboarding few operators." },
