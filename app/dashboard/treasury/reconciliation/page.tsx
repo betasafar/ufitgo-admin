@@ -139,7 +139,7 @@ export default function TreasuryReconciliationPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-5 sm:p-8">
       <TreasurySubnav
         title="DVA Inward Transfers & Reconciliation Ledger"
         subtitle="Compare Paystack-Titan Dedicated Virtual Account transfers against UfitGo's ledger and re-trigger missed inward settlements."

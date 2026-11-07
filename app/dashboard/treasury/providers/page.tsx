@@ -142,7 +142,7 @@ export default function TreasuryProvidersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-5 sm:p-8">
       <TreasurySubnav
         title="BaaS Routing, Outage Kill-Switch & Account Mappings"
         subtitle="Control 50/50 Round-Robin vs. Primary+Fallback routing across Paystack-Titan, Providus, and FCMB, and inspect mapped virtual accounts."

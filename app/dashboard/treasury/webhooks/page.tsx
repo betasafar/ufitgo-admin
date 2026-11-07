@@ -103,7 +103,7 @@ export default function TreasuryWebhooksPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-5 sm:p-8">
       <TreasurySubnav
         title="BaaS Webhooks & Sandbox Simulator"
         subtitle="Inspect authenticated inward webhook deliveries (/api/internal/baas/webhooks/fcmb & /providus) and simulate sandbox credits."

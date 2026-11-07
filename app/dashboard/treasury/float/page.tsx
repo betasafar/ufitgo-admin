@@ -101,7 +101,7 @@ export default function TreasuryFloatPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-5 sm:p-8">
       <TreasurySubnav
         title="Float & Revenue Separation"
         subtitle="Track customer custodial float (Bucket A) vs. UfitGo earned revenue (Bucket B) and configure automated Paystack revenue subaccounts."

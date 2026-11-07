@@ -27,7 +27,7 @@ type UpgradeRequest = {
   approvedAt?: string | null
   rejectedAt?: string | null
   rejectionReason?: string | null
-  submittedDocuments?: { livenessImageUrl?: string; utilityBillUrl?: string }
+  submittedDocuments?: { livenessImageUrl?: string; utilityBillUrl?: string; utilityBillImageUrl?: string }
   user?: { id?: string; firstName?: string; lastName?: string; email?: string }
 }
 
@@ -136,7 +136,8 @@ export default function VerificationDetailPage() {
   }
 
   const documents = request.submittedDocuments || {}
-  const hasDocuments = Boolean(documents.livenessImageUrl || documents.utilityBillUrl)
+  const resolvedUtilityBillUrl = documents.utilityBillUrl || documents.utilityBillImageUrl
+  const hasDocuments = Boolean(documents.livenessImageUrl || resolvedUtilityBillUrl)
 
   return (
     <main className="space-y-6 p-5 sm:p-8">
@@ -178,11 +179,11 @@ export default function VerificationDetailPage() {
                   <img src={documents.livenessImageUrl} alt="Liveness selfie" className="mx-auto max-h-64 rounded-xl border border-[#edf1ef]" />
                 </div>
               )}
-              {request.requestedTier === 3 && documents.utilityBillUrl && (
+              {request.requestedTier === 3 && resolvedUtilityBillUrl && (
                 <div className="rounded-2xl border border-[#dbe2de] bg-white p-5 text-center shadow-sm">
                   <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[#9aa39e]">Utility bill</p>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={documents.utilityBillUrl} alt="Utility bill" className="mx-auto max-h-64 rounded-xl border border-[#edf1ef]" />
+                  <img src={resolvedUtilityBillUrl} alt="Utility bill" className="mx-auto max-h-64 rounded-xl border border-[#edf1ef]" />
                 </div>
               )}
               {!hasDocuments && (
