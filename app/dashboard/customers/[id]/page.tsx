@@ -167,6 +167,23 @@ function formatCurrency(value: number | string | undefined) {
   return `₦${numeric.toLocaleString("en-NG")}`
 }
 
+function formatBalanceLimit(value: number | string | undefined, tier?: number) {
+  const numeric = Number(value ?? 0)
+  if (tier === 3 || numeric >= 1_000_000_000_000) {
+    return "Unlimited"
+  }
+  return formatCurrency(value)
+}
+
+function formatBankDisplayName(provider?: string) {
+  const p = String(provider || "").toUpperCase()
+  if (p === "PAYSTACK") return "Paystack-Titan"
+  if (p === "PROVIDUS") return "Providus Bank"
+  if (p === "FCMB") return "FCMB MFB"
+  if (p === "SAFEHAVEN") return "SafeHaven MFB"
+  return provider || "Not assigned"
+}
+
 function isPositiveStatus(status?: string) {
   if (!status) return false
   const value = status.toLowerCase()
@@ -909,11 +926,17 @@ export default function CustomerDetailPage() {
               </div>
               <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
                 <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Account number</div>
-                <div className="mt-2 text-sm font-bold text-[#17201c]">Not assigned</div>
+                <div className="mt-2 text-sm font-bold text-[#17201c]">
+                  {auditAccounts[0]?.nubanAccountNumber || kyc?.setupStages?.ninAndAccount?.accountNumber || "Not assigned"}
+                </div>
               </div>
               <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
                 <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Bank name</div>
-                <div className="mt-2 text-sm font-bold text-[#17201c]">Not assigned</div>
+                <div className="mt-2 text-sm font-bold text-[#17201c]">
+                  {auditAccounts[0]?.provider || kyc?.setupStages?.ninAndAccount?.provider
+                    ? formatBankDisplayName(auditAccounts[0]?.provider || kyc?.setupStages?.ninAndAccount?.provider || undefined)
+                    : "Not assigned"}
+                </div>
               </div>
             </div>
           </section>
@@ -966,7 +989,7 @@ export default function CustomerDetailPage() {
                   <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Bank / provider</div><div className="mt-2 text-sm font-bold text-[#17201c]">{account.provider || "FCMB"}</div></div>
                   <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Account number</div><div className="mt-2 text-sm font-bold text-[#17201c]">{account.nubanAccountNumber || "Not assigned"}</div></div>
                   <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Tier / status</div><div className="mt-2 text-sm font-bold text-[#17201c]">Tier {account.activeTier ?? "—"} · {account.status || "Unknown"}</div></div>
-                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Balance limit</div><div className="mt-2 text-sm font-bold text-[#17201c]">{formatCurrency(account.balanceLimit)}</div></div>
+                  <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4"><div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Balance limit</div><div className="mt-2 text-sm font-bold text-[#0c6b50]">{formatBalanceLimit(account.balanceLimit, account.activeTier)}</div></div>
                 </div>
               ))}
             </div>
