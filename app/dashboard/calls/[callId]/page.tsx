@@ -15,8 +15,10 @@ import {
   MapPin,
   Mic,
   MicOff,
+  PauseCircle,
   Phone,
   PhoneOff,
+  PlayCircle,
   Save,
   ShieldCheck,
   Sparkles,
@@ -39,7 +41,7 @@ interface ConciergeCallSession {
   bookingId?: string | number | null
   callNotes?: string
   direction: "ADMIN_TO_PILGRIM" | "PILGRIM_TO_ADMIN"
-  status: "RINGING" | "ACCEPTED" | "DECLINED" | "ENDED" | "MISSED"
+  status: "RINGING" | "ACCEPTED" | "ON_HOLD" | "DECLINED" | "ENDED" | "MISSED"
   adminUid: number
   adminToken: string
   createdAt: string
@@ -139,6 +141,7 @@ export default function ConciergeCallDeskPage() {
   >("connecting")
   const [callError, setCallError] = useState("")
   const [isMuted, setIsMuted] = useState(false)
+  const [isOnHold, setIsOnHold] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
   // Call Notes & Live Transcription / Auto-Recording state
@@ -161,6 +164,7 @@ export default function ConciergeCallDeskPage() {
 
   const rtcClientRef = useRef<any>(null)
   const localAudioTrackRef = useRef<any>(null)
+  const remoteAudioTrackRef = useRef<any>(null)
   const pollTimerRef = useRef<number | null>(null)
   const durationTimerRef = useRef<number | null>(null)
   const hasJoinedRtcRef = useRef(false)
@@ -537,6 +541,7 @@ export default function ConciergeCallDeskPage() {
           client.on("user-published", async (remoteUser: any, mediaType: string) => {
             await client.subscribe(remoteUser, mediaType)
             if (mediaType === "audio" && remoteUser.audioTrack) {
+              remoteAudioTrackRef.current = remoteUser.audioTrack
               remoteUser.audioTrack.play()
               setCallStage("connected")
               startAutoRecordingAndTranscriber()
@@ -584,8 +589,9 @@ export default function ConciergeCallDeskPage() {
               statusPayload?.data ?? statusPayload
             if (!latest) return
 
-            if (latest.status === "ACCEPTED") {
+            if (latest.status === "ACCEPTED" || latest.status === "ON_HOLD") {
               setCallStage("connected")
+              setIsOnHold(latest.status === "ON_HOLD")
               if (!durationTimerRef.current) {
                 durationTimerRef.current = window.setInterval(() => {
                   setElapsedSeconds((prev) => prev + 1)
@@ -629,8 +635,36 @@ export default function ConciergeCallDeskPage() {
     const next = !isMuted
     setIsMuted(next)
     if (localAudioTrackRef.current) {
-      localAudioTrackRef.current.setMuted(next)
+      localAudioTrackRef.current.setMuted(next || isOnHold)
     }
+  }
+
+  const toggleHold = async () => {
+    if (!callId) return
+    const nextHold = !isOnHold
+    setIsOnHold(nextHold)
+
+    // When on hold: mute admin mic AND pause incoming pilgrim audio so both sides are on hold
+    if (localAudioTrackRef.current) {
+      localAudioTrackRef.current.setMuted(nextHold || isMuted)
+    }
+    if (remoteAudioTrackRef.current) {
+      try {
+        if (nextHold) {
+          remoteAudioTrackRef.current.stop()
+        } else {
+          remoteAudioTrackRef.current.play()
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    await fetch(`/api/admin/customers/call/${encodeURIComponent(callId)}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: nextHold ? "hold" : "resume" }),
+    }).catch(() => undefined)
   }
 
   const handleEndCall = async () => {
@@ -787,9 +821,21 @@ export default function ConciergeCallDeskPage() {
                 )}
                 {callStage === "connected" && (
                   <div className="flex flex-col items-center gap-2">
-                    <span className="inline-flex items-center gap-2 rounded-full bg-[#10b981]/25 px-4 py-1.5 font-mono text-sm font-bold text-[#6ee7b7]">
-                      <span className="size-2 rounded-full bg-[#34d399]" />
-                      Connected · {formatDuration(elapsedSeconds)}
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 font-mono text-sm font-bold ${
+                        isOnHold
+                          ? "bg-[#f59e0b]/25 text-[#fde68a]"
+                          : "bg-[#10b981]/25 text-[#6ee7b7]"
+                      }`}
+                    >
+                      <span
+                        className={`size-2 rounded-full ${
+                          isOnHold ? "animate-pulse bg-[#fbbf24]" : "bg-[#34d399]"
+                        }`}
+                      />
+                      {isOnHold
+                        ? `Call on Hold (Quran Playing for Pilgrim) · ${formatDuration(elapsedSeconds)}`
+                        : `Connected · ${formatDuration(elapsedSeconds)}`}
                     </span>
                     {isRecordingAudio && (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ef4444]/25 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#fecaca]">
@@ -820,12 +866,12 @@ export default function ConciergeCallDeskPage() {
               </div>
 
               {/* Audio Controls */}
-              <div className="mt-7 flex items-center justify-center gap-4">
+              <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
                 {(callStage === "ringing" || callStage === "connected") && (
                   <button
                     type="button"
                     onClick={toggleMute}
-                    className={`flex h-12 items-center gap-2 rounded-full px-5 text-xs font-bold transition ${
+                    className={`flex h-11 items-center gap-2 rounded-full px-4 text-xs font-bold transition ${
                       isMuted
                         ? "bg-[#fbbf24] text-[#17201c]"
                         : "bg-white/15 text-white hover:bg-white/25"
@@ -843,11 +889,33 @@ export default function ConciergeCallDeskPage() {
                   </button>
                 )}
 
+                {callStage === "connected" && (
+                  <button
+                    type="button"
+                    onClick={() => void toggleHold()}
+                    className={`flex h-11 items-center gap-2 rounded-full px-4 text-xs font-bold transition ${
+                      isOnHold
+                        ? "bg-[#fde68a] text-[#063722] shadow-md"
+                        : "bg-white/15 text-white hover:bg-white/25"
+                    }`}
+                  >
+                    {isOnHold ? (
+                      <>
+                        <PlayCircle className="size-4" /> Resume Call
+                      </>
+                    ) : (
+                      <>
+                        <PauseCircle className="size-4" /> Put on Hold
+                      </>
+                    )}
+                  </button>
+                )}
+
                 {callStage === "ringing" || callStage === "connected" ? (
                   <button
                     type="button"
                     onClick={() => void handleEndCall()}
-                    className="flex h-12 items-center gap-2 rounded-full bg-[#ef4444] px-6 text-xs font-bold text-white shadow-lg transition hover:bg-[#dc2626]"
+                    className="flex h-11 items-center gap-2 rounded-full bg-[#ef4444] px-5 text-xs font-bold text-white shadow-lg transition hover:bg-[#dc2626]"
                   >
                     <PhoneOff className="size-4" /> End Call
                   </button>

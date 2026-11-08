@@ -55,7 +55,7 @@ export interface ConciergeCallLogRecord {
   callerName: string
   reason?: string | null
   direction: "ADMIN_TO_PILGRIM" | "PILGRIM_TO_ADMIN"
-  status: "RINGING" | "ACCEPTED" | "DECLINED" | "ENDED" | "MISSED"
+  status: "RINGING" | "ACCEPTED" | "ON_HOLD" | "DECLINED" | "ENDED" | "MISSED"
   customerSentiment?: CustomerSentiment
   sentimentReason?: string | null
   durationSeconds: number

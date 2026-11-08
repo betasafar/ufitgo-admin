@@ -446,18 +446,18 @@ export default function CustomerDetailPage() {
         const rawAuditAccounts: AuditAccount[] = Array.isArray(auditPayload?.accounts)
           ? auditPayload.accounts
           : []
-        const byAccountKey = new Map<string, AuditAccount>()
+        const byAccountKey: Record<string, AuditAccount> = {}
         for (const acc of rawAuditAccounts) {
           const key = `${String(acc.provider || "DEFAULT").toUpperCase()}:${String(acc.nubanAccountNumber || acc.accountId || acc.id || "")}`
-          const existing = byAccountKey.get(key)
+          const existing = byAccountKey[key]
           if (
             !existing ||
             Number(acc.activeTier ?? 0) > Number(existing.activeTier ?? 0)
           ) {
-            byAccountKey.set(key, acc)
+            byAccountKey[key] = acc
           }
         }
-        setAuditAccounts(Array.from(byAccountKey.values()))
+        setAuditAccounts(Object.values(byAccountKey))
         const registrationEvents = Array.isArray(auditPayload?.registrationEvents)
           ? auditPayload.registrationEvents.map((event: AuditEvent) => ({ ...event, eventType: "ACCOUNT_REGISTERED" }))
           : []
