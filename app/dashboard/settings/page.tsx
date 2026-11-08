@@ -169,6 +169,48 @@ const featureToggles: Array<{
   { key: "enablePayForMe", label: "Pay for Me", desc: "Allow customers to request a payment link for another person to pay for their booking." },
 ]
 
+const DEFAULT_TOOLKIT_PRIORITY_ORDER = ["savings", "fx", "readiness", "passport", "docs"] as const
+
+const toolkitModulesMeta: Record<
+  string,
+  { id: string; label: string; desc: string; featureKey?: string; commercialTier: string }
+> = {
+  savings: {
+    id: "savings",
+    label: "Target Savings",
+    desc: "Direct wallet deposits, TVL growth, and package lock-in.",
+    featureKey: "enableTargetSavings",
+    commercialTier: "Revenue Driver",
+  },
+  fx: {
+    id: "fx",
+    label: "Travel FX",
+    desc: "CBN-licensed BDC directory and BTA currency conversion.",
+    featureKey: "enableTravelFx",
+    commercialTier: "Revenue Driver",
+  },
+  readiness: {
+    id: "readiness",
+    label: "Trip Checklist",
+    desc: "Pilgrim readiness tracker (Ihram, Hady, vaccinations & BTA). Always active.",
+    commercialTier: "Core Engagement",
+  },
+  passport: {
+    id: "passport",
+    label: "Passport Assist",
+    desc: "Pre-trip passport application and renewal assistance.",
+    featureKey: "enablePassportAssist",
+    commercialTier: "Ancillary Utility",
+  },
+  docs: {
+    id: "docs",
+    label: "Travel Documents",
+    desc: "Post-booking document vault and sharing (also inside Manage Booking).",
+    featureKey: "enableTravelDocs",
+    commercialTier: "Post-Booking Utility",
+  },
+}
+
 const tabs = [
   { id: "profile", label: "Profile", icon: UserRound },
   { id: "features", label: "Platform features", icon: SettingsIcon },
@@ -264,6 +306,7 @@ export default function SettingsPage() {
   const [config, setConfig] = useState<SystemConfig | null>(null)
   const [configLoading, setConfigLoading] = useState(true)
   const [savingFeature, setSavingFeature] = useState<string | null>(null)
+  const [savingToolkitOrder, setSavingToolkitOrder] = useState(false)
   const [savingDemoMode, setSavingDemoMode] = useState(false)
   const [earlyExitChargePercentDraft, setEarlyExitChargePercentDraft] = useState<string | null>(null)
   const [earlyExitChargeCapDraft, setEarlyExitChargeCapDraft] = useState<string | null>(null)
@@ -353,6 +396,48 @@ export default function SettingsPage() {
     } finally {
       setSavingFeature(null)
     }
+  }
+
+  const resolvedToolkitOrder = useMemo(() => {
+    const remoteOrder = Array.isArray(config?.features?.toolkitPriorityOrder)
+      ? (config?.features?.toolkitPriorityOrder as string[])
+      : []
+    return [...new Set([...remoteOrder, ...DEFAULT_TOOLKIT_PRIORITY_ORDER])].filter(
+      (id) => Boolean(toolkitModulesMeta[id])
+    )
+  }, [config?.features?.toolkitPriorityOrder])
+
+  async function saveToolkitPriorityOrder(nextOrder: string[]) {
+    setSavingToolkitOrder(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolkitPriorityOrder: nextOrder }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((prev) => ({
+        ...prev,
+        features: {
+          ...prev?.features,
+          toolkitPriorityOrder: nextOrder,
+        },
+      }))
+      showToast("success", "Travel Toolkit priority order updated.")
+    } catch {
+      showToast("error", "Failed to update Travel Toolkit priority order.")
+    } finally {
+      setSavingToolkitOrder(false)
+    }
+  }
+
+  function moveToolkitModule(index: number, direction: -1 | 1) {
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= resolvedToolkitOrder.length) return
+    const nextOrder = [...resolvedToolkitOrder]
+    const [moved] = nextOrder.splice(index, 1)
+    nextOrder.splice(targetIndex, 0, moved)
+    void saveToolkitPriorityOrder(nextOrder)
   }
 
   async function toggleDemoMode(current: boolean) {
@@ -795,6 +880,112 @@ export default function SettingsPage() {
                     </div>
                   )
                 })}
+              </div>
+
+              <div className="mt-8 rounded-2xl border border-[#dbe2de] bg-[#f7faf9] p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full bg-[#eaf9f3] px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[#0c6b50]">
+                        Home 2×2 Cap + Central Hub
+                      </span>
+                      <h3 className="font-brand text-base font-bold text-[#17201c]">
+                        Travel Toolkit Priority &amp; Overflow Routing
+                      </h3>
+                    </div>
+                    <p className="mt-1 max-w-3xl text-xs leading-5 text-[#68716d]">
+                      The mobile Home Screen caps <strong>Travel toolkit</strong> at <strong>4 active modules</strong> (2 rows) so Deals of the Month and Featured Journeys stay above the fold. When more than 4 modules are active, a central <strong>Menu</strong> button automatically appears in the bottom navigation bar and lower-priority modules move into the UfitGo Travel Hub modal.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={
+                      savingToolkitOrder ||
+                      resolvedToolkitOrder.join(",") === DEFAULT_TOOLKIT_PRIORITY_ORDER.join(",")
+                    }
+                    onClick={() => void saveToolkitPriorityOrder([...DEFAULT_TOOLKIT_PRIORITY_ORDER])}
+                    className="rounded-lg border border-[#cfdad5] bg-white px-3 py-2 text-xs font-bold text-[#17201c] hover:bg-[#edf3f0] disabled:opacity-45"
+                  >
+                    Reset to Revenue-First Default
+                  </button>
+                </div>
+
+                <div className="mt-4 space-y-2.5">
+                  {(() => {
+                    let activeRankCounter = 0
+                    return resolvedToolkitOrder.map((moduleId, idx) => {
+                      const meta = toolkitModulesMeta[moduleId]
+                      if (!meta) return null
+                      const isModuleActive = meta.featureKey
+                        ? config?.features?.[meta.featureKey] === true
+                        : true
+                      if (isModuleActive) {
+                        activeRankCounter += 1
+                      }
+                      const activeRank = isModuleActive ? activeRankCounter : null
+                      const isHomeGrid = activeRank !== null && activeRank <= 4
+                      const isOverflowHub = activeRank !== null && activeRank > 4
+
+                      return (
+                        <div
+                          key={meta.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#dbe2de] bg-white px-4 py-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[#edf3f0] text-xs font-extrabold text-[#17201c]">
+                              #{idx + 1}
+                            </span>
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-bold text-[#17201c]">{meta.label}</span>
+                                <span className="rounded-full bg-[#f0f4f2] px-2 py-0.5 text-[10px] font-bold text-[#52605a]">
+                                  {meta.commercialTier}
+                                </span>
+                                {isHomeGrid && (
+                                  <span className="rounded-full border border-[#cfeee0] bg-[#eaf9f3] px-2.5 py-0.5 text-[10px] font-bold text-[#0c6b50]">
+                                    Home 2×2 Grid (Slot #{activeRank})
+                                  </span>
+                                )}
+                                {isOverflowHub && (
+                                  <span className="rounded-full border border-[#f2d49b] bg-[#fff8e8] px-2.5 py-0.5 text-[10px] font-bold text-[#9a5b00]">
+                                    Central Hub Menu (Overflow)
+                                  </span>
+                                )}
+                                {!isModuleActive && (
+                                  <span className="rounded-full bg-[#eef1f0] px-2.5 py-0.5 text-[10px] font-semibold text-[#7b8580]">
+                                    Inactive (Off)
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-0.5 text-xs text-[#68716d]">{meta.desc}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={savingToolkitOrder || idx === 0}
+                              onClick={() => moveToolkitModule(idx, -1)}
+                              title="Move higher in priority"
+                              className="rounded-lg border border-[#d3dad7] bg-[#f7faf9] px-2.5 py-1.5 text-xs font-bold text-[#17201c] hover:bg-[#eaf2ee] disabled:opacity-40"
+                            >
+                              ↑ Boost
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingToolkitOrder || idx === resolvedToolkitOrder.length - 1}
+                              onClick={() => moveToolkitModule(idx, 1)}
+                              title="Move lower in priority"
+                              className="rounded-lg border border-[#d3dad7] bg-[#f7faf9] px-2.5 py-1.5 text-xs font-bold text-[#17201c] hover:bg-[#eaf2ee] disabled:opacity-40"
+                            >
+                              ↓ Demote
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })
+                  })()}
+                </div>
               </div>
             </div>
           )}
