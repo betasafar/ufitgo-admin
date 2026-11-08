@@ -194,6 +194,123 @@ export default function ConciergeCallDeskPage() {
     elapsedSecondsRef.current = elapsedSeconds
   }, [elapsedSeconds])
 
+  // Play standard "Pom-Pom" outbound ringback tone for the Admin while waiting for the Pilgrim to pick up
+  useEffect(() => {
+    if (callStage !== "ringing" || typeof window === "undefined") {
+      return
+    }
+
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioCtx) return
+
+    let ringCtx: AudioContext | null = null
+    let ringInterval: number | null = null
+    let cancelled = false
+
+    const playPomPomBurst = () => {
+      if (cancelled) return
+      try {
+        if (!ringCtx) {
+          ringCtx = new AudioCtx()
+        }
+        if (ringCtx.state === "suspended") {
+          void ringCtx.resume().catch(() => undefined)
+        }
+
+        const now = ringCtx.currentTime
+        // Classic UK/Nigeria "Pom-Pom" double-pulse ringback cadence (0.4s ON, 0.2s OFF, 0.4s ON)
+        // Mixing 400 Hz + 450 Hz sine waves gives the authentic warm telephone ringback sound
+        const pulses = [
+          { start: 0, dur: 0.38 },
+          { start: 0.56, dur: 0.42 },
+        ]
+
+        for (const p of pulses) {
+          const osc1 = ringCtx.createOscillator()
+          const osc2 = ringCtx.createOscillator()
+          const gain = ringCtx.createGain()
+
+          osc1.type = "sine"
+          osc2.type = "sine"
+          osc1.frequency.setValueAtTime(400, now + p.start)
+          osc2.frequency.setValueAtTime(450, now + p.start)
+
+          gain.gain.setValueAtTime(0.001, now + p.start)
+          gain.gain.exponentialRampToValueAtTime(0.14, now + p.start + 0.025)
+          gain.gain.setValueAtTime(0.14, now + p.start + p.dur - 0.03)
+          gain.gain.exponentialRampToValueAtTime(0.001, now + p.start + p.dur)
+
+          osc1.connect(gain)
+          osc2.connect(gain)
+          gain.connect(ringCtx.destination)
+
+          osc1.start(now + p.start)
+          osc2.start(now + p.start)
+          osc1.stop(now + p.start + p.dur + 0.02)
+          osc2.stop(now + p.start + p.dur + 0.02)
+        }
+      } catch {
+        // Ignore browser autoplay restrictions if not yet interacted
+      }
+    }
+
+    playPomPomBurst()
+    ringInterval = window.setInterval(playPomPomBurst, 3000)
+
+    return () => {
+      cancelled = true
+      if (ringInterval) {
+        window.clearInterval(ringInterval)
+      }
+      if (ringCtx) {
+        void ringCtx.close().catch(() => undefined)
+        ringCtx = null
+      }
+    }
+  }, [callStage])
+
+  // Play a short 0.28s two-note descending "call ended" tone ONLY when transitioning from an active/ringing call to ended/declined
+  const prevCallStageRef = useRef(callStage)
+  useEffect(() => {
+    const prev = prevCallStageRef.current
+    prevCallStageRef.current = callStage
+
+    const wasActiveOrRinging = prev === "ringing" || prev === "connected"
+    const isNowEnded = callStage === "ended" || callStage === "declined"
+    if (!wasActiveOrRinging || !isNowEnded || typeof window === "undefined") {
+      return
+    }
+
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      if (!AudioCtx) return
+      const endCtx: AudioContext = new AudioCtx()
+      const now = endCtx.currentTime
+      const notes = [
+        { freq: 480, start: 0, dur: 0.11 },
+        { freq: 360, start: 0.13, dur: 0.15 },
+      ]
+      for (const n of notes) {
+        const osc = endCtx.createOscillator()
+        const gain = endCtx.createGain()
+        osc.type = "sine"
+        osc.frequency.setValueAtTime(n.freq, now + n.start)
+        gain.gain.setValueAtTime(0.001, now + n.start)
+        gain.gain.exponentialRampToValueAtTime(0.12, now + n.start + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.001, now + n.start + n.dur)
+        osc.connect(gain)
+        gain.connect(endCtx.destination)
+        osc.start(now + n.start)
+        osc.stop(now + n.start + n.dur + 0.01)
+      }
+      window.setTimeout(() => {
+        void endCtx.close().catch(() => undefined)
+      }, 400)
+    } catch {
+      // Ignore if audio context is unavailable
+    }
+  }, [callStage])
+
   const startAutoRecordingAndTranscriber = () => {
     try {
       if (!audioCtxRef.current && typeof window !== "undefined") {
