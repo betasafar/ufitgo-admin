@@ -23,12 +23,14 @@ import {
   Power,
   ShieldAlert,
   ShieldCheck,
+  Star,
   Trash2,
   UserRound,
   Video,
   Wallet,
   X,
 } from "lucide-react"
+import { OperatorReviewsAdminPanel } from "@/components/calls/operator-reviews-admin-panel"
 
 type PackageRecord = {
   id?: string | number
@@ -362,7 +364,7 @@ export default function OperatorDetailPage() {
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab")
-    if (tab && ["overview", "compliance", "packages", "owner", "media"].includes(tab)) setActiveTab(tab)
+    if (tab && ["overview", "compliance", "packages", "owner", "media", "reviews"].includes(tab)) setActiveTab(tab)
   }, [])
 
   const selectTab = (tab: string) => {
@@ -573,6 +575,7 @@ export default function OperatorDetailPage() {
     { id: "packages", label: "Packages", icon: BriefcaseBusiness },
     { id: "owner", label: "Owner", icon: UserRound },
     { id: "media", label: "Past operations", icon: Video },
+    { id: "reviews", label: "Pilgrim feedback", icon: Star },
   ]
 
   if (loading) {
@@ -1224,6 +1227,14 @@ export default function OperatorDetailPage() {
             </form>
           </section>
         </div>
+      )}
+
+      {activeTab === "reviews" && (
+        <OperatorReviewsAdminPanel
+          operatorId={operatorId}
+          operatorName={companyName}
+          packages={operator.packages || []}
+        />
       )}
 
       {showMediaHelp && (
