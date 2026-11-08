@@ -95,13 +95,25 @@ function loadAgoraSdkScript(): Promise<any> {
   if (window.AgoraRTC) return Promise.resolve(window.AgoraRTC)
 
   return new Promise((resolve, reject) => {
+    const configureAgoraLogger = (sdk: any) => {
+      try {
+        // Set log level to 4 (NONE) and disable telemetry log upload so ad-blockers / firewalls
+        // blocking statscollector.sd-rtn.com or edge.agora.io/events/messages do not flood the DevTools Network tab
+        sdk?.setLogLevel?.(4)
+        sdk?.disableLogUpload?.()
+      } catch {
+        // ignore
+      }
+      return sdk
+    }
+
     const existing = document.querySelector('script[data-agora-sdk="true"]') as HTMLScriptElement | null
     if (existing) {
       if (window.AgoraRTC) {
-        resolve(window.AgoraRTC)
+        resolve(configureAgoraLogger(window.AgoraRTC))
         return
       }
-      existing.addEventListener("load", () => resolve(window.AgoraRTC))
+      existing.addEventListener("load", () => resolve(configureAgoraLogger(window.AgoraRTC)))
       existing.addEventListener("error", () => reject(new Error("Failed to load Agora SDK")))
       return
     }
@@ -110,7 +122,7 @@ function loadAgoraSdkScript(): Promise<any> {
     script.referrerPolicy = "no-referrer"
     script.async = true
     script.dataset.agoraSdk = "true"
-    script.onload = () => resolve(window.AgoraRTC)
+    script.onload = () => resolve(configureAgoraLogger(window.AgoraRTC))
     script.onerror = () => {
       script.remove()
       reject(new Error("Failed to load Agora WebRTC SDK"))
