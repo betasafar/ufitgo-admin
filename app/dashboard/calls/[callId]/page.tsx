@@ -87,11 +87,83 @@ interface TravelDocItem {
 declare global {
   interface Window {
     AgoraRTC?: any
+    __agoraTelemetryPatched?: boolean
+  }
+}
+
+function isAgoraTelemetryUrl(url: string): boolean {
+  return (
+    url.includes("/events/messages") ||
+    url.includes("statscollector") ||
+    url.includes("webcollector") ||
+    url.includes("logservice") ||
+    url.includes("ReportArgus")
+  )
+}
+
+function installAgoraTelemetryInterceptor() {
+  if (typeof window === "undefined" || window.__agoraTelemetryPatched) return
+  window.__agoraTelemetryPatched = true
+
+  try {
+    const origFetch = window.fetch.bind(window)
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input?.url || ""
+      if (isAgoraTelemetryUrl(url)) {
+        return new Response('{"code":0}', {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      return origFetch(input, init)
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const origOpen = XMLHttpRequest.prototype.open
+    const origSend = XMLHttpRequest.prototype.send
+    XMLHttpRequest.prototype.open = function (
+      method: string,
+      url: string | URL,
+      ...rest: any[]
+    ) {
+      ;(this as any).__isAgoraTelemetry = isAgoraTelemetryUrl(String(url || ""))
+      return (origOpen as any).call(this, method, url, ...rest)
+    }
+    XMLHttpRequest.prototype.send = function (body?: any) {
+      if ((this as any).__isAgoraTelemetry) {
+        window.setTimeout(() => {
+          try {
+            Object.defineProperty(this, "status", { value: 200 })
+            Object.defineProperty(this, "readyState", { value: 4 })
+            Object.defineProperty(this, "responseText", {
+              value: '{"code":0}',
+            })
+            this.onload?.(new ProgressEvent("load") as any)
+            this.onreadystatechange?.(new Event("readystatechange") as any)
+          } catch {
+            // ignore
+          }
+        }, 0)
+        return
+      }
+      return origSend.call(this, body)
+    }
+  } catch {
+    // ignore
   }
 }
 
 function loadAgoraSdkScript(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject(new Error("Browser required"))
+  installAgoraTelemetryInterceptor()
   if (window.AgoraRTC) return Promise.resolve(window.AgoraRTC)
 
   return new Promise((resolve, reject) => {
@@ -755,9 +827,32 @@ export default function ConciergeCallDeskPage() {
     })
 
     client.on("user-left", () => {
-      setCallStage("ended")
-      void finalizeAndUploadRecording()
-      void cleanupRtc()
+      remoteAudioTrackRef.current = null
+      // Verify with the backend before ending the call so a brief mobile WebView
+      // or network reconnect doesn't prematurely drop an active call
+      window.setTimeout(async () => {
+        try {
+          const statusRes = await fetch(
+            `/api/admin/customers/call/${encodeURIComponent(callData.callId)}/status`,
+            { cache: "no-store" },
+          )
+          const statusPayload = await statusRes.json().catch(() => null)
+          const latest: ConciergeCallSession | undefined =
+            statusPayload?.data ?? statusPayload
+          if (
+            !latest ||
+            latest.status === "ENDED" ||
+            latest.status === "DECLINED" ||
+            latest.status === "MISSED"
+          ) {
+            setCallStage(latest?.status === "DECLINED" ? "declined" : "ended")
+            await finalizeAndUploadRecording()
+            await cleanupRtc()
+          }
+        } catch {
+          // ignore
+        }
+      }, 1500)
     })
 
     await client.join(
