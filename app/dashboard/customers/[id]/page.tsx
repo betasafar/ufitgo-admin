@@ -5,6 +5,7 @@ import { useParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { ConciergeCallWidget } from "@/components/calls/concierge-call-widget"
 import { CallHistoryAndCtaPanel } from "@/components/calls/call-history-and-cta-panel"
+import { useAdminSession } from "@/components/auth/session-provider"
 import {
   ArrowLeft,
   ArrowRight,
@@ -66,6 +67,20 @@ type SavingsGoal = {
   status?: string
 }
 
+type SetupStagesState = {
+  ninAndAccount?: {
+    locked?: boolean
+    done?: boolean
+    accountNumber?: string | null
+    provider?: string | null
+  }
+  pin?: { done?: boolean }
+  device?: { done?: boolean; count?: number }
+  face_bvn?: { done?: boolean; tier?: number }
+  address?: { done?: boolean; status?: string }
+  withdrawal_bank?: { done?: boolean; count?: number }
+}
+
 type KycData = {
   status?: string
   tier?: number
@@ -73,6 +88,7 @@ type KycData = {
   nin?: string | number | null
   verifiedName?: string
   docStatus?: string
+  setupStages?: SetupStagesState
 }
 
 type AuditAccount = {
@@ -179,6 +195,9 @@ function KycBadge({ status }: { status?: string }) {
 }
 
 export default function CustomerDetailPage() {
+  const { admin } = useAdminSession()
+  const isSuperAdmin =
+    admin?.role === "SUPER_ADMIN" || Boolean(admin?.permissions?.includes("*"))
   const params = useParams<{ id: string }>()
   const customerId = params.id
   const [activeTab, setActiveTab] = useState("overview")
@@ -191,6 +210,8 @@ export default function CustomerDetailPage() {
   const [travelDocs, setTravelDocs] = useState<TravelVaultDoc[]>([])
   const [uploadingDocType, setUploadingDocType] = useState<string | null>(null)
   const [docActionMessage, setDocActionMessage] = useState("")
+  const [resettingStage, setResettingStage] = useState<string | null>(null)
+  const [stageResetMessage, setStageResetMessage] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -243,6 +264,63 @@ export default function CustomerDetailPage() {
       setDocActionMessage("Document removed from customer's Travel Docs Vault.")
     } catch (deleteError) {
       setDocActionMessage(deleteError instanceof Error ? deleteError.message : "Unable to remove document.")
+    }
+  }
+
+  const handleResetSetupStage = async (
+    stage:
+      | "pin"
+      | "device"
+      | "face_bvn"
+      | "address"
+      | "withdrawal_bank"
+      | "all_testable",
+    label: string,
+  ) => {
+    if (
+      !customerId ||
+      !window.confirm(
+        `Reset "${label}" for this customer so they can re-run this step in the mobile app?`,
+      )
+    ) {
+      return
+    }
+    setResettingStage(stage)
+    setStageResetMessage("")
+    try {
+      const response = await fetch(
+        `/api/admin/customers/${encodeURIComponent(String(customerId))}/setup-stage/reset`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stage }),
+        },
+      )
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(
+          payload?.details?.message ||
+            payload?.message ||
+            "Failed to reset setup stage",
+        )
+      }
+      const updated = payload?.data ?? payload
+      setKyc((prev) => ({
+        ...prev,
+        status: updated?.kycStatus ?? prev?.status,
+        tier: Number(updated?.tier ?? prev?.tier ?? 1),
+        setupStages: updated?.setupStages ?? prev?.setupStages,
+      }))
+      setStageResetMessage(
+        payload?.message ||
+          `${label} cleared. Re-open "Complete your setup" in the mobile app to test again.`,
+      )
+    } catch (err) {
+      setStageResetMessage(
+        err instanceof Error ? err.message : "Failed to reset setup stage.",
+      )
+    } finally {
+      setResettingStage(null)
     }
   }
 
@@ -322,6 +400,7 @@ export default function CustomerDetailPage() {
           nin: pick(kycPayload?.nin, kycPayload?.nationalId, "Not provided"),
           verifiedName: pick(kycPayload?.verifiedName, detail?.verifiedName),
           docStatus: pick(kycPayload?.docStatus, kycPayload?.documentStatus, "Not uploaded"),
+          setupStages: kycPayload?.setupStages,
         })
 
         setBookings(bookingList.map((booking: any) => ({
@@ -591,6 +670,142 @@ export default function CustomerDetailPage() {
                 <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Verified name</div>
                 <div className="mt-2 text-sm font-bold text-[#17201c]">{kyc?.verifiedName || "Pending"}</div>
               </div>
+
+              {/* Temporary Super-Admin-Only Setup Stage Reset Controls (matches Mobile "Complete your setup") */}
+              {isSuperAdmin && (
+              <div className="rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#07845f]">
+                      <span>Mobile &ldquo;Complete Your Setup&rdquo; Controls</span>
+                      <span className="inline-flex items-center gap-1 rounded-full border border-[#cfeee0] bg-[#eaf9f3] px-2 py-0.5 text-[10px] font-bold text-[#0c6b50]">
+                        <ShieldCheck className="size-3" /> Super Admin Only
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-[#68716d]">
+                      Clear individual setup stages so you can re-test PIN, Device Approval, MediaPipe 3D Liveness, or Address checks in the mobile app.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={resettingStage !== null}
+                    onClick={() =>
+                      void handleResetSetupStage(
+                        "all_testable",
+                        "All Testable Setup Stages",
+                      )
+                    }
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#f4d0ca] bg-[#fff0ee] px-2.5 text-[11px] font-bold text-[#a43229] hover:bg-[#ffe1dc] disabled:opacity-50"
+                  >
+                    {resettingStage === "all_testable" ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : null}
+                    Reset All 5 Testable Stages
+                  </button>
+                </div>
+
+                {stageResetMessage && (
+                  <div className="mt-3 rounded-lg border border-[#cfeee0] bg-[#eaf9f3] px-3 py-2 text-xs font-semibold text-[#0c6b50]">
+                    {stageResetMessage}
+                  </div>
+                )}
+
+                <div className="mt-3 space-y-2">
+                  {/* Locked Stage 1 & 2: NIN + Virtual Account Number */}
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-[#e3e9e6] bg-white px-3 py-2.5">
+                    <div>
+                      <p className="text-xs font-bold text-[#17201c]">
+                        1 &amp; 2. Verify NIN &amp; Virtual Bank Account Number
+                      </p>
+                      <p className="text-[11px] text-[#78817d]">
+                        {kyc?.setupStages?.ninAndAccount?.accountNumber
+                          ? `Provisioned (${kyc.setupStages.ninAndAccount.accountNumber}) — Protected (not necessary to override)`
+                          : "Protected BaaS NUBAN stage"}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-[#edf2ef] px-2.5 py-1 text-[10px] font-bold uppercase text-[#52605a]">
+                      Protected
+                    </span>
+                  </div>
+
+                  {[
+                    {
+                      stage: "pin" as const,
+                      title: "3. Secure your account with a PIN",
+                      subtitle: "4-digit transaction PIN & secret recovery question",
+                      done: Boolean(kyc?.setupStages?.pin?.done),
+                    },
+                    {
+                      stage: "device" as const,
+                      title: "4. Approve this device",
+                      subtitle: `Approved devices (${kyc?.setupStages?.device?.count ?? 0})`,
+                      done: Boolean(kyc?.setupStages?.device?.done),
+                    },
+                    {
+                      stage: "face_bvn" as const,
+                      title: "5. Match your face to your BVN (Tier 2 Liveness)",
+                      subtitle: `Current KYC Tier: Tier ${kyc?.setupStages?.face_bvn?.tier ?? kyc?.tier ?? 1}`,
+                      done:
+                        Boolean(kyc?.setupStages?.face_bvn?.done) ||
+                        Number(kyc?.tier ?? 0) >= 2,
+                    },
+                    {
+                      stage: "address" as const,
+                      title: "6. Verify your address (Tier 3)",
+                      subtitle: `Address status: ${kyc?.setupStages?.address?.status || "unverified"}`,
+                      done:
+                        Boolean(kyc?.setupStages?.address?.done) ||
+                        Number(kyc?.tier ?? 0) >= 3,
+                    },
+                    {
+                      stage: "withdrawal_bank" as const,
+                      title: "7. Add a withdrawal bank or card",
+                      subtitle: `Saved payout banks (${kyc?.setupStages?.withdrawal_bank?.count ?? 0})`,
+                      done: Boolean(kyc?.setupStages?.withdrawal_bank?.done),
+                    },
+                  ].map((row) => (
+                    <div
+                      key={row.stage}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-[#e3e9e6] bg-white px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-bold text-[#17201c]">
+                            {row.title}
+                          </p>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              row.done
+                                ? "bg-[#eaf9f3] text-[#0c6b50]"
+                                : "bg-[#f1f5f3] text-[#68716d]"
+                            }`}
+                          >
+                            {row.done ? "Completed ✓" : "Cleared / Pending"}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-[#78817d]">
+                          {row.subtitle}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={resettingStage !== null}
+                        onClick={() =>
+                          void handleResetSetupStage(row.stage, row.title)
+                        }
+                        className="shrink-0 inline-flex h-8 items-center gap-1 rounded-lg border border-[#cbd5d0] bg-[#f8faf9] px-2.5 text-xs font-bold text-[#17201c] hover:border-[#a43229] hover:bg-[#fff0ee] hover:text-[#a43229] disabled:opacity-50"
+                      >
+                        {resettingStage === row.stage ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : null}
+                        Clear Stage
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              )}
             </div>
 
             <div className="space-y-4">
