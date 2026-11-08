@@ -151,7 +151,8 @@ const featureToggles: Array<{
   superAdminOnly?: boolean
 }> = [
   { key: "enableConciergeCalls", label: "In-App Concierge Voice Calls", desc: "Enable free in-app Agora voice calls between pilgrims and the admin Concierge Call Desk.", superAdminOnly: true },
-  { key: "enableTravelFx", badgeId: "fx", label: "Travel FX", desc: "Enable foreign exchange and currency swap features." },
+  { key: "enableTravelFx", badgeId: "fx", label: "Travel FX (BDC Finder)", desc: "Enable CBN-licensed Bureau De Change directory and stock availability finder." },
+  { key: "enableCurrencyCalculator", badgeId: "calculator", label: "Currency Calculator", desc: "Enable the 3-way SAR/USD/NGN Pilgrim Currency Calculator, Makkah cost benchmarks, and personal BDC rate override." },
   { key: "enableTour", label: "Tours", desc: "Show tour packages alongside Hajj and Umrah on the mobile home screen." },
   { key: "enableHomeAds", label: "Home ads", desc: "Show sponsored and promotional ads on the mobile home screen." },
   { key: "enableAiAdvisor", label: "AI Advisor (Lima)", desc: "Enable Lima chat, recommendations, proactive prompts, and AI package assistance." },
@@ -169,7 +170,7 @@ const featureToggles: Array<{
   { key: "enablePayForMe", label: "Pay for Me", desc: "Allow customers to request a payment link for another person to pay for their booking." },
 ]
 
-const DEFAULT_TOOLKIT_PRIORITY_ORDER = ["savings", "fx", "readiness", "passport", "docs"] as const
+const DEFAULT_TOOLKIT_PRIORITY_ORDER = ["savings", "fx", "calculator", "readiness", "passport", "docs"] as const
 
 const toolkitModulesMeta: Record<
   string,
@@ -184,10 +185,17 @@ const toolkitModulesMeta: Record<
   },
   fx: {
     id: "fx",
-    label: "Travel FX",
-    desc: "CBN-licensed BDC directory and BTA currency conversion.",
+    label: "Travel FX (BDC Finder)",
+    desc: "CBN-licensed BDC directory and BTA cash pickup finder.",
     featureKey: "enableTravelFx",
     commercialTier: "Revenue Driver",
+  },
+  calculator: {
+    id: "calculator",
+    label: "Currency Calculator",
+    desc: "3-way SAR/USD/NGN converter, Makkah expense presets & My BDC Rate.",
+    featureKey: "enableCurrencyCalculator",
+    commercialTier: "Core Engagement",
   },
   readiness: {
     id: "readiness",
