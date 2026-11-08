@@ -598,17 +598,23 @@ export function CallHistoryAndCtaPanel({
                           </span>
                         )}
                       </div>
-                      <p className="mt-0.5 text-xs text-[#68716d]">
-                        {dateStr} · Started: <strong className="font-semibold text-[#35443e]">{startTimeStr}</strong>
+                      <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-[#68716d]">
+                        <span>{dateStr}</span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1 rounded-md border border-[#a7f3d0] bg-[#ecfdf5] px-2 py-0.5 text-[11px] font-bold text-[#047857]">
+                          Started: {startTimeStr}
+                        </span>
                         {endTimeStr ? (
-                          <>
-                            {" "}→ Ended: <strong className="font-semibold text-[#35443e]">{endTimeStr}</strong>
-                          </>
+                          <span className="inline-flex items-center gap-1 rounded-md border border-[#fecaca] bg-[#fef2f2] px-2 py-0.5 text-[11px] font-bold text-[#dc2626]">
+                            Ended: {endTimeStr}
+                          </span>
                         ) : null}
-                        {" "}·{" "}
-                        {log.direction === "PILGRIM_TO_ADMIN"
-                          ? "Inbound from Pilgrim"
-                          : `Called by ${log.callerName}`}
+                        <span>·</span>
+                        <span>
+                          {log.direction === "PILGRIM_TO_ADMIN"
+                            ? "Inbound from Pilgrim"
+                            : `Called by ${log.callerName}`}
+                        </span>
                       </p>
                     </div>
                   </div>
