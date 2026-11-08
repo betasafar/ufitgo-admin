@@ -137,6 +137,8 @@ interface CallHistoryAndCtaPanelProps {
   bookingId?: string | number
   compact?: boolean
   refreshKey?: number
+  activeCallId?: string
+  isPreparingCallId?: string | null
 }
 
 export function CallHistoryAndCtaPanel({
@@ -144,6 +146,8 @@ export function CallHistoryAndCtaPanel({
   bookingId,
   compact = false,
   refreshKey = 0,
+  activeCallId,
+  isPreparingCallId,
 }: CallHistoryAndCtaPanelProps) {
   const [logs, setLogs] = useState<ConciergeCallLogRecord[]>([])
   const [pendingCtas, setPendingCtas] = useState<CallActionItem[]>([])
@@ -184,6 +188,36 @@ export function CallHistoryAndCtaPanel({
   useEffect(() => {
     void loadHistory()
   }, [loadHistory, refreshKey])
+
+  // Real-time auto-poll while a recent call is still preparing its recording or transcript
+  const hasPreparingLogs = useCallback(
+    (items: ConciergeCallLogRecord[]) => {
+      if (isPreparingCallId) return true
+      const now = Date.now()
+      return items.some((l) => {
+        const ageMs = now - new Date(l.createdAt).getTime()
+        return (
+          ageMs < 90_000 &&
+          (l.status === "RINGING" ||
+            l.status === "ACCEPTED" ||
+            l.status === "ON_HOLD" ||
+            (l.status === "ENDED" &&
+              l.durationSeconds > 0 &&
+              !l.recordingUrl &&
+              !l.transcript))
+        )
+      })
+    },
+    [isPreparingCallId],
+  )
+
+  useEffect(() => {
+    if (!hasPreparingLogs(logs)) return
+    const timer = window.setInterval(() => {
+      void loadHistory()
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [logs, hasPreparingLogs, loadHistory])
 
   const toggleActionItem = async (
     callId: string,
@@ -474,13 +508,25 @@ export function CallHistoryAndCtaPanel({
           <div className="mt-4 space-y-3">
             {logs.slice(0, compact ? 5 : 25).map((log) => {
               const isExpanded = expandedCallId === log.id
+              const isCurrentCallOnDesk = activeCallId === log.id
+              const isPreparingThisCall =
+                isPreparingCallId === log.id ||
+                (Date.now() - new Date(log.createdAt).getTime() < 90_000 &&
+                  log.status === "ENDED" &&
+                  log.durationSeconds > 0 &&
+                  !log.recordingUrl &&
+                  !log.transcript)
               const allItems = Array.isArray(log.actionItems)
                 ? log.actionItems
                 : []
               return (
                 <div
                   key={log.id}
-                  className="rounded-xl border border-[#e3e9e6] bg-[#f9fbfa] p-4"
+                  className={`rounded-xl border p-4 ${
+                    isCurrentCallOnDesk
+                      ? "border-[#0d7d5f]/50 bg-[#f2faf6]"
+                      : "border-[#e3e9e6] bg-[#f9fbfa]"
+                  }`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
@@ -517,6 +563,12 @@ export function CallHistoryAndCtaPanel({
                               · {formatDuration(log.durationSeconds)}
                             </span>
                           )}
+                          {isPreparingThisCall && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[#f59e0b]/40 bg-[#fffbeb] px-2.5 py-0.5 text-[10px] font-bold text-[#b45309]">
+                              <Loader2 className="size-3 animate-spin" />
+                              Preparing recording &amp; transcript…
+                            </span>
+                          )}
                         </div>
                         <p className="mt-0.5 text-xs text-[#68716d]">
                           {new Date(log.createdAt).toLocaleString()} ·{" "}
@@ -528,12 +580,18 @@ export function CallHistoryAndCtaPanel({
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <Link
-                        href={`/dashboard/calls/${encodeURIComponent(log.id)}`}
-                        className="rounded-lg border border-[#d3dad7] bg-white px-2.5 py-1.5 text-xs font-bold text-[#35443e] hover:bg-[#edf3f0]"
-                      >
-                        Open Call Desk
-                      </Link>
+                      {isCurrentCallOnDesk ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-[#a7f3d0] bg-[#ecfdf5] px-2.5 py-1.5 text-xs font-bold text-[#047857]">
+                          <CheckCircle2 className="size-3.5" /> Viewing This Call
+                        </span>
+                      ) : (
+                        <Link
+                          href={`/dashboard/calls/${encodeURIComponent(log.id)}`}
+                          className="rounded-lg border border-[#d3dad7] bg-white px-2.5 py-1.5 text-xs font-bold text-[#35443e] hover:bg-[#edf3f0]"
+                        >
+                          Open Call Desk
+                        </Link>
+                      )}
                       <button
                         type="button"
                         onClick={() =>
@@ -551,6 +609,16 @@ export function CallHistoryAndCtaPanel({
                       </button>
                     </div>
                   </div>
+
+                  {/* Real-time Preparing Indicator when Recording is Uploading / Transcribing */}
+                  {isPreparingThisCall && !log.recordingUrl && (
+                    <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-3 py-2 text-xs font-semibold text-[#92400e]">
+                      <Loader2 className="size-4 shrink-0 animate-spin text-[#d97706]" />
+                      <span>
+                        Uploading call audio &amp; generating AI conversation transcript… This panel will update automatically in a few seconds.
+                      </span>
+                    </div>
+                  )}
 
                   {/* Audio Replay Bar */}
                   {log.recordingUrl && (
@@ -598,6 +666,11 @@ export function CallHistoryAndCtaPanel({
                           <pre className="mt-1.5 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[#dbe2de] bg-white p-3 font-sans text-xs leading-5 text-[#17201c]">
                             {log.transcript}
                           </pre>
+                        </div>
+                      ) : isPreparingThisCall ? (
+                        <div className="flex items-center gap-2 rounded-lg border border-[#fde68a] bg-[#fffbeb] p-3 text-xs font-semibold text-[#92400e]">
+                          <Loader2 className="size-4 shrink-0 animate-spin text-[#d97706]" />
+                          Preparing speech transcript &amp; AI summary from call audio… It will appear here automatically once ready.
                         </div>
                       ) : (
                         <p className=" flex items-center gap-1.5 text-xs italic text-[#78817d]">

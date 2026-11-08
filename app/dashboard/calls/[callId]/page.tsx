@@ -219,9 +219,11 @@ export default function ConciergeCallDeskPage() {
               : MediaRecorder.isTypeSupported("audio/webm")
                 ? "audio/webm"
                 : ""
-            const recorder = mimeType
-              ? new MediaRecorder(dest.stream, { mimeType })
-              : new MediaRecorder(dest.stream)
+            const recorderOptions: MediaRecorderOptions = {
+              ...(mimeType ? { mimeType } : {}),
+              audioBitsPerSecond: 24000,
+            }
+            const recorder = new MediaRecorder(dest.stream, recorderOptions)
             recorder.ondataavailable = (ev) => {
               if (ev.data && ev.data.size > 0) {
                 recordedChunksRef.current.push(ev.data)
@@ -234,7 +236,7 @@ export default function ConciergeCallDeskPage() {
         }
       }
 
-      // Start browser Web Speech API live captioning if supported
+      // Start browser Web Speech API live captioning if supported (auto-restarts on silence)
       if (typeof window !== "undefined" && !speechRecRef.current) {
         const SpeechRecognition =
           (window as any).SpeechRecognition ||
@@ -242,8 +244,8 @@ export default function ConciergeCallDeskPage() {
         if (SpeechRecognition) {
           const recognition = new SpeechRecognition()
           recognition.continuous = true
-          recognition.interimResults = false
-          recognition.lang = "en-NG"
+          recognition.interimResults = true
+          recognition.lang = "en-US"
           recognition.onresult = (event: any) => {
             for (let i = event.resultIndex; i < event.results.length; i++) {
               if (event.results[i].isFinal) {
@@ -262,6 +264,15 @@ export default function ConciergeCallDeskPage() {
             }
           }
           recognition.onerror = () => undefined
+          recognition.onend = () => {
+            if (speechRecRef.current === recognition) {
+              try {
+                recognition.start()
+              } catch {
+                // ignore
+              }
+            }
+          }
           recognition.start()
           speechRecRef.current = recognition
         }
@@ -342,29 +353,40 @@ export default function ConciergeCallDeskPage() {
       }
 
       const transcriptText = liveTranscriptRef.current.join("\n")
-      if (
-        audioBase64 ||
-        transcriptText.trim() ||
-        notesRef.current.trim()
-      ) {
-        setUploadingRecording(true)
+      setUploadingRecording(true)
+      const uploadPayload = {
+        audioBase64: audioBase64 || undefined,
+        mimeType,
+        transcriptText,
+        notes: notesRef.current,
+        durationSeconds: elapsedSecondsRef.current,
+      }
+      const res = await fetch(
+        `/api/admin/customers/call/${encodeURIComponent(callId)}/recording`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(uploadPayload),
+        },
+      ).catch(() => null)
+
+      // If audio payload was too large for the proxy, fallback to saving transcript, duration & notes immediately
+      if (!res || !res.ok) {
         await fetch(
           `/api/admin/customers/call/${encodeURIComponent(callId)}/recording`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              audioBase64: audioBase64 || undefined,
-              mimeType,
               transcriptText,
               notes: notesRef.current,
               durationSeconds: elapsedSecondsRef.current,
             }),
           },
         ).catch(() => undefined)
-        setUploadingRecording(false)
-        setHistoryRefreshKey((k) => k + 1)
       }
+      setUploadingRecording(false)
+      setHistoryRefreshKey((k) => k + 1)
     } catch {
       setUploadingRecording(false)
     }
@@ -517,6 +539,18 @@ export default function ConciergeCallDeskPage() {
           setNotes(callData.callNotes)
         }
         void loadPilgrimDossier(callData.userId)
+
+        if (
+          callData.status === "ENDED" ||
+          callData.status === "DECLINED" ||
+          callData.status === "MISSED"
+        ) {
+          setCallStage(callData.status === "DECLINED" ? "declined" : "ended")
+          if (typeof (callData as any).durationSeconds === "number") {
+            setElapsedSeconds((callData as any).durationSeconds)
+          }
+          return
+        }
 
         // If this was an inbound call from the pilgrim, mark it accepted as soon as admin opens the Call Desk
         if (
@@ -1144,6 +1178,8 @@ export default function ConciergeCallDeskPage() {
                   bookingId={session.bookingId ?? undefined}
                   compact
                   refreshKey={historyRefreshKey}
+                  activeCallId={callId}
+                  isPreparingCallId={uploadingRecording ? callId : null}
                 />
               )}
 
