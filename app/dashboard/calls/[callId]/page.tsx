@@ -183,6 +183,7 @@ export default function ConciergeCallDeskPage() {
   const recordedChunksRef = useRef<Blob[]>([])
   const speechRecRef = useRef<any>(null)
   const hasUploadedRecordingRef = useRef(false)
+  const hasPilgrimAnsweredRef = useRef(false)
   const liveTranscriptRef = useRef<string[]>([])
   const notesRef = useRef("")
   const elapsedSecondsRef = useRef(0)
@@ -346,7 +347,16 @@ export default function ConciergeCallDeskPage() {
           const dest = ctx.createMediaStreamDestination()
           audioCtxRef.current = ctx
           mixDestRef.current = dest
+        } else if (audioCtxRef.current?.state === "suspended") {
+          void audioCtxRef.current.resume().catch(() => undefined)
+        }
 
+        if (
+          audioCtxRef.current &&
+          mixDestRef.current &&
+          !mediaRecorderRef.current &&
+          typeof MediaRecorder !== "undefined"
+        ) {
           if (localAudioTrackRef.current) {
             attachLocalAudioToRecorder(localAudioTrackRef.current)
           }
@@ -354,31 +364,30 @@ export default function ConciergeCallDeskPage() {
             attachRemoteAudioToRecorder(remoteAudioTrackRef.current)
           }
 
-          if (typeof MediaRecorder !== "undefined") {
-            recordedChunksRef.current = []
-            const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-              ? "audio/webm;codecs=opus"
-              : MediaRecorder.isTypeSupported("audio/webm")
-                ? "audio/webm"
-                : MediaRecorder.isTypeSupported("audio/mp4")
-                  ? "audio/mp4"
-                  : ""
-            const recorderOptions: MediaRecorderOptions = {
-              ...(mimeType ? { mimeType } : {}),
-              audioBitsPerSecond: 24000,
-            }
-            const recorder = new MediaRecorder(dest.stream, recorderOptions)
-            recorder.ondataavailable = (ev) => {
-              if (ev.data && ev.data.size > 0) {
-                recordedChunksRef.current.push(ev.data)
-              }
-            }
-            recorder.start(1000)
-            mediaRecorderRef.current = recorder
-            setIsRecordingAudio(true)
+          recordedChunksRef.current = []
+          const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            ? "audio/webm;codecs=opus"
+            : MediaRecorder.isTypeSupported("audio/webm")
+              ? "audio/webm"
+              : MediaRecorder.isTypeSupported("audio/mp4")
+                ? "audio/mp4"
+                : ""
+          const recorderOptions: MediaRecorderOptions = {
+            ...(mimeType ? { mimeType } : {}),
+            audioBitsPerSecond: 24000,
           }
-        } else if (audioCtxRef.current?.state === "suspended") {
-          void audioCtxRef.current.resume().catch(() => undefined)
+          const recorder = new MediaRecorder(
+            mixDestRef.current.stream,
+            recorderOptions,
+          )
+          recorder.ondataavailable = (ev) => {
+            if (ev.data && ev.data.size > 0) {
+              recordedChunksRef.current.push(ev.data)
+            }
+          }
+          recorder.start(1000)
+          mediaRecorderRef.current = recorder
+          setIsRecordingAudio(true)
         }
       }
 
@@ -495,7 +504,10 @@ export default function ConciergeCallDeskPage() {
         mixDestRef.current = null
       }
 
-      if (recordedChunksRef.current.length > 0) {
+      const wasAnsweredAndSpoken =
+        hasPilgrimAnsweredRef.current && elapsedSecondsRef.current >= 1
+
+      if (wasAnsweredAndSpoken && recordedChunksRef.current.length > 0) {
         const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" })
         mimeType = blob.type || "audio/webm"
         audioBase64 = await new Promise<string>((resolve) => {
@@ -507,14 +519,23 @@ export default function ConciergeCallDeskPage() {
       }
 
       const activeId = session?.callId || callId
-      const transcriptText = liveTranscriptRef.current.join("\n")
+      const transcriptText = wasAnsweredAndSpoken
+        ? liveTranscriptRef.current.join("\n")
+        : ""
+
+      // Never upload a recording or empty transcript if the pilgrim never picked up the call
+      if (!wasAnsweredAndSpoken && !notesRef.current.trim()) {
+        setHistoryRefreshKey((k) => k + 1)
+        return
+      }
+
       setUploadingRecording(true)
       const uploadPayload = {
-        audioBase64: audioBase64 || undefined,
+        audioBase64: wasAnsweredAndSpoken ? audioBase64 || undefined : undefined,
         mimeType,
         transcriptText,
         notes: notesRef.current,
-        durationSeconds: elapsedSecondsRef.current,
+        durationSeconds: wasAnsweredAndSpoken ? elapsedSecondsRef.current : 0,
       }
       const res = await fetch(
         `/api/admin/customers/call/${encodeURIComponent(activeId)}/recording`,
@@ -535,7 +556,7 @@ export default function ConciergeCallDeskPage() {
             body: JSON.stringify({
               transcriptText,
               notes: notesRef.current,
-              durationSeconds: elapsedSecondsRef.current,
+              durationSeconds: wasAnsweredAndSpoken ? elapsedSecondsRef.current : 0,
             }),
           },
         ).catch(() => undefined)
@@ -675,6 +696,7 @@ export default function ConciergeCallDeskPage() {
     await cleanupRtc()
     hasJoinedRtcRef.current = true
     hasUploadedRecordingRef.current = false
+    hasPilgrimAnsweredRef.current = false
     recordedChunksRef.current = []
     liveTranscriptRef.current = []
     setLiveTranscriptLines([])
@@ -683,8 +705,21 @@ export default function ConciergeCallDeskPage() {
     setIsMuted(false)
     setIsOnHold(false)
 
-    // Unlock AudioContext + MediaRecorder + SpeechRecognition immediately
-    startAutoRecordingAndTranscriber()
+    // Pre-create & unlock AudioContext on user gesture, but DO NOT start MediaRecorder or SpeechRecognition
+    // until the pilgrim actually picks up the call!
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      if (!audioCtxRef.current && AudioCtx) {
+        const ctx = new AudioCtx()
+        if (ctx.state === "suspended") {
+          void ctx.resume().catch(() => undefined)
+        }
+        audioCtxRef.current = ctx
+        mixDestRef.current = ctx.createMediaStreamDestination()
+      }
+    } catch {
+      // ignore
+    }
 
     const AgoraRTC = await loadAgoraSdkScript()
     const client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" })
@@ -693,6 +728,7 @@ export default function ConciergeCallDeskPage() {
     client.on("user-published", async (remoteUser: any, mediaType: string) => {
       await client.subscribe(remoteUser, mediaType)
       if (mediaType === "audio" && remoteUser.audioTrack) {
+        hasPilgrimAnsweredRef.current = true
         remoteAudioTrackRef.current = remoteUser.audioTrack
         remoteUser.audioTrack.play()
         setCallStage("connected")
@@ -724,7 +760,6 @@ export default function ConciergeCallDeskPage() {
       AGC: true,
     })
     localAudioTrackRef.current = micTrack
-    attachLocalAudioToRecorder(micTrack)
     await client.publish([micTrack])
 
     pollTimerRef.current = window.setInterval(async () => {
@@ -739,6 +774,7 @@ export default function ConciergeCallDeskPage() {
         if (!latest) return
 
         if (latest.status === "ACCEPTED" || latest.status === "ON_HOLD") {
+          hasPilgrimAnsweredRef.current = true
           setCallStage("connected")
           setIsOnHold(latest.status === "ON_HOLD")
           startAutoRecordingAndTranscriber()
