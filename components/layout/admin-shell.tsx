@@ -20,6 +20,7 @@ import {
 } from "lucide-react"
 import { BrandMark } from "@/components/brand/brand-mark"
 import { useAdminSession } from "@/components/auth/session-provider"
+import { AdminIncomingCallBanner } from "@/components/calls/admin-incoming-call-banner"
 import {
   ADMIN_NAVIGATION,
   DASHBOARD_NAVIGATION,
@@ -176,6 +177,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <div className="relative hidden min-w-0 max-w-md flex-1 xl:block"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8b9490]" /><input value={bookingSearch} onChange={(event) => setBookingSearch(event.target.value)} placeholder="Search bookings" aria-label="Search bookings" className="h-10 w-full rounded-lg border border-[#d9dfdc] bg-[#f7faf9] pl-9 pr-3 text-sm outline-none focus:border-[#0d7d5f]" />{bookingSearch && <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-xl border border-[#d9dfdc] bg-white shadow-xl">{bookingSearching ? <p className="p-4 text-sm text-[#68716d]">Searching…</p> : bookingResults.length ? bookingResults.map((booking) => <button key={booking.id} type="button" onClick={() => { setBookingSearch(""); router.push(`/dashboard/journeys/${booking.id}`) }} className="flex w-full items-center justify-between gap-3 border-b border-[#edf1ef] px-4 py-3 text-left last:border-0 hover:bg-[#f7faf9]"><span><span className="block text-sm font-semibold text-[#17201c]">{booking.bookingRef || `Booking #${booking.id}`}</span><span className="block text-xs text-[#68716d]">{booking.pilgrimName || "Applicant"}</span></span><span className="text-xs font-bold text-[#0d7d5f]">Open</span></button>) : <p className="p-4 text-sm text-[#68716d]">No bookings found.</p>}</div>}</div>
           <UserMenu />
         </header>
+        <AdminIncomingCallBanner />
         <div>{children}</div>
       </div>
     </div>

@@ -143,7 +143,14 @@ type TierLimitDraft = Partial<Record<TierLimitKey, string>>
 const feeCardIds = ["early-exit", "halal-lock", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
 type FeeCardId = (typeof feeCardIds)[number]
 
-const featureToggles = [
+const featureToggles: Array<{
+  key: string
+  badgeId?: string
+  label: string
+  desc: string
+  superAdminOnly?: boolean
+}> = [
+  { key: "enableConciergeCalls", label: "In-App Concierge Voice Calls", desc: "Enable free in-app Agora voice calls between pilgrims and the admin Concierge Call Desk.", superAdminOnly: true },
   { key: "enableTravelFx", badgeId: "fx", label: "Travel FX", desc: "Enable foreign exchange and currency swap features." },
   { key: "enableTour", label: "Tours", desc: "Show tour packages alongside Hajj and Umrah on the mobile home screen." },
   { key: "enableHomeAds", label: "Home ads", desc: "Show sponsored and promotional ads on the mobile home screen." },
@@ -755,14 +762,23 @@ export default function SettingsPage() {
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                 {featureToggles.map((feature) => {
-                  const isActive = (feature.key === "enableHomeAds" || feature.key === "enableHalalLock")
+                  const isActive = (feature.key === "enableHomeAds" || feature.key === "enableHalalLock" || feature.key === "enableConciergeCalls")
                     ? config?.features?.[feature.key] !== false
                     : config?.features?.[feature.key] === true
+                  const isSuperAdmin = admin.role === "SUPER_ADMIN" || admin.permissions.includes("*")
+                  const lockedForRole = Boolean(feature.superAdminOnly && !isSuperAdmin)
                   const showNewBadge = feature.badgeId ? Boolean((config?.features?.newFeatureBadges as string[] | undefined)?.includes(feature.badgeId)) : false
                   return (
                     <div key={feature.key} className="flex min-h-40 flex-col rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
                       <div>
-                        <p className="font-bold text-[#17201c]">{feature.label}</p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-bold text-[#17201c]">{feature.label}</p>
+                          {feature.superAdminOnly && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[#cfeee0] bg-[#eaf9f3] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#0c6b50]">
+                              <ShieldCheck className="size-3" /> Super Admin
+                            </span>
+                          )}
+                        </div>
                         <p className="mt-0.5 text-xs leading-5 text-[#7b8580]">{feature.desc}</p>
                       </div>
                       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-[#dbe2de] pt-3">
@@ -771,8 +787,10 @@ export default function SettingsPage() {
                             <span>Show NEW badge</span>
                             <ToggleSwitch checked={showNewBadge} disabled={savingFeature === `badge-${feature.badgeId}`} onChange={() => void toggleNewBadge(feature.badgeId!, showNewBadge)} />
                           </label>
+                        ) : lockedForRole ? (
+                          <span className="text-[11px] font-semibold text-[#7b8580]">Super Admin required</span>
                         ) : <span />}
-                        <ToggleSwitch checked={isActive} disabled={savingFeature === feature.key} onChange={() => void toggleFeature(feature.key, isActive)} />
+                        <ToggleSwitch checked={isActive} disabled={savingFeature === feature.key || lockedForRole} onChange={() => void toggleFeature(feature.key, isActive)} />
                       </div>
                     </div>
                   )

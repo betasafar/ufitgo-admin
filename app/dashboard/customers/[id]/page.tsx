@@ -3,6 +3,8 @@
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
+import { ConciergeCallWidget } from "@/components/calls/concierge-call-widget"
+import { CallHistoryAndCtaPanel } from "@/components/calls/call-history-and-cta-panel"
 import {
   ArrowLeft,
   ArrowRight,
@@ -433,6 +435,11 @@ export default function CustomerDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <ConciergeCallWidget
+            customerId={String(customer.id ?? customerId)}
+            customerName={fullName}
+            customerPhone={contactPhone}
+          />
           <KycBadge status={customerKycStatus} />
           <Link href="/dashboard/customers" className="inline-flex items-center gap-2 rounded-lg border border-[#cbd5d0] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">
             Back to list <ArrowRight className="size-4" />
@@ -555,6 +562,8 @@ export default function CustomerDetailPage() {
                 </div>
               </div>
             </div>
+
+            <CallHistoryAndCtaPanel customerId={String(customerId)} />
           </section>
         </div>
       )}

@@ -4,6 +4,8 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { AppSelect } from "@/components/ui/app-select"
+import { ConciergeCallWidget } from "@/components/calls/concierge-call-widget"
+import { CallHistoryAndCtaPanel } from "@/components/calls/call-history-and-cta-panel"
 import noteTemplates from "@/data/booking-note-templates.json"
 import {
   ArrowLeft,
@@ -29,6 +31,7 @@ import {
 
 type BookingRecord = {
   id?: string | number
+  userId?: string
   bookingRef?: string
   pilgrimName?: string
   pilgrimPhone?: string
@@ -879,12 +882,22 @@ export default function JourneyDetailPage() {
           </div>
         </div>
 
-        {booking.status === "pending" && (
-          <button type="button" onClick={() => void cancelBooking()} disabled={cancelling} className="inline-flex items-center gap-2 rounded-lg border border-[#f4d0ca] bg-[#fff0ee] px-4 py-2.5 text-sm font-bold text-[#a43229] hover:bg-[#fddedb] disabled:opacity-50">
-            {cancelling ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-            Cancel booking
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {booking.userId && (
+            <ConciergeCallWidget
+              customerId={booking.userId}
+              customerName={booking.pilgrimName || "Pilgrim"}
+              customerPhone={booking.pilgrimPhone}
+              bookingId={booking.id}
+            />
+          )}
+          {booking.status === "pending" && (
+            <button type="button" onClick={() => void cancelBooking()} disabled={cancelling} className="inline-flex items-center gap-2 rounded-lg border border-[#f4d0ca] bg-[#fff0ee] px-4 py-2.5 text-sm font-bold text-[#a43229] hover:bg-[#fddedb] disabled:opacity-50">
+              {cancelling ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              Cancel booking
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -985,6 +998,12 @@ export default function JourneyDetailPage() {
           </aside>
 
           <div id="action-workspace" className="space-y-6">
+            {booking.userId && (
+              <CallHistoryAndCtaPanel
+                customerId={booking.userId}
+                bookingId={booking.id}
+              />
+            )}
             {!actionWorkspaceOpen && (
               <div className="rounded-2xl border border-dashed border-[#cbdad3] bg-[#f8fbf9] p-5 text-sm text-[#68716d]">
                 The operational workspace is closed. Use <span className="font-bold text-[#0d7d5f]">Open action workspace</span> above when you are ready to update the stage, record notes, or schedule a follow-up.
