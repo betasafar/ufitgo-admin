@@ -489,15 +489,24 @@ export function CallHistoryAndCtaPanel({
         )}
       </section>
 
-      {/* 2. Call Recordings & Transcript History */}
+      {/* 2. Single Unified Call Recording & Conversation Transcript Card */}
       <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-xs">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Headphones className="size-4 text-[#0d7d5f]" />
             <h3 className="font-brand text-base font-bold text-[#17201c]">
-              Call Recordings & Conversation Transcripts ({logs.length})
+              Call Recording &amp; Conversation Transcript
             </h3>
           </div>
+          {!activeCallId && (
+            <Link
+              href={`/dashboard/calls/${encodeURIComponent(logs[0]?.id || customerId)}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#0d7d5f] bg-[#f3fbf7] px-3 py-1.5 text-xs font-bold text-[#0d7d5f] transition hover:bg-[#eaf9f3]"
+            >
+              <Headphones className="size-3.5" />
+              Open Call Desk Workspace
+            </Link>
+          )}
         </div>
 
         {logs.length === 0 ? (
@@ -505,248 +514,231 @@ export function CallHistoryAndCtaPanel({
             No in-app concierge voice calls have been recorded for this pilgrim yet.
           </div>
         ) : (
-          <div className="mt-4 space-y-3">
-            {logs.slice(0, compact ? 5 : 25).map((log) => {
-              const isExpanded = expandedCallId === log.id
-              const isCurrentCallOnDesk = activeCallId === log.id
-              const isPreparingThisCall =
-                isPreparingCallId === log.id ||
-                (Date.now() - new Date(log.createdAt).getTime() < 90_000 &&
-                  log.status === "ENDED" &&
-                  log.durationSeconds > 0 &&
-                  !log.recordingUrl &&
-                  !log.transcript)
-              const allItems = Array.isArray(log.actionItems)
-                ? log.actionItems
-                : []
-              return (
-                <div
-                  key={log.id}
-                  className={`rounded-xl border p-4 ${
-                    isCurrentCallOnDesk
-                      ? "border-[#0d7d5f]/50 bg-[#f2faf6]"
-                      : "border-[#e3e9e6] bg-[#f9fbfa]"
-                  }`}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <span
-                        className={`mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl ${
-                          log.direction === "PILGRIM_TO_ADMIN"
-                            ? "bg-[#e7f3ff] text-[#0f74c1]"
-                            : "bg-[#eaf9f3] text-[#0d7d5f]"
-                        }`}
-                      >
-                        {log.direction === "PILGRIM_TO_ADMIN" ? (
-                          <PhoneIncoming className="size-4" />
-                        ) : (
-                          <PhoneOutgoing className="size-4" />
-                        )}
-                      </span>
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-bold text-[#17201c]">
-                            {log.reason || "Concierge Support Call"}
-                          </p>
-                          <span className="rounded-full bg-[#e6ece9] px-2 py-0.5 text-[10px] font-bold uppercase text-[#35443e]">
-                            {log.status}
-                          </span>
-                          {sentimentBadge(log.customerSentiment) && (
-                            <span
-                              className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${sentimentBadge(log.customerSentiment)?.className}`}
-                            >
-                              {sentimentBadge(log.customerSentiment)?.label}
-                            </span>
-                          )}
-                          {log.durationSeconds > 0 && (
-                            <span className="text-xs font-semibold text-[#5d6b65]">
-                              · {formatDuration(log.durationSeconds)}
-                            </span>
-                          )}
-                          {isPreparingThisCall && (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-[#f59e0b]/40 bg-[#fffbeb] px-2.5 py-0.5 text-[10px] font-bold text-[#b45309]">
-                              <Loader2 className="size-3 animate-spin" />
-                              Preparing recording &amp; transcript…
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-0.5 text-xs text-[#68716d]">
-                          {new Date(log.createdAt).toLocaleString()} ·{" "}
-                          {log.direction === "PILGRIM_TO_ADMIN"
-                            ? "Inbound from Pilgrim"
-                            : `Called by ${log.callerName}`}
-                        </p>
-                      </div>
-                    </div>
+          (() => {
+            const log = logs[0]
+            const isExpanded = expandedCallId !== "COLLAPSED"
+            const isPreparingThisCall =
+              Boolean(isPreparingCallId) ||
+              (Date.now() - new Date(log.createdAt).getTime() < 90_000 &&
+                log.status === "ENDED" &&
+                log.durationSeconds > 0 &&
+                !log.recordingUrl &&
+                !log.transcript)
+            const allItems = Array.isArray(log.actionItems)
+              ? log.actionItems
+              : []
 
-                    <div className="flex items-center gap-2">
-                      {isCurrentCallOnDesk ? (
-                        <span className="inline-flex items-center gap-1 rounded-lg border border-[#a7f3d0] bg-[#ecfdf5] px-2.5 py-1.5 text-xs font-bold text-[#047857]">
-                          <CheckCircle2 className="size-3.5" /> Viewing This Call
-                        </span>
+            return (
+              <div className="mt-4 rounded-xl border border-[#dbeee4] bg-[#f9fbfa] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl ${
+                        log.direction === "PILGRIM_TO_ADMIN"
+                          ? "bg-[#e7f3ff] text-[#0f74c1]"
+                          : "bg-[#eaf9f3] text-[#0d7d5f]"
+                      }`}
+                    >
+                      {log.direction === "PILGRIM_TO_ADMIN" ? (
+                        <PhoneIncoming className="size-4" />
                       ) : (
-                        <Link
-                          href={`/dashboard/calls/${encodeURIComponent(log.id)}`}
-                          className="rounded-lg border border-[#d3dad7] bg-white px-2.5 py-1.5 text-xs font-bold text-[#35443e] hover:bg-[#edf3f0]"
-                        >
-                          Open Call Desk
-                        </Link>
+                        <PhoneOutgoing className="size-4" />
                       )}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedCallId(isExpanded ? null : log.id)
-                        }
-                        className="inline-flex items-center gap-1 rounded-lg border border-[#d3dad7] bg-white px-2.5 py-1.5 text-xs font-bold text-[#0d7d5f] hover:bg-[#eaf9f3]"
-                      >
-                        <FileText className="size-3.5" />
-                        {isExpanded ? "Hide Transcript" : "View Transcript"}
-                        {isExpanded ? (
-                          <ChevronUp className="size-3.5" />
-                        ) : (
-                          <ChevronDown className="size-3.5" />
+                    </span>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-bold text-[#17201c]">
+                          {log.reason || "Concierge Support Call"}
+                        </p>
+                        <span className="rounded-full bg-[#e6ece9] px-2 py-0.5 text-[10px] font-bold uppercase text-[#35443e]">
+                          {log.status}
+                        </span>
+                        {sentimentBadge(log.customerSentiment) && (
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${sentimentBadge(log.customerSentiment)?.className}`}
+                          >
+                            {sentimentBadge(log.customerSentiment)?.label}
+                          </span>
                         )}
-                      </button>
+                        {log.durationSeconds > 0 && (
+                          <span className="text-xs font-semibold text-[#0d7d5f]">
+                            · Duration: {formatDuration(log.durationSeconds)}
+                          </span>
+                        )}
+                        {isPreparingThisCall && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-[#f59e0b]/40 bg-[#fffbeb] px-2.5 py-0.5 text-[10px] font-bold text-[#b45309]">
+                            <Loader2 className="size-3 animate-spin" />
+                            Preparing recording &amp; transcript…
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-[#68716d]">
+                        Latest session: {new Date(log.createdAt).toLocaleString()} ·{" "}
+                        {log.direction === "PILGRIM_TO_ADMIN"
+                          ? "Inbound from Pilgrim"
+                          : `Called by ${log.callerName}`}
+                      </p>
                     </div>
                   </div>
 
-                  {/* Real-time Preparing Indicator when Recording is Uploading / Transcribing */}
-                  {isPreparingThisCall && !log.recordingUrl && (
-                    <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-3 py-2 text-xs font-semibold text-[#92400e]">
-                      <Loader2 className="size-4 shrink-0 animate-spin text-[#d97706]" />
-                      <span>
-                        Uploading call audio &amp; generating AI conversation transcript… This panel will update automatically in a few seconds.
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedCallId(isExpanded ? "COLLAPSED" : log.id)
+                    }
+                    className="inline-flex items-center gap-1 rounded-lg border border-[#d3dad7] bg-white px-2.5 py-1.5 text-xs font-bold text-[#0d7d5f] hover:bg-[#eaf9f3]"
+                  >
+                    <FileText className="size-3.5" />
+                    {isExpanded ? "Collapse Details" : "Show Transcript & Notes"}
+                    {isExpanded ? (
+                      <ChevronUp className="size-3.5" />
+                    ) : (
+                      <ChevronDown className="size-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Always-Visible Call Audio Recording Player Section */}
+                {log.recordingUrl ? (
+                  <div className="mt-3 rounded-lg border border-[#cfeee0] bg-white p-3 shadow-2xs">
+                    <div className="mb-2 flex items-center justify-between text-xs font-bold text-[#0d7d5f]">
+                      <span className="flex items-center gap-1.5">
+                        <Headphones className="size-4" /> Call Audio Recording ({formatDuration(log.durationSeconds)})
                       </span>
+                      <a
+                        href={log.recordingUrl}
+                        download={`ufitgo-call-${log.id.slice(0, 8)}.webm`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-md bg-[#eaf9f3] px-2.5 py-1 text-[11px] font-bold text-[#0d7d5f] hover:bg-[#d5f3e6]"
+                      >
+                        Download Audio
+                      </a>
                     </div>
-                  )}
+                    <audio
+                      controls
+                      preload="metadata"
+                      src={log.recordingUrl}
+                      className="h-10 w-full"
+                    />
+                  </div>
+                ) : isPreparingThisCall ? (
+                  <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-3 py-2.5 text-xs font-semibold text-[#92400e]">
+                    <Loader2 className="size-4 shrink-0 animate-spin text-[#d97706]" />
+                    <span>
+                      Uploading call audio &amp; generating AI conversation transcript… This player will appear automatically in a few seconds.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-[#e3e9e6] bg-white px-3 py-2 text-xs text-[#68716d]">
+                    <span className="flex items-center gap-1.5">
+                      <Headphones className="size-3.5 text-[#8d9692]" />
+                      No audio file was stored for this earlier session. New calls automatically save playable audio here.
+                    </span>
+                  </div>
+                )}
 
-                  {/* Audio Replay Bar */}
-                  {log.recordingUrl && (
-                    <div className="mt-3 rounded-lg border border-[#dbe2de] bg-white p-2.5">
-                      <div className="mb-1.5 flex items-center justify-between text-[11px] font-bold text-[#0d7d5f]">
-                        <span className="flex items-center gap-1.5">
-                          <Headphones className="size-3.5" /> Recorded Call Audio Replay
-                        </span>
-                        <a
-                          href={log.recordingUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline hover:text-[#095c46]"
-                        >
-                          Download Audio
-                        </a>
-                      </div>
-                      <audio
-                        controls
-                        preload="none"
-                        src={log.recordingUrl}
-                        className="h-9 w-full"
-                      />
-                    </div>
-                  )}
+                {/* AI Executive Summary */}
+                {log.aiSummary && (
+                  <div className="mt-3 rounded-lg border border-[#dbeee4] bg-[#f2faf6] px-3 py-2 text-xs text-[#253630]">
+                    <span className="font-bold text-[#0d7d5f]">
+                      AI Call Summary:{" "}
+                    </span>
+                    {log.aiSummary}
+                  </div>
+                )}
 
-                  {/* AI Executive Summary */}
-                  {log.aiSummary && (
-                    <div className="mt-3 rounded-lg border border-[#dbeee4] bg-[#f2faf6] px-3 py-2 text-xs text-[#253630]">
-                      <span className="font-bold text-[#0d7d5f]">
-                        AI Call Summary:{" "}
-                      </span>
-                      {log.aiSummary}
-                    </div>
-                  )}
-
-                  {/* Expandable Transcript, Notes & Per-Call Action Items */}
-                  {isExpanded && (
-                    <div className="mt-3 space-y-3 border-t border-[#e3e9e6] pt-3">
-                      {log.transcript ? (
-                        <div>
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-[#68716d]">
-                            Conversation Transcript
-                          </p>
-                          <pre className="mt-1.5 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[#dbe2de] bg-white p-3 font-sans text-xs leading-5 text-[#17201c]">
-                            {log.transcript}
-                          </pre>
-                        </div>
-                      ) : isPreparingThisCall ? (
-                        <div className="flex items-center gap-2 rounded-lg border border-[#fde68a] bg-[#fffbeb] p-3 text-xs font-semibold text-[#92400e]">
-                          <Loader2 className="size-4 shrink-0 animate-spin text-[#d97706]" />
-                          Preparing speech transcript &amp; AI summary from call audio… It will appear here automatically once ready.
-                        </div>
-                      ) : (
-                        <p className=" flex items-center gap-1.5 text-xs italic text-[#78817d]">
-                          <AlertCircle className="size-3.5" /> No speech transcript was captured for this call.
+                {/* Unified Transcript, Notes & Action Items */}
+                {isExpanded && (
+                  <div className="mt-3 space-y-3 border-t border-[#e3e9e6] pt-3">
+                    {log.transcript ? (
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-[#68716d]">
+                          Conversation Transcript
                         </p>
-                      )}
+                        <pre className="mt-1.5 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[#dbe2de] bg-white p-3 font-sans text-xs leading-5 text-[#17201c]">
+                          {log.transcript}
+                        </pre>
+                      </div>
+                    ) : isPreparingThisCall ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-[#fde68a] bg-[#fffbeb] p-3 text-xs font-semibold text-[#92400e]">
+                        <Loader2 className="size-4 shrink-0 animate-spin text-[#d97706]" />
+                        Preparing speech transcript &amp; AI summary from call audio… It will appear here automatically once ready.
+                      </div>
+                    ) : (
+                      <p className="flex items-center gap-1.5 text-xs italic text-[#78817d]">
+                        <AlertCircle className="size-3.5" /> No speech transcript was captured yet. Speak during a call or save concierge notes to populate this section.
+                      </p>
+                    )}
 
-                      {log.callNotes && (
-                        <div>
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-[#68716d]">
-                            Concierge Notes
-                          </p>
-                          <p className="mt-1 whitespace-pre-wrap rounded-lg border border-[#dbe2de] bg-white p-3 text-xs text-[#35443e]">
-                            {log.callNotes}
-                          </p>
-                        </div>
-                      )}
+                    {log.callNotes && (
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-[#68716d]">
+                          Concierge Notes
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap rounded-lg border border-[#dbe2de] bg-white p-3 text-xs text-[#35443e]">
+                          {log.callNotes}
+                        </p>
+                      </div>
+                    )}
 
-                      {allItems.length > 0 && (
-                        <div>
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-[#68716d]">
-                            Action Items from This Call ({allItems.length})
-                          </p>
-                          <div className="mt-1.5 space-y-1.5">
-                            {allItems.map((item) => (
-                              <div
-                                key={item.id}
-                                className="flex items-center justify-between gap-2 rounded-lg border border-[#dbe2de] bg-white px-3 py-2 text-xs"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    aria-label={item.title}
-                                    checked={item.status === "DONE"}
-                                    disabled={togglingId === item.id}
-                                    onChange={() =>
-                                      void toggleActionItem(
-                                        log.id,
-                                        item.id,
-                                        item.status,
-                                      )
-                                    }
-                                    className="size-4 accent-[#0d7d5f]"
-                                  />
-                                  <span
-                                    className={
-                                      item.status === "DONE"
-                                        ? "line-through text-[#8d9692]"
-                                        : "font-semibold text-[#17201c]"
-                                    }
-                                  >
-                                    {item.title}
-                                  </span>
-                                </div>
+                    {allItems.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-[#68716d]">
+                          Action Items from Call History ({allItems.length})
+                        </p>
+                        <div className="mt-1.5 space-y-1.5">
+                          {allItems.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center justify-between gap-2 rounded-lg border border-[#dbe2de] bg-white px-3 py-2 text-xs"
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  aria-label={item.title}
+                                  checked={item.status === "DONE"}
+                                  disabled={togglingId === item.id}
+                                  onChange={() =>
+                                    void toggleActionItem(
+                                      log.id,
+                                      item.id,
+                                      item.status,
+                                    )
+                                  }
+                                  className="size-4 accent-[#0d7d5f]"
+                                />
                                 <span
-                                  className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                  className={
                                     item.status === "DONE"
-                                      ? "border-[#cfeee0] bg-[#eaf9f3] text-[#0c6b50]"
-                                      : priorityBadgeStyle(item.priority)
-                                  }`}
+                                      ? "line-through text-[#8d9692]"
+                                      : "font-semibold text-[#17201c]"
+                                  }
                                 >
-                                  {item.status === "DONE"
-                                    ? "DONE"
-                                    : item.priority}
+                                  {item.title}
                                 </span>
                               </div>
-                            ))}
-                          </div>
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                  item.status === "DONE"
+                                    ? "border-[#cfeee0] bg-[#eaf9f3] text-[#0c6b50]"
+                                    : priorityBadgeStyle(item.priority)
+                                }`}
+                              >
+                                {item.status === "DONE"
+                                  ? "DONE"
+                                  : item.priority}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()
         )}
       </section>
     </div>

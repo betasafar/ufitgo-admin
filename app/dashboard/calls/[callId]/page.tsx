@@ -143,8 +143,9 @@ export default function ConciergeCallDeskPage() {
 
   const [session, setSession] = useState<ConciergeCallSession | null>(null)
   const [callStage, setCallStage] = useState<
-    "connecting" | "ringing" | "connected" | "declined" | "ended" | "error"
-  >("connecting")
+    "standby" | "connecting" | "ringing" | "connected" | "declined" | "ended" | "error"
+  >("standby")
+  const [isStartingCall, setIsStartingCall] = useState(false)
   const [callError, setCallError] = useState("")
   const [isMuted, setIsMuted] = useState(false)
   const [isOnHold, setIsOnHold] = useState(false)
@@ -311,22 +312,46 @@ export default function ConciergeCallDeskPage() {
     }
   }, [callStage])
 
+  const attachLocalAudioToRecorder = (localAudioTrack: any) => {
+    try {
+      if (
+        audioCtxRef.current &&
+        mixDestRef.current &&
+        localAudioTrack?.getMediaStreamTrack
+      ) {
+        if (audioCtxRef.current.state === "suspended") {
+          void audioCtxRef.current.resume().catch(() => undefined)
+        }
+        const micStream = new MediaStream([
+          localAudioTrack.getMediaStreamTrack(),
+        ])
+        const micSource =
+          audioCtxRef.current.createMediaStreamSource(micStream)
+        micSource.connect(mixDestRef.current)
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const startAutoRecordingAndTranscriber = () => {
     try {
-      if (!audioCtxRef.current && typeof window !== "undefined") {
+      if (typeof window !== "undefined") {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-        if (AudioCtx) {
+        if (!audioCtxRef.current && AudioCtx) {
           const ctx = new AudioCtx()
+          if (ctx.state === "suspended") {
+            void ctx.resume().catch(() => undefined)
+          }
           const dest = ctx.createMediaStreamDestination()
           audioCtxRef.current = ctx
           mixDestRef.current = dest
 
-          if (localAudioTrackRef.current?.getMediaStreamTrack) {
-            const micStream = new MediaStream([
-              localAudioTrackRef.current.getMediaStreamTrack(),
-            ])
-            const micSource = ctx.createMediaStreamSource(micStream)
-            micSource.connect(dest)
+          if (localAudioTrackRef.current) {
+            attachLocalAudioToRecorder(localAudioTrackRef.current)
+          }
+          if (remoteAudioTrackRef.current) {
+            attachRemoteAudioToRecorder(remoteAudioTrackRef.current)
           }
 
           if (typeof MediaRecorder !== "undefined") {
@@ -335,7 +360,9 @@ export default function ConciergeCallDeskPage() {
               ? "audio/webm;codecs=opus"
               : MediaRecorder.isTypeSupported("audio/webm")
                 ? "audio/webm"
-                : ""
+                : MediaRecorder.isTypeSupported("audio/mp4")
+                  ? "audio/mp4"
+                  : ""
             const recorderOptions: MediaRecorderOptions = {
               ...(mimeType ? { mimeType } : {}),
               audioBitsPerSecond: 24000,
@@ -350,6 +377,8 @@ export default function ConciergeCallDeskPage() {
             mediaRecorderRef.current = recorder
             setIsRecordingAudio(true)
           }
+        } else if (audioCtxRef.current?.state === "suspended") {
+          void audioCtxRef.current.resume().catch(() => undefined)
         }
       }
 
@@ -406,6 +435,9 @@ export default function ConciergeCallDeskPage() {
         mixDestRef.current &&
         remoteAudioTrack?.getMediaStreamTrack
       ) {
+        if (audioCtxRef.current.state === "suspended") {
+          void audioCtxRef.current.resume().catch(() => undefined)
+        }
         const remoteStream = new MediaStream([
           remoteAudioTrack.getMediaStreamTrack(),
         ])
@@ -444,6 +476,11 @@ export default function ConciergeCallDeskPage() {
           const rec = mediaRecorderRef.current!
           rec.onstop = () => resolve()
           try {
+            rec.requestData()
+          } catch {
+            // ignore
+          }
+          try {
             rec.stop()
           } catch {
             resolve()
@@ -469,6 +506,7 @@ export default function ConciergeCallDeskPage() {
         })
       }
 
+      const activeId = session?.callId || callId
       const transcriptText = liveTranscriptRef.current.join("\n")
       setUploadingRecording(true)
       const uploadPayload = {
@@ -479,7 +517,7 @@ export default function ConciergeCallDeskPage() {
         durationSeconds: elapsedSecondsRef.current,
       }
       const res = await fetch(
-        `/api/admin/customers/call/${encodeURIComponent(callId)}/recording`,
+        `/api/admin/customers/call/${encodeURIComponent(activeId)}/recording`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -488,9 +526,9 @@ export default function ConciergeCallDeskPage() {
       ).catch(() => null)
 
       // If audio payload was too large for the proxy, fallback to saving transcript, duration & notes immediately
-      if (!res || !res.ok) {
+      if (!res?.ok) {
         await fetch(
-          `/api/admin/customers/call/${encodeURIComponent(callId)}/recording`,
+          `/api/admin/customers/call/${encodeURIComponent(activeId)}/recording`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -633,7 +671,137 @@ export default function ConciergeCallDeskPage() {
     }
   }
 
-  // Initialize Call Session & Connect Agora WebRTC
+  const connectLiveCallRtc = async (callData: ConciergeCallSession) => {
+    await cleanupRtc()
+    hasJoinedRtcRef.current = true
+    hasUploadedRecordingRef.current = false
+    recordedChunksRef.current = []
+    liveTranscriptRef.current = []
+    setLiveTranscriptLines([])
+    setElapsedSeconds(0)
+    elapsedSecondsRef.current = 0
+    setIsMuted(false)
+    setIsOnHold(false)
+
+    // Unlock AudioContext + MediaRecorder + SpeechRecognition immediately
+    startAutoRecordingAndTranscriber()
+
+    const AgoraRTC = await loadAgoraSdkScript()
+    const client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" })
+    rtcClientRef.current = client
+
+    client.on("user-published", async (remoteUser: any, mediaType: string) => {
+      await client.subscribe(remoteUser, mediaType)
+      if (mediaType === "audio" && remoteUser.audioTrack) {
+        remoteAudioTrackRef.current = remoteUser.audioTrack
+        remoteUser.audioTrack.play()
+        setCallStage("connected")
+        startAutoRecordingAndTranscriber()
+        attachRemoteAudioToRecorder(remoteUser.audioTrack)
+        if (!durationTimerRef.current) {
+          durationTimerRef.current = window.setInterval(() => {
+            setElapsedSeconds((prev) => prev + 1)
+          }, 1000)
+        }
+      }
+    })
+
+    client.on("user-left", () => {
+      setCallStage("ended")
+      void finalizeAndUploadRecording()
+      void cleanupRtc()
+    })
+
+    await client.join(
+      callData.appId,
+      callData.channelName,
+      callData.adminToken || null,
+      callData.adminUid,
+    )
+    const micTrack = await AgoraRTC.createMicrophoneAudioTrack({
+      AEC: true,
+      ANS: true,
+      AGC: true,
+    })
+    localAudioTrackRef.current = micTrack
+    attachLocalAudioToRecorder(micTrack)
+    await client.publish([micTrack])
+
+    pollTimerRef.current = window.setInterval(async () => {
+      try {
+        const statusRes = await fetch(
+          `/api/admin/customers/call/${encodeURIComponent(callData.callId)}/status`,
+          { cache: "no-store" },
+        )
+        const statusPayload = await statusRes.json().catch(() => null)
+        const latest: ConciergeCallSession | undefined =
+          statusPayload?.data ?? statusPayload
+        if (!latest) return
+
+        if (latest.status === "ACCEPTED" || latest.status === "ON_HOLD") {
+          setCallStage("connected")
+          setIsOnHold(latest.status === "ON_HOLD")
+          startAutoRecordingAndTranscriber()
+          if (!durationTimerRef.current) {
+            durationTimerRef.current = window.setInterval(() => {
+              setElapsedSeconds((prev) => prev + 1)
+            }, 1000)
+          }
+        } else if (latest.status === "DECLINED") {
+          setCallStage("declined")
+          await cleanupRtc()
+        } else if (latest.status === "ENDED" || latest.status === "MISSED") {
+          setCallStage("ended")
+          await finalizeAndUploadRecording()
+          await cleanupRtc()
+        }
+      } catch {
+        // ignore poll error
+      }
+    }, 2000)
+  }
+
+  const handleStartLiveCall = async () => {
+    if (!session?.userId || isStartingCall) return
+    setIsStartingCall(true)
+    setCallError("")
+    setCallStage("connecting")
+    try {
+      const res = await fetch(
+        `/api/admin/customers/${encodeURIComponent(session.userId)}/call/initiate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            callerName: "UfitGo Pilgrim Concierge",
+            reason: session.reason || `Concierge support call for ${session.pilgrimName}`,
+            bookingId: session.bookingId,
+          }),
+        },
+      )
+      const payload = await res.json().catch(() => null)
+      const nextCall: ConciergeCallSession | undefined = payload?.data ?? payload
+      if (!res.ok || !nextCall?.callId) {
+        throw new Error(
+          payload?.details?.message ||
+            payload?.message ||
+            "Could not initiate concierge voice call.",
+        )
+      }
+      setSession(nextCall)
+      setCallStage("ringing")
+      await connectLiveCallRtc(nextCall)
+    } catch (err) {
+      setCallStage("error")
+      setCallError(
+        err instanceof Error ? err.message : "Could not start voice call.",
+      )
+    } finally {
+      setIsStartingCall(false)
+    }
+  }
+
+  // Load Call Desk Workspace in Standby / Review Mode (never auto-dials unless answering an inbound pilgrim call)
   useEffect(() => {
     if (!callId) return
     let disposed = false
@@ -657,25 +825,13 @@ export default function ConciergeCallDeskPage() {
         }
         void loadPilgrimDossier(callData.userId)
 
-        if (
-          callData.status === "ENDED" ||
-          callData.status === "DECLINED" ||
-          callData.status === "MISSED"
-        ) {
-          setCallStage(callData.status === "DECLINED" ? "declined" : "ended")
-          if (typeof (callData as any).durationSeconds === "number") {
-            setElapsedSeconds((callData as any).durationSeconds)
-          }
-          return
-        }
-
-        // If this was an inbound call from the pilgrim, mark it accepted as soon as admin opens the Call Desk
+        // Only auto-connect if this is an active inbound call from the pilgrim
         if (
           callData.direction === "PILGRIM_TO_ADMIN" &&
           callData.status === "RINGING"
         ) {
           await fetch(
-            `/api/admin/customers/call/${encodeURIComponent(callId)}/respond`,
+            `/api/admin/customers/call/${encodeURIComponent(callData.callId)}/respond`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -683,94 +839,22 @@ export default function ConciergeCallDeskPage() {
             },
           ).catch(() => undefined)
           setCallStage("connected")
+          await connectLiveCallRtc(callData)
+          return
+        }
+
+        // Otherwise open in Standby / Review Mode — never auto-dial the pilgrim just by opening the page!
+        if (typeof (callData as any).durationSeconds === "number" && (callData as any).durationSeconds > 0) {
+          setElapsedSeconds((callData as any).durationSeconds)
+          setCallStage("ended")
         } else {
-          setCallStage(
-            callData.status === "ACCEPTED" ? "connected" : "ringing",
-          )
+          setCallStage("standby")
         }
-
-        if (!hasJoinedRtcRef.current) {
-          hasJoinedRtcRef.current = true
-          const AgoraRTC = await loadAgoraSdkScript()
-          const client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" })
-          rtcClientRef.current = client
-
-          client.on("user-published", async (remoteUser: any, mediaType: string) => {
-            await client.subscribe(remoteUser, mediaType)
-            if (mediaType === "audio" && remoteUser.audioTrack) {
-              remoteAudioTrackRef.current = remoteUser.audioTrack
-              remoteUser.audioTrack.play()
-              setCallStage("connected")
-              startAutoRecordingAndTranscriber()
-              attachRemoteAudioToRecorder(remoteUser.audioTrack)
-              if (!durationTimerRef.current) {
-                durationTimerRef.current = window.setInterval(() => {
-                  setElapsedSeconds((prev) => prev + 1)
-                }, 1000)
-              }
-            }
-          })
-
-          client.on("user-left", () => {
-            setCallStage("ended")
-            void finalizeAndUploadRecording()
-            void cleanupRtc()
-          })
-
-          await client.join(
-            callData.appId,
-            callData.channelName,
-            callData.adminToken || null,
-            callData.adminUid,
-          )
-          const micTrack = await AgoraRTC.createMicrophoneAudioTrack({
-            AEC: true,
-            ANS: true,
-            AGC: true,
-          })
-          localAudioTrackRef.current = micTrack
-          await client.publish([micTrack])
-          if (callData.status === "ACCEPTED" || callData.direction === "PILGRIM_TO_ADMIN") {
-            startAutoRecordingAndTranscriber()
-          }
-        }
-
-        pollTimerRef.current = window.setInterval(async () => {
-          try {
-            const statusRes = await fetch(
-              `/api/admin/customers/call/${encodeURIComponent(callId)}/status`,
-              { cache: "no-store" },
-            )
-            const statusPayload = await statusRes.json().catch(() => null)
-            const latest: ConciergeCallSession | undefined =
-              statusPayload?.data ?? statusPayload
-            if (!latest) return
-
-            if (latest.status === "ACCEPTED" || latest.status === "ON_HOLD") {
-              setCallStage("connected")
-              setIsOnHold(latest.status === "ON_HOLD")
-              if (!durationTimerRef.current) {
-                durationTimerRef.current = window.setInterval(() => {
-                  setElapsedSeconds((prev) => prev + 1)
-                }, 1000)
-              }
-            } else if (latest.status === "DECLINED") {
-              setCallStage("declined")
-              await cleanupRtc()
-            } else if (latest.status === "ENDED" || latest.status === "MISSED") {
-              setCallStage("ended")
-              await finalizeAndUploadRecording()
-              await cleanupRtc()
-            }
-          } catch {
-            // ignore poll error
-          }
-        }, 2000)
       } catch (err) {
         if (!disposed) {
           setCallStage("error")
           setCallError(
-            err instanceof Error ? err.message : "Could not connect call desk.",
+            err instanceof Error ? err.message : "Could not load call desk.",
           )
         }
       }
@@ -797,7 +881,8 @@ export default function ConciergeCallDeskPage() {
   }
 
   const toggleHold = async () => {
-    if (!callId) return
+    const activeId = session?.callId || callId
+    if (!activeId) return
     const nextHold = !isOnHold
     setIsOnHold(nextHold)
 
@@ -817,7 +902,7 @@ export default function ConciergeCallDeskPage() {
       }
     }
 
-    await fetch(`/api/admin/customers/call/${encodeURIComponent(callId)}/respond`, {
+    await fetch(`/api/admin/customers/call/${encodeURIComponent(activeId)}/respond`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: nextHold ? "hold" : "resume" }),
@@ -825,11 +910,12 @@ export default function ConciergeCallDeskPage() {
   }
 
   const handleEndCall = async () => {
+    const activeId = session?.callId || callId
     setCallStage("ended")
     await finalizeAndUploadRecording()
     await cleanupRtc()
-    if (callId) {
-      await fetch(`/api/admin/customers/call/${encodeURIComponent(callId)}/respond`, {
+    if (activeId) {
+      await fetch(`/api/admin/customers/call/${encodeURIComponent(activeId)}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "end" }),
@@ -839,11 +925,12 @@ export default function ConciergeCallDeskPage() {
   }
 
   const handleSaveNotes = async () => {
-    if (!callId) return
+    const activeId = session?.callId || callId
+    if (!activeId) return
     setSavingNotes(true)
     setNotesSavedNotice("")
     try {
-      await fetch(`/api/admin/customers/call/${encodeURIComponent(callId)}/notes`, {
+      await fetch(`/api/admin/customers/call/${encodeURIComponent(activeId)}/notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes }),
@@ -965,6 +1052,11 @@ export default function ConciergeCallDeskPage() {
 
               {/* Call Status Indicator */}
               <div className="mt-5">
+                {callStage === "standby" && (
+                  <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-[#a7f3d0]">
+                    Ready · Click &ldquo;Start Voice Call&rdquo; below when ready to ring pilgrim
+                  </span>
+                )}
                 {callStage === "connecting" && (
                   <span className="inline-flex items-center gap-2 rounded-full bg-black/30 px-4 py-1.5 text-xs font-semibold text-[#a7f3d0]">
                     <Loader2 className="size-3.5 animate-spin" /> Connecting voice channel…
@@ -1080,28 +1172,18 @@ export default function ConciergeCallDeskPage() {
                   session?.userId && (
                     <button
                       type="button"
-                      onClick={async () => {
-                        const res = await fetch(
-                          `/api/admin/customers/${encodeURIComponent(session.userId)}/call/initiate`,
-                          {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              callerName: "UfitGo Pilgrim Concierge",
-                              reason: session.reason,
-                              bookingId: session.bookingId,
-                            }),
-                          },
-                        )
-                        const payload = await res.json().catch(() => null)
-                        const nextCall = payload?.data ?? payload
-                        if (nextCall?.callId) {
-                          router.replace(`/dashboard/calls/${nextCall.callId}`)
-                        }
-                      }}
-                      className="flex h-11 items-center gap-2 rounded-full bg-[#10b981] px-5 text-xs font-bold text-white hover:bg-[#059669]"
+                      disabled={isStartingCall || callStage === "connecting"}
+                      onClick={() => void handleStartLiveCall()}
+                      className="flex h-11 items-center gap-2 rounded-full bg-[#10b981] px-5 text-xs font-bold text-white shadow-lg transition hover:bg-[#059669] disabled:opacity-60"
                     >
-                      <Phone className="size-4" /> Call Again
+                      {isStartingCall || callStage === "connecting" ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Phone className="size-4" />
+                      )}
+                      {callStage === "ended" || callStage === "declined"
+                        ? "Call Pilgrim Again"
+                        : "Start Voice Call"}
                     </button>
                   )
                 )}
