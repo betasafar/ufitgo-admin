@@ -528,6 +528,32 @@ export function CallHistoryAndCtaPanel({
               ? log.actionItems
               : []
 
+            const startDate = new Date(
+              log.acceptedAt || log.createdAt,
+            )
+            const computedEndDate = log.endedAt
+              ? new Date(log.endedAt)
+              : log.durationSeconds > 0
+                ? new Date(startDate.getTime() + log.durationSeconds * 1000)
+                : null
+            const dateStr = startDate.toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+            })
+            const startTimeStr = startDate.toLocaleTimeString("en-GB", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })
+            const endTimeStr = computedEndDate
+              ? computedEndDate.toLocaleTimeString("en-GB", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })
+              : null
+
             return (
               <div className="mt-4 rounded-xl border border-[#dbeee4] bg-[#f9fbfa] p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -573,7 +599,13 @@ export function CallHistoryAndCtaPanel({
                         )}
                       </div>
                       <p className="mt-0.5 text-xs text-[#68716d]">
-                        Latest session: {new Date(log.createdAt).toLocaleString()} ·{" "}
+                        {dateStr} · Started: <strong className="font-semibold text-[#35443e]">{startTimeStr}</strong>
+                        {endTimeStr ? (
+                          <>
+                            {" "}→ Ended: <strong className="font-semibold text-[#35443e]">{endTimeStr}</strong>
+                          </>
+                        ) : null}
+                        {" "}·{" "}
                         {log.direction === "PILGRIM_TO_ADMIN"
                           ? "Inbound from Pilgrim"
                           : `Called by ${log.callerName}`}
