@@ -165,6 +165,7 @@ const featureToggles: Array<{
   { key: "enableProactiveAdvisorNudge", label: "Proactive AI nudge", desc: "Show a bottom-sheet inviting users to chat with the AI Advisor after repeated zero-result searches." },
   { key: "enableReferralProgram", label: "Referral & rewards", desc: "Enable the refer & earn program (signup and package-sale bonuses) across the app." },
   { key: "enableOperatorDirectory", label: "Operator directory", desc: "Show the browsable \"All Operators\" list in the app. Consider keeping off while onboarding few operators." },
+  { key: "enableOperatorWhatsAppInquiry", label: "Operator WhatsApp inquiry button", desc: "Show the 'Inquire via WhatsApp' sticky button on the Operator Details page in the mobile app (off by default)." },
   { key: "enablePaystack", label: "Paystack", desc: "Allow package payments through Paystack, including cards, bank transfer, and USSD." },
   { key: "enableOpay", label: "OPay", desc: "Allow package payments through OPay." },
   { key: "enablePayForMe", label: "Pay for Me", desc: "Allow customers to request a payment link for another person to pay for their booking." },
