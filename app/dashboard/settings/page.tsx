@@ -166,6 +166,7 @@ const featureToggles: Array<{
   { key: "enableReferralProgram", label: "Referral & rewards", desc: "Enable the refer & earn program (signup and package-sale bonuses) across the app." },
   { key: "enableOperatorDirectory", label: "Operator directory", desc: "Show the browsable \"All Operators\" list in the app. Consider keeping off while onboarding few operators." },
   { key: "enableOperatorWhatsAppInquiry", label: "Operator WhatsApp inquiry button", desc: "Show the 'Inquire via WhatsApp' sticky button on the Operator Details page in the mobile app (off by default)." },
+  { key: "enableWalletCheckout", label: "UfitFlex Wallet & Providus Direct Transfer (#1 Checkout)", desc: "Place UfitFlex Wallet & Providus Bank Transfer as Option #1 on all booking and installment checkouts (₦0 PSP cost to UfitGo)." },
   { key: "enablePaystack", label: "Paystack", desc: "Allow package payments through Paystack, including cards, bank transfer, and USSD." },
   { key: "enableOpay", label: "OPay", desc: "Allow package payments through OPay." },
   { key: "enablePayForMe", label: "Pay for Me", desc: "Allow customers to request a payment link for another person to pay for their booking." },
