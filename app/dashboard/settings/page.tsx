@@ -316,6 +316,7 @@ export default function SettingsPage() {
   const [config, setConfig] = useState<SystemConfig | null>(null)
   const [configLoading, setConfigLoading] = useState(true)
   const [savingFeature, setSavingFeature] = useState<string | null>(null)
+  const [savingCallAiProvider, setSavingCallAiProvider] = useState(false)
   const [savingToolkitOrder, setSavingToolkitOrder] = useState(false)
   const [savingDemoMode, setSavingDemoMode] = useState(false)
   const [earlyExitChargePercentDraft, setEarlyExitChargePercentDraft] = useState<string | null>(null)
@@ -384,6 +385,32 @@ export default function SettingsPage() {
       showToast("error", "Failed to update this feature.")
     } finally {
       setSavingFeature(null)
+    }
+  }
+
+  async function selectCallAiProvider(nextProvider: "openai" | "gemini") {
+    setSavingCallAiProvider(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ features: { callAiProvider: nextProvider } }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((prev) => ({
+        ...prev,
+        features: { ...prev?.features, callAiProvider: nextProvider },
+      }))
+      showToast(
+        "success",
+        nextProvider === "openai"
+          ? "Call AI switched to OpenAI Whisper + GPT-4o-mini (Primary) with Gemini 2.0 Flash as fallback."
+          : "Call AI switched to Gemini 2.0 Flash (Primary) with OpenAI Whisper + GPT-4o-mini as fallback."
+      )
+    } catch {
+      showToast("error", "Failed to update Call AI provider.")
+    } finally {
+      setSavingCallAiProvider(false)
     }
   }
 
@@ -863,6 +890,7 @@ export default function SettingsPage() {
                   const isSuperAdmin = admin.role === "SUPER_ADMIN" || admin.permissions.includes("*")
                   const lockedForRole = Boolean(feature.superAdminOnly && !isSuperAdmin)
                   const showNewBadge = feature.badgeId ? Boolean((config?.features?.newFeatureBadges as string[] | undefined)?.includes(feature.badgeId)) : false
+                  const activeCallAi = String(config?.features?.callAiProvider || "openai").toLowerCase() === "gemini" ? "gemini" : "openai"
                   return (
                     <div key={feature.key} className="flex min-h-40 flex-col rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
                       <div>
@@ -875,6 +903,44 @@ export default function SettingsPage() {
                           )}
                         </div>
                         <p className="mt-0.5 text-xs leading-5 text-[#7b8580]">{feature.desc}</p>
+                        {feature.key === "enableConciergeCalls" && (
+                          <div className="mt-3 rounded-lg border border-[#d6e4dd] bg-white p-2.5">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#52605a]">
+                              Call Transcript &amp; Summary AI Priority
+                            </p>
+                            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                disabled={savingCallAiProvider || lockedForRole}
+                                onClick={() => void selectCallAiProvider("openai")}
+                                className={`rounded-md px-2.5 py-1.5 text-[11px] font-bold transition ${
+                                  activeCallAi === "openai"
+                                    ? "bg-[#0d7d5f] text-white shadow-2xs"
+                                    : "border border-[#d3dad7] bg-[#f7faf9] text-[#35443e] hover:bg-[#eaf9f3]"
+                                } disabled:opacity-50`}
+                              >
+                                1st: OpenAI Whisper
+                              </button>
+                              <button
+                                type="button"
+                                disabled={savingCallAiProvider || lockedForRole}
+                                onClick={() => void selectCallAiProvider("gemini")}
+                                className={`rounded-md px-2.5 py-1.5 text-[11px] font-bold transition ${
+                                  activeCallAi === "gemini"
+                                    ? "bg-[#0d7d5f] text-white shadow-2xs"
+                                    : "border border-[#d3dad7] bg-[#f7faf9] text-[#35443e] hover:bg-[#eaf9f3]"
+                                } disabled:opacity-50`}
+                              >
+                                1st: Gemini 2.0
+                              </button>
+                            </div>
+                            <p className="mt-1 text-[10px] text-[#7b8580]">
+                              {activeCallAi === "openai"
+                                ? "Primary: OpenAI (Whisper + GPT-4o-mini) · Fallback: Gemini 2.0"
+                                : "Primary: Gemini 2.0 Flash · Fallback: OpenAI (Whisper + GPT-4o-mini)"}
+                            </p>
+                          </div>
+                        )}
                       </div>
                       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-[#dbe2de] pt-3">
                         {feature.badgeId && isActive ? (
