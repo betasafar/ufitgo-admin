@@ -112,7 +112,7 @@ const defaultHalalLockConfig: HalalLockConfig = {
 }
 
 type SystemConfig = {
-  features?: Record<string, boolean | string[]>
+  features?: Record<string, boolean | string | string[]>
   demoMode?: boolean
   fees?: {
     savingsEarlyExitChargePercent?: number
