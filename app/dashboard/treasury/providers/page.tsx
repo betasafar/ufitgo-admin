@@ -1,16 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Database, Loader2, ShieldAlert, Shuffle } from "lucide-react"
+import { Building2, CheckCircle2, Database, Loader2, PauseCircle, PlayCircle, Shuffle } from "lucide-react"
 import { TreasurySubnav } from "@/components/treasury/treasury-subnav"
 
 type ProviderHealthSnapshot = {
   provider: string
+  displayName?: string
   state: string
   manualOverride?: boolean
+  isPrimary?: boolean
+  isFallback?: boolean
   consecutiveFailures?: number
-  lastSuccessAt?: string
-  lastFailureAt?: string
   lastLatencyMs?: number
 }
 
@@ -18,10 +19,29 @@ type Account = {
   id: string
   accountNumber?: string
   accountName?: string
+  provider?: string
   bankName?: string
   activeTier?: number
   status?: string
   createdAt?: string
+}
+
+const BANK_DESCRIPTIONS: Record<string, { title: string; subtitle: string; prefix: string }> = {
+  providus: {
+    title: "Providus Bank (Xpress Wallet)",
+    subtitle: "Direct Providus NUBAN virtual accounts · Recommended primary bank",
+    prefix: "96xxxxxxxx",
+  },
+  paystack: {
+    title: "Paystack-Titan",
+    subtitle: "Paystack Dedicated Virtual Accounts (Titan Trust Bank)",
+    prefix: "98xxxxxxxx",
+  },
+  fcmb: {
+    title: "FCMB MFB",
+    subtitle: "FCMB Microfinance Bank Tiered Wallet Accounts",
+    prefix: "99xxxxxxxx",
+  },
 }
 
 function formatDate(value?: string) {
@@ -34,14 +54,35 @@ function formatDate(value?: string) {
 
 export default function TreasuryProvidersPage() {
   const [providers, setProviders] = useState<ProviderHealthSnapshot[]>([])
-  const [routingStrategy, setRoutingStrategy] = useState<string>("round_robin")
+  const [routingStrategy, setRoutingStrategy] = useState<"primary_fallback" | "round_robin">("primary_fallback")
+  const [primaryProvider, setPrimaryProvider] = useState<string>("providus")
+  const [fallbackProvider, setFallbackProvider] = useState<string>("paystack")
   const [accounts, setAccounts] = useState<Account[]>([])
   const [updatingProvider, setUpdatingProvider] = useState<string | null>(null)
+  const [updatingPrimary, setUpdatingPrimary] = useState<string | null>(null)
   const [updatingStrategy, setUpdatingStrategy] = useState(false)
   const [backfilling, setBackfilling] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
+
+  const applyHealthPayload = (healthPayload: any) => {
+    if (!healthPayload) return
+    if (Array.isArray(healthPayload.providers)) {
+      setProviders(healthPayload.providers)
+    }
+    if (healthPayload.routingStrategy) {
+      setRoutingStrategy(
+        healthPayload.routingStrategy === "round_robin" ? "round_robin" : "primary_fallback"
+      )
+    }
+    if (healthPayload.primaryProvider) {
+      setPrimaryProvider(String(healthPayload.primaryProvider).toLowerCase())
+    }
+    if (healthPayload.fallbackProvider) {
+      setFallbackProvider(String(healthPayload.fallbackProvider).toLowerCase())
+    }
+  }
 
   const load = async () => {
     setLoading(true)
@@ -54,12 +95,12 @@ export default function TreasuryProvidersPage() {
       const healthPayload = healthResponse ? await healthResponse.json().catch(() => null) : null
       const accountsPayload = accountsResponse ? await accountsResponse.json().catch(() => null) : null
 
-      if (Array.isArray(healthPayload?.providers)) {
-        setProviders(healthPayload.providers)
+      if (healthResponse && !healthResponse.ok) {
+        setError(healthPayload?.message || "Unable to load bank provider settings.")
+      } else {
+        applyHealthPayload(healthPayload)
       }
-      if (healthPayload?.routingStrategy) {
-        setRoutingStrategy(healthPayload.routingStrategy)
-      }
+
       if (Array.isArray(accountsPayload?.accounts)) {
         setAccounts(accountsPayload.accounts)
       }
@@ -74,6 +115,32 @@ export default function TreasuryProvidersPage() {
     void load()
   }, [])
 
+  const selectPrimaryBank = async (providerName: string) => {
+    const clean = providerName.toLowerCase()
+    setUpdatingPrimary(clean)
+    setError("")
+    setNotice("")
+    try {
+      const response = await fetch("/api/admin/fcmb-diagnostics/providers/routing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategy: "primary_fallback",
+          primaryProvider: clean,
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.message || "Failed to switch primary bank.")
+      applyHealthPayload(payload)
+      const label = BANK_DESCRIPTIONS[clean]?.title || clean.toUpperCase()
+      setNotice(`${label} is now set as the Primary Bank for all new customer accounts.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to switch primary bank.")
+    } finally {
+      setUpdatingPrimary(null)
+    }
+  }
+
   const toggleProviderState = async (providerName: string, nextState: "HEALTHY" | "UNAVAILABLE") => {
     setUpdatingProvider(providerName)
     setError("")
@@ -84,13 +151,17 @@ export default function TreasuryProvidersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           state: nextState,
-          reason: nextState === "UNAVAILABLE" ? "Manual admin kill-switch activated" : "Manual admin restore to healthy",
+          reason: nextState === "UNAVAILABLE" ? "Manual admin pause" : "Manual admin restore to active",
         }),
       })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(payload?.message || "Failed to update provider state.")
-      if (Array.isArray(payload?.providers)) setProviders(payload.providers)
-      setNotice(`Provider ${providerName.toUpperCase()} set to ${nextState}.`)
+      applyHealthPayload(payload)
+      setNotice(
+        nextState === "UNAVAILABLE"
+          ? `${providerName.toUpperCase()} has been paused. New accounts will automatically route to your active bank.`
+          : `${providerName.toUpperCase()} is now active again.`
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update provider state.")
     } finally {
@@ -109,13 +180,12 @@ export default function TreasuryProvidersPage() {
         body: JSON.stringify({ strategy }),
       })
       const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(payload?.message || "Failed to update routing strategy.")
-      if (payload?.routingStrategy) setRoutingStrategy(payload.routingStrategy)
-      if (Array.isArray(payload?.providers)) setProviders(payload.providers)
+      if (!response.ok) throw new Error(payload?.message || "Failed to update routing mode.")
+      applyHealthPayload(payload)
       setNotice(
-        `Routing strategy updated to ${
-          strategy === "round_robin" ? "Round-Robin (50/50 distribution)" : "Primary + Fallback"
-        }.`
+        strategy === "primary_fallback"
+          ? `Switched to Single Primary Bank mode (${primaryProvider.toUpperCase()}).`
+          : "Switched to 50/50 Split mode across all active banks."
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update routing strategy.")
@@ -141,124 +211,190 @@ export default function TreasuryProvidersPage() {
     }
   }
 
+  const providerList: ProviderHealthSnapshot[] =
+    providers.length > 0
+      ? providers
+      : [
+          { provider: "providus", state: "HEALTHY", isPrimary: primaryProvider === "providus" },
+          { provider: "paystack", state: "HEALTHY", isPrimary: primaryProvider === "paystack" },
+          { provider: "fcmb", state: "HEALTHY", isPrimary: primaryProvider === "fcmb" },
+        ]
+
   return (
     <div className="space-y-6 p-5 sm:p-8">
       <TreasurySubnav
-        title="BaaS Routing, Outage Kill-Switch & Account Mappings"
-        subtitle="Control 50/50 Round-Robin vs. Primary+Fallback routing across Paystack-Titan, Providus, and FCMB, and inspect mapped virtual accounts."
+        title="Partner Bank Switcher & Virtual Accounts"
+        subtitle="Choose which partner bank issues new customer virtual accounts (Providus Bank, Paystack-Titan, or FCMB) and pause any bank during downtime."
         loading={loading}
         onRefresh={() => void load()}
       />
 
       {notice && (
-        <div className="rounded-lg border border-[#a9e6ca] bg-[#eaf9f0] p-3 text-sm font-medium text-[#13633c]">
+        <div className="rounded-lg border border-[#a9e6ca] bg-[#eaf9f0] p-3.5 text-sm font-semibold text-[#13633c]">
           {notice}
         </div>
       )}
       {error && (
-        <div className="rounded-lg border border-[#f1c4bd] bg-[#fff0ee] p-3 text-sm font-medium text-[#a83b31]">
+        <div className="rounded-lg border border-[#f1c4bd] bg-[#fff0ee] p-3.5 text-sm font-semibold text-[#a83b31]">
           {error}
         </div>
       )}
 
-      <section className="rounded-xl border border-[#d7e2dc] bg-white p-5 shadow-[0_10px_30px_rgba(20,55,40,0.06)]">
-        <div className="flex flex-col gap-4 border-b border-[#e5ede8] pb-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-2.5">
-            <ShieldAlert className="size-5 text-[#07845f]" />
+      {/* Step 1: Clear Primary Bank Selector */}
+      <section className="rounded-2xl border border-[#d7e2dc] bg-white p-6 shadow-[0_10px_30px_rgba(20,55,40,0.05)]">
+        <div className="flex flex-col gap-4 border-b border-[#e5ede8] pb-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#e8f6ef] text-[#07845f]">
+              <Building2 className="size-5" />
+            </div>
             <div>
-              <h2 className="text-lg font-bold">BaaS Provider Health &amp; Outage Kill-Switch</h2>
-              <p className="text-xs text-[#63736b]">
-                Putting a bank into Maintenance immediately routes new signups and payouts to the healthy backup bank and promotes backup NUBANs in customers&apos; mobile apps.
+              <h2 className="text-lg font-bold text-[#17201c]">
+                1. Active Bank for New Customer Accounts
+              </h2>
+              <p className="mt-0.5 text-sm text-[#63736b]">
+                Click <strong>&ldquo;Make Primary Bank&rdquo;</strong> on any card below to route all new KYC account openings to that bank.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#5c6d64]">
-              <Shuffle className="size-3.5" /> Routing:
+
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-[#f4f8f6] p-1.5">
+            <span className="inline-flex items-center gap-1.5 px-2.5 text-xs font-bold uppercase tracking-wider text-[#5c6d64]">
+              <Shuffle className="size-3.5" /> Mode:
             </span>
             <button
               type="button"
               disabled={updatingStrategy}
-              onClick={() => void changeRoutingStrategy("round_robin")}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
-                routingStrategy === "round_robin"
-                  ? "border-[#07845f] bg-[#07845f] text-white"
-                  : "border-[#c9d8d0] bg-white text-[#204236] hover:bg-[#edf5f0]"
+              onClick={() => void changeRoutingStrategy("primary_fallback")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                routingStrategy === "primary_fallback"
+                  ? "bg-[#07845f] text-white shadow-sm"
+                  : "text-[#204236] hover:bg-white"
               }`}
             >
-              Round-Robin (50/50)
+              Single Primary Bank (Recommended)
             </button>
             <button
               type="button"
               disabled={updatingStrategy}
-              onClick={() => void changeRoutingStrategy("primary_fallback")}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
-                routingStrategy === "primary_fallback"
-                  ? "border-[#07845f] bg-[#07845f] text-white"
-                  : "border-[#c9d8d0] bg-white text-[#204236] hover:bg-[#edf5f0]"
+              onClick={() => void changeRoutingStrategy("round_robin")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                routingStrategy === "round_robin"
+                  ? "bg-[#07845f] text-white shadow-sm"
+                  : "text-[#204236] hover:bg-white"
               }`}
             >
-              Primary + Fallback
+              Split 50/50 Across Active Banks
             </button>
           </div>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          {(providers.length > 0
-            ? providers
-            : [
-                { provider: "paystack", state: "HEALTHY", consecutiveFailures: 0, lastLatencyMs: 0 },
-                { provider: "fcmb", state: "HEALTHY", consecutiveFailures: 0, lastLatencyMs: 0 },
-                { provider: "providus", state: "HEALTHY", consecutiveFailures: 0, lastLatencyMs: 0 },
-              ]
-          ).map((prov) => {
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {providerList.map((prov) => {
+            const key = prov.provider.toLowerCase()
+            const meta = BANK_DESCRIPTIONS[key] || {
+              title: prov.displayName || prov.provider.toUpperCase(),
+              subtitle: "Partner Virtual Account Provider",
+              prefix: "NUBAN",
+            }
             const isHealthy = prov.state === "HEALTHY" || prov.state === "RECOVERY"
-            const isBusy = updatingProvider === prov.provider
+            const isPrimary = primaryProvider === key && routingStrategy === "primary_fallback"
+            const isFallback = fallbackProvider === key && routingStrategy === "primary_fallback" && !isPrimary
+            const isBusyState = updatingProvider === prov.provider
+            const isBusyPrimary = updatingPrimary === key
+
             return (
               <div
                 key={prov.provider}
-                className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${
-                  isHealthy ? "border-[#b8e2cc] bg-[#f6fcf9]" : "border-[#f1c4bd] bg-[#fff5f4]"
+                className={`flex flex-col justify-between rounded-2xl border-2 p-5 transition ${
+                  isPrimary
+                    ? "border-[#07845f] bg-[#f3fbf7] shadow-[0_8px_24px_rgba(7,132,95,0.08)]"
+                    : isHealthy
+                      ? "border-[#e1eae5] bg-white"
+                      : "border-[#f3c6c0] bg-[#fff8f7]"
                 }`}
               >
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-base font-extrabold uppercase tracking-wide">
-                      {prov.provider}
-                    </span>
+                  {/* Top Badges Row */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {isPrimary ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#07845f] px-3 py-1 text-xs font-extrabold text-white">
+                          <CheckCircle2 className="size-3.5" /> PRIMARY BANK
+                        </span>
+                      ) : isFallback ? (
+                        <span className="inline-flex items-center rounded-full bg-[#e6eeea] px-2.5 py-0.5 text-[11px] font-bold text-[#355245]">
+                          BACKUP FALLBACK
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-[#f0f4f2] px-2.5 py-0.5 text-[11px] font-bold text-[#63736b]">
+                          STANDBY
+                        </span>
+                      )}
+                    </div>
+
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
                         isHealthy ? "bg-[#dcfce7] text-[#146c38]" : "bg-[#fee2e2] text-[#991b1b]"
                       }`}
                     >
-                      {prov.state}
-                      {prov.manualOverride ? " (Manual)" : ""}
+                      {isHealthy ? "ONLINE" : "PAUSED"}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-[#5c6d64]">
-                    Failures: {prov.consecutiveFailures ?? 0} · Last Latency: {prov.lastLatencyMs ?? 0}ms
+
+                  {/* Bank Title & Description */}
+                  <h3 className="mt-3 text-base font-extrabold text-[#17201c]">
+                    {meta.title}
+                  </h3>
+                  <p className="mt-1 text-xs leading-relaxed text-[#5c6d64]">
+                    {meta.subtitle}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+
+                {/* Action Buttons */}
+                <div className="mt-5 flex flex-col gap-2 border-t border-[#e5ede8] pt-4">
+                  {!isPrimary && (
+                    <button
+                      type="button"
+                      disabled={isBusyPrimary}
+                      onClick={() => void selectPrimaryBank(key)}
+                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#07845f] px-4 text-xs font-bold text-white transition hover:bg-[#05684a] disabled:opacity-60"
+                    >
+                      {isBusyPrimary ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="size-4" />
+                      )}
+                      Use { key === "providus" ? "Providus" : key === "paystack" ? "Paystack-Titan" : "FCMB" } as Primary Bank
+                    </button>
+                  )}
+
                   {isHealthy ? (
                     <button
                       type="button"
-                      disabled={isBusy}
+                      disabled={isBusyState}
                       onClick={() => void toggleProviderState(prov.provider, "UNAVAILABLE")}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#e08b82] bg-white px-3 text-xs font-bold text-[#a83b31] hover:bg-[#fff0ee] disabled:opacity-60"
+                      className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[#e2b5af] bg-white px-3 text-xs font-bold text-[#a83b31] transition hover:bg-[#fff0ee] disabled:opacity-60"
                     >
-                      {isBusy && <Loader2 className="size-3.5 animate-spin" />}
-                      Activate Kill-Switch (Pause)
+                      {isBusyState ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <PauseCircle className="size-3.5" />
+                      )}
+                      Pause Bank (Outage Kill-Switch)
                     </button>
                   ) : (
                     <button
                       type="button"
-                      disabled={isBusy}
+                      disabled={isBusyState}
                       onClick={() => void toggleProviderState(prov.provider, "HEALTHY")}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#07845f] px-3 text-xs font-bold text-white hover:bg-[#05684a] disabled:opacity-60"
+                      className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[#07845f] bg-white px-3 text-xs font-bold text-[#07845f] transition hover:bg-[#eaf9f0] disabled:opacity-60"
                     >
-                      {isBusy && <Loader2 className="size-3.5 animate-spin" />}
-                      Restore to Healthy
+                      {isBusyState ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <PlayCircle className="size-3.5" />
+                      )}
+                      Resume Bank (Set Online)
                     </button>
                   )}
                 </div>
@@ -268,19 +404,27 @@ export default function TreasuryProvidersPage() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-[#d7e2dc] bg-white p-5 shadow-[0_10px_30px_rgba(20,55,40,0.06)]">
+      {/* Step 2: Generated Customer Virtual Accounts Table */}
+      <section className="rounded-2xl border border-[#d7e2dc] bg-white p-6 shadow-[0_10px_30px_rgba(20,55,40,0.05)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <Database className="size-5 text-[#07845f]" />
-            <h2 className="text-lg font-bold">UfitGo Settlement Account Mappings</h2>
+            <div>
+              <h2 className="text-lg font-bold text-[#17201c]">
+                2. Customer Virtual Bank Accounts ({accounts.length})
+              </h2>
+              <p className="text-xs text-[#63736b]">
+                All virtual NUBAN accounts generated across Providus Bank, Paystack-Titan, and FCMB.
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => void backfillAccounts()}
             disabled={backfilling}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#b9ccc2] bg-white px-3 text-sm font-bold text-[#204236] hover:bg-[#edf5f0] disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#b9ccc2] bg-white px-3 text-xs font-bold text-[#204236] hover:bg-[#edf5f0] disabled:opacity-60"
           >
-            {backfilling && <Loader2 className="size-4 animate-spin" />} Backfill existing accounts
+            {backfilling && <Loader2 className="size-4 animate-spin" />} Sync existing accounts
           </button>
         </div>
 
@@ -288,10 +432,10 @@ export default function TreasuryProvidersPage() {
           <table className="min-w-[780px] w-full text-left text-sm">
             <thead className="border-y border-[#e2eae5] bg-[#f7faf8] text-xs uppercase tracking-[0.08em] text-[#718079]">
               <tr>
-                <th className="px-4 py-3">Account</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Bank</th>
-                <th className="px-4 py-3">Tier</th>
+                <th className="px-4 py-3">Account Number</th>
+                <th className="px-4 py-3">Customer Name</th>
+                <th className="px-4 py-3">Bank / Provider</th>
+                <th className="px-4 py-3">KYC Tier</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Created</th>
               </tr>
@@ -300,7 +444,7 @@ export default function TreasuryProvidersPage() {
               {accounts.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-[#63736b]">
-                    No settlement mappings yet. Use the backfill action to register existing Tier 1 accounts.
+                    No customer virtual accounts generated yet.
                   </td>
                 </tr>
               ) : (
@@ -309,9 +453,13 @@ export default function TreasuryProvidersPage() {
                     <td className="px-4 py-4 font-mono font-bold text-[#087851]">
                       {account.accountNumber || "-"}
                     </td>
-                    <td className="px-4 py-4">{account.accountName || "-"}</td>
-                    <td className="px-4 py-4">{account.bankName || "FCMB"}</td>
-                    <td className="px-4 py-4">{account.activeTier || 1}</td>
+                    <td className="px-4 py-4 font-medium text-[#17201c]">{account.accountName || "-"}</td>
+                    <td className="px-4 py-4">
+                      <span className="inline-flex items-center rounded-md bg-[#f0f5f2] px-2.5 py-1 text-xs font-bold text-[#204236]">
+                        {account.bankName || account.provider || "Providus Bank"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">Tier {account.activeTier || 1}</td>
                     <td className="px-4 py-4">
                       <span className="rounded-full bg-[#eaf9f0] px-2.5 py-1 text-xs font-bold text-[#17633d]">
                         {account.status || "active"}
