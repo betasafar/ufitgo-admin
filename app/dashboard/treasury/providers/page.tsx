@@ -66,21 +66,172 @@ export default function TreasuryProvidersPage() {
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
 
-  const applyHealthPayload = (healthPayload: any) => {
-    if (!healthPayload) return
-    if (Array.isArray(healthPayload.providers)) {
-      setProviders(healthPayload.providers)
+  const [rawSavingsConfig, setRawSavingsConfig] = useState<Record<string, any>>({})
+
+  const buildProvidersList = (
+    primary: string,
+    fallback: string,
+    states: Record<string, string>
+  ): ProviderHealthSnapshot[] => {
+    const pLower = primary.toLowerCase()
+    const fLower = fallback.toLowerCase()
+    return ["providus", "paystack", "fcmb"].map((key) => {
+      const upper = key.toUpperCase()
+      const st = states[upper] || states[key] || "HEALTHY"
+      return {
+        provider: key,
+        displayName: BANK_DESCRIPTIONS[key]?.title || upper,
+        state: st,
+        manualOverride: st !== "HEALTHY",
+        isPrimary: pLower === key,
+        isFallback: fLower === key,
+        consecutiveFailures: 0,
+        lastLatencyMs: 0,
+      }
+    })
+  }
+
+  const applyRoutingFromSystemConfig = (sysConfig: any) => {
+    const sc = sysConfig?.savingsConfig || {}
+    setRawSavingsConfig(sc)
+    const routing = sc?.baasRouting || {}
+    const strategy: "primary_fallback" | "round_robin" =
+      routing.strategy === "round_robin" ? "round_robin" : "primary_fallback"
+    const primary = String(routing.primaryProvider || "providus").toLowerCase()
+    const fallback = String(
+      routing.fallbackProvider || (primary === "providus" ? "paystack" : "providus")
+    ).toLowerCase()
+    const states: Record<string, string> = {
+      PROVIDUS: "HEALTHY",
+      PAYSTACK: "HEALTHY",
+      FCMB: "HEALTHY",
+      ...(routing.providerStates || {}),
     }
-    if (healthPayload.routingStrategy) {
-      setRoutingStrategy(
-        healthPayload.routingStrategy === "round_robin" ? "round_robin" : "primary_fallback"
+
+    setRoutingStrategy(strategy)
+    setPrimaryProvider(primary)
+    setFallbackProvider(fallback)
+    setProviders(buildProvidersList(primary, fallback, states))
+  }
+
+  const saveRoutingToSystemConfig = async (nextRoutingPatch: {
+    strategy?: "primary_fallback" | "round_robin"
+    primaryProvider?: string
+    fallbackProvider?: string
+    providerStates?: Record<string, string>
+  }) => {
+    // Fetch latest config first so we never clobber concurrent savingsConfig fields
+    const latestRes = await fetch("/api/admin/customers/system/config", { cache: "no-store" })
+    const latestPayload = await latestRes.json().catch(() => null)
+    const latestConfig = latestPayload?.data || latestPayload || {}
+    const latestSc = latestConfig?.savingsConfig || rawSavingsConfig || {}
+    const currentRouting = latestSc?.baasRouting || {}
+
+    const nextPrimary = String(
+      nextRoutingPatch.primaryProvider || currentRouting.primaryProvider || primaryProvider || "providus"
+    ).toUpperCase()
+    const defaultFallback = nextPrimary === "PROVIDUS" ? "PAYSTACK" : "PROVIDUS"
+    const rawFallback = String(
+      nextRoutingPatch.fallbackProvider || currentRouting.fallbackProvider || fallbackProvider || defaultFallback
+    ).toUpperCase()
+    const nextFallback = rawFallback === nextPrimary ? defaultFallback : rawFallback
+    const nextStrategy =
+      nextRoutingPatch.strategy || currentRouting.strategy || routingStrategy || "primary_fallback"
+    const nextStates: Record<string, string> = {
+      PROVIDUS: "HEALTHY",
+      PAYSTACK: "HEALTHY",
+      FCMB: "HEALTHY",
+      ...(currentRouting.providerStates || {}),
+      ...(nextRoutingPatch.providerStates || {}),
+    }
+    if (nextRoutingPatch.primaryProvider) {
+      nextStates[nextPrimary] = "HEALTHY"
+    }
+
+    const updatedBaasRouting = {
+      ...currentRouting,
+      strategy: nextStrategy,
+      primaryProvider: nextPrimary,
+      fallbackProvider: nextFallback,
+      providerStates: nextStates,
+      updatedAt: new Date().toISOString(),
+    }
+
+    const patchRes = await fetch("/api/admin/customers/system/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        savingsConfig: {
+          ...latestSc,
+          baasRouting: updatedBaasRouting,
+        },
+      }),
+    })
+    const patchPayload = await patchRes.json().catch(() => null)
+    if (!patchRes.ok) {
+      throw new Error(patchPayload?.message || "Failed to save bank routing settings.")
+    }
+
+    const updatedSysConfig = patchPayload?.data || patchPayload || {
+      savingsConfig: { ...latestSc, baasRouting: updatedBaasRouting },
+    }
+    applyRoutingFromSystemConfig(updatedSysConfig)
+  }
+
+  const loadCustomerVirtualAccounts = async (): Promise<Account[]> => {
+    try {
+      const custRes = await fetch("/api/admin/customers?page=1&limit=30", { cache: "no-store" })
+      if (!custRes.ok) return []
+      const custPayload = await custRes.json().catch(() => null)
+      const users: any[] = Array.isArray(custPayload?.data)
+        ? custPayload.data
+        : Array.isArray(custPayload?.users)
+          ? custPayload.users
+          : Array.isArray(custPayload)
+            ? custPayload
+            : []
+
+      const verifiedUsers = users.slice(0, 20)
+      const accountGroups = await Promise.all(
+        verifiedUsers.map(async (u: any) => {
+          try {
+            const auditRes = await fetch(`/api/admin/customers/${encodeURIComponent(u.id)}/audit`, {
+              cache: "no-store",
+            })
+            if (!auditRes.ok) return []
+            const auditData = await auditRes.json().catch(() => null)
+            const accList: any[] = Array.isArray(auditData?.accounts) ? auditData.accounts : []
+            const fullName =
+              u.verifiedName || [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Customer"
+            return accList.map((a: any) => {
+              const provUpper = String(a.provider || "PROVIDUS").toUpperCase()
+              const bankLabel =
+                provUpper === "PAYSTACK"
+                  ? "Paystack-Titan"
+                  : provUpper === "PROVIDUS"
+                    ? "Providus Bank"
+                    : provUpper === "FCMB"
+                      ? "FCMB MFB"
+                      : provUpper
+              return {
+                id: String(a.id || `${u.id}-${a.nubanAccountNumber || a.accountId}`),
+                accountNumber: a.nubanAccountNumber || a.accountId || "-",
+                accountName: fullName,
+                provider: provUpper,
+                bankName: bankLabel,
+                activeTier: Number(a.activeTier || u.kycTier || 1),
+                status: a.status || "active",
+                createdAt: a.createdAt || u.createdAt,
+              } as Account
+            })
+          } catch {
+            return []
+          }
+        })
       )
-    }
-    if (healthPayload.primaryProvider) {
-      setPrimaryProvider(String(healthPayload.primaryProvider).toLowerCase())
-    }
-    if (healthPayload.fallbackProvider) {
-      setFallbackProvider(String(healthPayload.fallbackProvider).toLowerCase())
+      return accountGroups.flat()
+    } catch {
+      return []
     }
   }
 
@@ -88,24 +239,25 @@ export default function TreasuryProvidersPage() {
     setLoading(true)
     setError("")
     try {
-      const [healthResponse, accountsResponse] = await Promise.all([
-        fetch("/api/admin/fcmb-diagnostics/providers/health", { cache: "no-store" }).catch(() => null),
-        fetch("/api/admin/fcmb-diagnostics/accounts", { cache: "no-store" }).catch(() => null),
+      const [sysConfigRes, mappedAccounts] = await Promise.all([
+        fetch("/api/admin/customers/system/config", { cache: "no-store" }).catch(() => null),
+        loadCustomerVirtualAccounts(),
       ])
-      const healthPayload = healthResponse ? await healthResponse.json().catch(() => null) : null
-      const accountsPayload = accountsResponse ? await accountsResponse.json().catch(() => null) : null
-
-      if (healthResponse && !healthResponse.ok) {
-        setError(healthPayload?.message || "Unable to load bank provider settings.")
+      const sysPayload = sysConfigRes ? await sysConfigRes.json().catch(() => null) : null
+      if (sysConfigRes && sysConfigRes.ok && sysPayload) {
+        applyRoutingFromSystemConfig(sysPayload?.data || sysPayload)
       } else {
-        applyHealthPayload(healthPayload)
+        setProviders(
+          buildProvidersList(primaryProvider, fallbackProvider, {
+            PROVIDUS: "HEALTHY",
+            PAYSTACK: "HEALTHY",
+            FCMB: "HEALTHY",
+          })
+        )
       }
-
-      if (Array.isArray(accountsPayload?.accounts)) {
-        setAccounts(accountsPayload.accounts)
-      }
+      setAccounts(mappedAccounts)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load provider health & account mappings.")
+      setError(err instanceof Error ? err.message : "Unable to load provider settings.")
     } finally {
       setLoading(false)
     }
@@ -121,17 +273,10 @@ export default function TreasuryProvidersPage() {
     setError("")
     setNotice("")
     try {
-      const response = await fetch("/api/admin/fcmb-diagnostics/providers/routing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          strategy: "primary_fallback",
-          primaryProvider: clean,
-        }),
+      await saveRoutingToSystemConfig({
+        strategy: "primary_fallback",
+        primaryProvider: clean.toUpperCase(),
       })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(payload?.message || "Failed to switch primary bank.")
-      applyHealthPayload(payload)
       const label = BANK_DESCRIPTIONS[clean]?.title || clean.toUpperCase()
       setNotice(`${label} is now set as the Primary Bank for all new customer accounts.`)
     } catch (err) {
@@ -142,21 +287,20 @@ export default function TreasuryProvidersPage() {
   }
 
   const toggleProviderState = async (providerName: string, nextState: "HEALTHY" | "UNAVAILABLE") => {
+    const clean = providerName.toLowerCase()
     setUpdatingProvider(providerName)
     setError("")
     setNotice("")
     try {
-      const response = await fetch(`/api/admin/fcmb-diagnostics/providers/${encodeURIComponent(providerName)}/state`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          state: nextState,
-          reason: nextState === "UNAVAILABLE" ? "Manual admin pause" : "Manual admin restore to active",
-        }),
+      const currentStates: Record<string, string> = {}
+      providers.forEach((p) => {
+        currentStates[p.provider.toUpperCase()] = p.state
       })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(payload?.message || "Failed to update provider state.")
-      applyHealthPayload(payload)
+      currentStates[clean.toUpperCase()] = nextState
+
+      await saveRoutingToSystemConfig({
+        providerStates: currentStates,
+      })
       setNotice(
         nextState === "UNAVAILABLE"
           ? `${providerName.toUpperCase()} has been paused. New accounts will automatically route to your active bank.`
@@ -169,19 +313,12 @@ export default function TreasuryProvidersPage() {
     }
   }
 
-  const changeRoutingStrategy = async (strategy: "round_robin" | "primary_fallback") => {
+  const changeRoutingStrategy = async (strategy: "primary_fallback" | "round_robin") => {
     setUpdatingStrategy(true)
     setError("")
     setNotice("")
     try {
-      const response = await fetch("/api/admin/fcmb-diagnostics/providers/routing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ strategy }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(payload?.message || "Failed to update routing mode.")
-      applyHealthPayload(payload)
+      await saveRoutingToSystemConfig({ strategy })
       setNotice(
         strategy === "primary_fallback"
           ? `Switched to Single Primary Bank mode (${primaryProvider.toUpperCase()}).`
@@ -199,13 +336,11 @@ export default function TreasuryProvidersPage() {
     setError("")
     setNotice("")
     try {
-      const response = await fetch("/api/admin/fcmb-diagnostics/backfill-accounts", { method: "POST" })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(payload?.message || "Account backfill failed.")
-      setNotice(`Backfill complete: ${payload?.mapped ?? 0} of ${payload?.scanned ?? 0} accounts mapped.`)
-      await load()
+      const mapped = await loadCustomerVirtualAccounts()
+      setAccounts(mapped)
+      setNotice(`Synced ${mapped.length} customer virtual account${mapped.length === 1 ? "" : "s"}.`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Account backfill failed.")
+      setError(err instanceof Error ? err.message : "Account sync failed.")
     } finally {
       setBackfilling(false)
     }
