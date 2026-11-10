@@ -180,7 +180,9 @@ export default function TreasuryProvidersPage() {
 
   const loadCustomerVirtualAccounts = async (): Promise<Account[]> => {
     try {
-      const custRes = await fetch("/api/admin/customers?page=1&limit=30", { cache: "no-store" })
+      const custRes = await fetch("/api/admin/customers?page=1&limit=30&kycStatus=verified", {
+        cache: "no-store",
+      })
       if (!custRes.ok) return []
       const custPayload = await custRes.json().catch(() => null)
       const users: any[] = Array.isArray(custPayload?.data)
@@ -191,45 +193,71 @@ export default function TreasuryProvidersPage() {
             ? custPayload
             : []
 
-      const verifiedUsers = users.slice(0, 20)
-      const accountGroups = await Promise.all(
-        verifiedUsers.map(async (u: any) => {
-          try {
-            const auditRes = await fetch(`/api/admin/customers/${encodeURIComponent(u.id)}/audit`, {
-              cache: "no-store",
+      // Only inspect users who have completed KYC verification
+      const verifiedUsers = users
+        .filter((u: any) => u?.kycStatus === "verified" || Array.isArray(u?.baasAccounts))
+        .slice(0, 12)
+
+      const formatBankLabel = (provUpper: string) =>
+        provUpper === "PAYSTACK"
+          ? "Paystack-Titan"
+          : provUpper === "PROVIDUS"
+            ? "Providus Bank"
+            : provUpper === "FCMB"
+              ? "FCMB MFB"
+              : provUpper
+
+      const results: Account[] = []
+
+      // Process sequentially / in small batches so we never spike the DB connection pool
+      for (const u of verifiedUsers) {
+        const fullName =
+          u.verifiedName || [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Customer"
+
+        // If `/api/admin/customers` already embedded `baasAccounts`, use it with zero extra network calls!
+        if (Array.isArray(u.baasAccounts) && u.baasAccounts.length > 0) {
+          for (const a of u.baasAccounts) {
+            const provUpper = String(a.provider || "PROVIDUS").toUpperCase()
+            results.push({
+              id: String(a.id || `${u.id}-${a.nubanAccountNumber || a.accountId}`),
+              accountNumber: a.nubanAccountNumber || a.accountId || "-",
+              accountName: fullName,
+              provider: provUpper,
+              bankName: formatBankLabel(provUpper),
+              activeTier: Number(a.activeTier || u.kycTier || 1),
+              status: a.status || "active",
+              createdAt: a.createdAt || u.createdAt,
             })
-            if (!auditRes.ok) return []
-            const auditData = await auditRes.json().catch(() => null)
-            const accList: any[] = Array.isArray(auditData?.accounts) ? auditData.accounts : []
-            const fullName =
-              u.verifiedName || [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Customer"
-            return accList.map((a: any) => {
-              const provUpper = String(a.provider || "PROVIDUS").toUpperCase()
-              const bankLabel =
-                provUpper === "PAYSTACK"
-                  ? "Paystack-Titan"
-                  : provUpper === "PROVIDUS"
-                    ? "Providus Bank"
-                    : provUpper === "FCMB"
-                      ? "FCMB MFB"
-                      : provUpper
-              return {
-                id: String(a.id || `${u.id}-${a.nubanAccountNumber || a.accountId}`),
-                accountNumber: a.nubanAccountNumber || a.accountId || "-",
-                accountName: fullName,
-                provider: provUpper,
-                bankName: bankLabel,
-                activeTier: Number(a.activeTier || u.kycTier || 1),
-                status: a.status || "active",
-                createdAt: a.createdAt || u.createdAt,
-              } as Account
-            })
-          } catch {
-            return []
           }
-        })
-      )
-      return accountGroups.flat()
+          continue
+        }
+
+        try {
+          const auditRes = await fetch(`/api/admin/customers/${encodeURIComponent(u.id)}/audit`, {
+            cache: "no-store",
+          })
+          if (!auditRes.ok) continue
+          const auditData = await auditRes.json().catch(() => null)
+          const accList: any[] = Array.isArray(auditData?.accounts) ? auditData.accounts : []
+          for (const a of accList) {
+            const provUpper = String(a.provider || "PROVIDUS").toUpperCase()
+            results.push({
+              id: String(a.id || `${u.id}-${a.nubanAccountNumber || a.accountId}`),
+              accountNumber: a.nubanAccountNumber || a.accountId || "-",
+              accountName: fullName,
+              provider: provUpper,
+              bankName: formatBankLabel(provUpper),
+              activeTier: Number(a.activeTier || u.kycTier || 1),
+              status: a.status || "active",
+              createdAt: a.createdAt || u.createdAt,
+            })
+          }
+        } catch {
+          // Ignore individual audit lookup errors
+        }
+      }
+
+      return results
     } catch {
       return []
     }
