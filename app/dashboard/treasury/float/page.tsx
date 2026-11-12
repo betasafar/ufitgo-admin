@@ -1,8 +1,65 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Database } from "lucide-react"
+import Link from "next/link"
+import { ChevronDown, ChevronUp, Database, Target, Users } from "lucide-react"
 import { TreasurySubnav } from "@/components/treasury/treasury-subnav"
+
+type UfitSaveRecord = {
+  id: string
+  userId: string | null
+  userName: string
+  userEmail: string | null
+  title: string
+  currentAmount: number
+  targetAmount: number
+  status: string
+  lockedUntil: string | null
+  createdAt: string
+}
+
+type WefitGroupMemberRecord = {
+  id: string
+  userId: string
+  name: string
+  role: string
+  status: string
+  netContributed: number
+  totalContributed: number
+  totalWithdrawn: number
+  joinedAt: string
+}
+
+type WefitGroupTxRecord = {
+  id: string
+  userId: string
+  memberName: string
+  type: string
+  method: string
+  amount: number
+  reference: string
+  status: string
+  createdAt: string
+}
+
+type WefitGroupRecord = {
+  id: string
+  title: string
+  category: string
+  inviteCode: string
+  currentAmount: number
+  targetAmount: number
+  deadline: string | null
+  contributionFrequency: string
+  status: string
+  adminUserId: string
+  adminName: string
+  activeMembersCount: number
+  pendingMembersCount: number
+  createdAt: string
+  members: WefitGroupMemberRecord[]
+  transactions: WefitGroupTxRecord[]
+}
 
 type TreasuryReconciliation = {
   generatedAt: string
@@ -30,6 +87,10 @@ type TreasuryReconciliation = {
     revenueSubaccountCode: string | null
     settlementBankNote: string
   }
+  ufitSaveRecords?: UfitSaveRecord[]
+  wefitSaveRecords?: {
+    groups: WefitGroupRecord[]
+  }
 }
 
 export default function TreasuryFloatPage() {
@@ -42,6 +103,8 @@ export default function TreasuryFloatPage() {
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
+  const [recordsTab, setRecordsTab] = useState<"wefitsave" | "ufitsave">("wefitsave")
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -163,7 +226,7 @@ export default function TreasuryFloatPage() {
             </p>
             <div className="mt-3 space-y-1.5 border-t border-[#fde68a] pt-2.5 text-xs text-[#78350f]">
               <div className="flex justify-between">
-                <span>UfitFlex Wallets ({treasury?.customerLiability?.ufitFlex?.fundedWalletsCount ?? 0} active):</span>
+                <span>UfitFlex Balances ({treasury?.customerLiability?.ufitFlex?.fundedWalletsCount ?? 0} active):</span>
                 <strong>₦{Number(treasury?.customerLiability?.ufitFlex?.balance ?? 0).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="flex justify-between">
@@ -273,6 +336,295 @@ export default function TreasuryFloatPage() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* UfitSave & WefitSave Live Records Explorer */}
+      <section className="rounded-xl border border-[#d7e2dc] bg-white p-5 shadow-[0_10px_30px_rgba(20,55,40,0.06)]">
+        <div className="flex flex-col gap-3 border-b border-[#e5ede8] pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-[#07845f]">
+              <Users className="size-4" /> Savings Plans &amp; Group Pools Explorer
+            </div>
+            <h2 className="mt-1 text-lg font-bold text-[#18241f]">
+              WefitSave Group Pools &amp; UfitSave Personal Plans
+            </h2>
+            <p className="mt-0.5 text-xs text-[#63736b]">
+              Inspect every active group pool, invite code, member approval status, individual sub-ledger balance, and personal UfitSave goal.
+            </p>
+          </div>
+
+          <div className="inline-flex rounded-lg border border-[#c9d8d0] bg-[#f4f8f6] p-1">
+            <button
+              type="button"
+              onClick={() => setRecordsTab("wefitsave")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${
+                recordsTab === "wefitsave"
+                  ? "bg-[#07845f] text-white shadow-sm"
+                  : "text-[#204236] hover:bg-white"
+              }`}
+            >
+              <Users className="size-3.5" />
+              WefitSave Groups ({treasury?.wefitSaveRecords?.groups?.length ?? 0})
+            </button>
+            <button
+              type="button"
+              onClick={() => setRecordsTab("ufitsave")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition ${
+                recordsTab === "ufitsave"
+                  ? "bg-[#07845f] text-white shadow-sm"
+                  : "text-[#204236] hover:bg-white"
+              }`}
+            >
+              <Target className="size-3.5" />
+              UfitSave Personal ({treasury?.ufitSaveRecords?.length ?? 0})
+            </button>
+          </div>
+        </div>
+
+        {recordsTab === "wefitsave" ? (
+          <div className="mt-4 space-y-3">
+            {!treasury?.wefitSaveRecords?.groups?.length ? (
+              <div className="rounded-xl border border-dashed border-[#c9d8d0] bg-[#f9fbfa] p-8 text-center text-sm text-[#63736b]">
+                No WefitSave group pools created yet.
+              </div>
+            ) : (
+              treasury.wefitSaveRecords.groups.map((group) => {
+                const isExpanded = expandedGroupId === group.id
+                const progress =
+                  group.targetAmount > 0
+                    ? Math.min(Math.round((group.currentAmount / group.targetAmount) * 100), 100)
+                    : 0
+                return (
+                  <div
+                    key={group.id}
+                    className="overflow-hidden rounded-xl border border-[#d7e2dc] bg-[#fcfefd]"
+                  >
+                    <div
+                      onClick={() => setExpandedGroupId(isExpanded ? null : group.id)}
+                      className="flex cursor-pointer flex-col gap-3 p-4 hover:bg-[#f4f9f6] sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-extrabold text-[#18241f]">
+                            {group.title}
+                          </span>
+                          <span className="rounded-md bg-[#ede9fe] px-2 py-0.5 font-mono text-[11px] font-bold text-[#6d28d9]">
+                            {group.inviteCode}
+                          </span>
+                          <span className="rounded-full bg-[#e6f6ef] px-2 py-0.5 text-[10px] font-bold uppercase text-[#07845f]">
+                            {group.status}
+                          </span>
+                          {group.pendingMembersCount > 0 && (
+                            <span className="rounded-full bg-[#fef3c7] px-2 py-0.5 text-[10px] font-bold text-[#b45309]">
+                              {group.pendingMembersCount} Pending Approval
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-[#5c6d64]">
+                          Admin: <strong className="text-[#18241f]">{group.adminName}</strong> ·{" "}
+                          {group.activeMembersCount} Approved Member{group.activeMembersCount === 1 ? "" : "s"} ·{" "}
+                          Schedule: <strong>{group.contributionFrequency}</strong> · Maturity:{" "}
+                          <strong>{group.deadline || "Flexible"}</strong>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="text-sm font-extrabold text-[#07845f]">
+                            ₦{Number(group.currentAmount).toLocaleString("en-NG", { minimumFractionDigits: 2 })}{" "}
+                            <span className="text-xs font-semibold text-[#5c6d64]">
+                              / ₦{Number(group.targetAmount).toLocaleString("en-NG")} ({progress}%)
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-[#63736b]">
+                            Click to {isExpanded ? "hide" : "view"} members &amp; ledger
+                          </div>
+                        </div>
+                        {isExpanded ? (
+                          <ChevronUp className="size-4 text-[#5c6d64]" />
+                        ) : (
+                          <ChevronDown className="size-4 text-[#5c6d64]" />
+                        )}
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t border-[#e5ede8] bg-white p-4">
+                        <div className="grid gap-4 lg:grid-cols-2">
+                          {/* Group Members Sub-Ledger */}
+                          <div>
+                            <h4 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-[#204236]">
+                              Group Members ({group.members.length})
+                            </h4>
+                            <div className="overflow-hidden rounded-lg border border-[#e5ede8]">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-[#f4f8f6] text-[10px] uppercase text-[#5c6d64]">
+                                  <tr>
+                                    <th className="px-3 py-2 font-bold">Member</th>
+                                    <th className="px-3 py-2 font-bold">Role / Status</th>
+                                    <th className="px-3 py-2 text-right font-bold">Net Saved</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#edf2ef]">
+                                  {group.members.map((m) => (
+                                    <tr key={m.id}>
+                                      <td className="px-3 py-2 font-bold text-[#18241f]">
+                                        <Link
+                                          href={`/dashboard/customers/${m.userId}?tab=financials`}
+                                          className="hover:text-[#07845f] hover:underline"
+                                        >
+                                          {m.name}
+                                        </Link>
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <span className="mr-1.5 text-[11px] text-[#5c6d64]">{m.role}</span>
+                                        <span
+                                          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                            m.status === "ACTIVE"
+                                              ? "bg-[#dcfce7] text-[#15803d]"
+                                              : "bg-[#fef3c7] text-[#b45309]"
+                                          }`}
+                                        >
+                                          {m.status === "ACTIVE" ? "Approved" : "Pending Admin"}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 text-right font-bold text-[#18241f]">
+                                        ₦{Number(m.netContributed).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                          {/* Recent Group Transactions */}
+                          <div>
+                            <h4 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-[#204236]">
+                              Recent Group Ledger ({group.transactions.length})
+                            </h4>
+                            {group.transactions.length === 0 ? (
+                              <div className="rounded-lg border border-dashed border-[#d7e2dc] p-4 text-center text-xs text-[#63736b]">
+                                No contributions or withdrawals recorded yet.
+                              </div>
+                            ) : (
+                              <div className="overflow-hidden rounded-lg border border-[#e5ede8]">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-[#f4f8f6] text-[10px] uppercase text-[#5c6d64]">
+                                    <tr>
+                                      <th className="px-3 py-2 font-bold">Member</th>
+                                      <th className="px-3 py-2 font-bold">Type / Status</th>
+                                      <th className="px-3 py-2 text-right font-bold">Amount</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-[#edf2ef]">
+                                    {group.transactions.map((tx) => (
+                                      <tr key={tx.id}>
+                                        <td className="px-3 py-2 font-medium text-[#18241f]">
+                                          {tx.memberName}
+                                          <div className="font-mono text-[10px] text-[#63736b]">
+                                            {tx.reference}
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <span
+                                            className={`font-bold ${
+                                              tx.type === "WITHDRAWAL"
+                                                ? "text-[#b45309]"
+                                                : "text-[#07845f]"
+                                            }`}
+                                          >
+                                            {tx.type}
+                                          </span>
+                                          <div className="text-[10px] text-[#63736b]">{tx.status}</div>
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-bold text-[#18241f]">
+                                          {tx.type === "WITHDRAWAL" ? "-" : "+"}₦
+                                          {Number(tx.amount).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        ) : (
+          <div className="mt-4 overflow-hidden rounded-xl border border-[#d7e2dc]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#f4f8f6] text-[10px] uppercase tracking-wider text-[#5c6d64]">
+                  <tr>
+                    <th className="px-4 py-3 font-bold">Customer</th>
+                    <th className="px-4 py-3 font-bold">Goal Title</th>
+                    <th className="px-4 py-3 font-bold">Saved Balance</th>
+                    <th className="px-4 py-3 font-bold">Target Amount</th>
+                    <th className="px-4 py-3 font-bold">Status</th>
+                    <th className="px-4 py-3 font-bold">Maturity / Lock Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#edf2ef]">
+                  {!treasury?.ufitSaveRecords?.length ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-sm text-[#63736b]">
+                        No UfitSave personal goals found.
+                      </td>
+                    </tr>
+                  ) : (
+                    treasury.ufitSaveRecords.map((goal) => (
+                      <tr key={goal.id} className="hover:bg-[#f9fbfa]">
+                        <td className="px-4 py-3 font-bold text-[#18241f]">
+                          {goal.userId ? (
+                            <Link
+                              href={`/dashboard/customers/${goal.userId}?tab=financials`}
+                              className="hover:text-[#07845f] hover:underline"
+                            >
+                              {goal.userName}
+                            </Link>
+                          ) : (
+                            goal.userName
+                          )}
+                          {goal.userEmail && (
+                            <div className="text-[11px] font-normal text-[#63736b]">{goal.userEmail}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-[#18241f]">{goal.title}</td>
+                        <td className="px-4 py-3 font-extrabold text-[#07845f]">
+                          ₦{Number(goal.currentAmount).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-[#5c6d64]">
+                          ₦{Number(goal.targetAmount).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="rounded-full bg-[#e6f6ef] px-2.5 py-0.5 text-[10px] font-bold text-[#07845f]">
+                            {goal.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-[#5c6d64]">
+                          {goal.lockedUntil
+                            ? new Date(goal.lockedUntil).toLocaleDateString("en-GB", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              })
+                            : "Flexible"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   )

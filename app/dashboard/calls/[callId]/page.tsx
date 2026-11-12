@@ -1322,7 +1322,7 @@ export default function ConciergeCallDeskPage() {
               <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
                   <div className="flex items-center justify-between text-xs font-bold text-[#68716d]">
-                    <span>UFITFLEX WALLET</span>
+                    <span>UFITFLEX BALANCE</span>
                     <Wallet className="size-4 text-[#07845f]" />
                   </div>
                   <p className="mt-2 font-brand text-xl font-bold text-[#17201c]">
@@ -1335,7 +1335,7 @@ export default function ConciergeCallDeskPage() {
 
                 <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
                   <div className="flex items-center justify-between text-xs font-bold text-[#68716d]">
-                    <span>TARGET SAVINGS</span>
+                    <span>PLAN &amp; SAVE GOALS</span>
                     <Target className="size-4 text-[#07845f]" />
                   </div>
                   <p className="mt-2 font-brand text-xl font-bold text-[#17201c]">
@@ -1542,12 +1542,12 @@ export default function ConciergeCallDeskPage() {
                 )}
               </section>
 
-              {/* 3. Target Savings Goals & Travel Docs Readiness Row */}
+              {/* 3. Plan & Save Goals & Travel Docs Readiness Row */}
               <div className="grid gap-6 lg:grid-cols-2">
-                {/* Target Savings Plans */}
+                {/* Plan & Save Goals */}
                 <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-xs">
                   <h3 className="font-brand text-base font-bold text-[#17201c]">
-                    Active Target Savings Goals ({savings.length})
+                    Active Plan &amp; Save Goals ({savings.length})
                   </h3>
                   {savings.length === 0 ? (
                     <p className="mt-4 text-xs text-[#68716d]">

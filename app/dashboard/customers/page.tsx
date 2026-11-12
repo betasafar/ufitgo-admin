@@ -503,7 +503,7 @@ export default function CustomersPage() {
         </div>
         <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">Wallet value</span>
+            <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">Plan &amp; Save value</span>
             <Wallet className="size-4 text-[#0f74c1]" />
           </div>
           <p className="mt-4 text-2xl font-bold text-[#17201c]">{formatCurrency(summary.wallet)}</p>
@@ -544,7 +544,7 @@ export default function CustomersPage() {
                 <th className="px-5 py-3 font-bold">Contact</th>
                 <th className="px-5 py-3 font-bold">KYC</th>
                 <th className="px-5 py-3 font-bold">Bookings</th>
-                <th className="px-5 py-3 font-bold">Wallet</th>
+                <th className="px-5 py-3 font-bold">Plan &amp; Save</th>
                 <th className="px-5 py-3 font-bold">Joined</th>
               </tr>
             </thead>

@@ -221,6 +221,7 @@ export default function CustomerDetailPage() {
   const [customer, setCustomer] = useState<CustomerRecord | null>(null)
   const [bookings, setBookings] = useState<BookingRecord[]>([])
   const [savings, setSavings] = useState<SavingsGoal[]>([])
+  const [wefitSummary, setWefitSummary] = useState<any | null>(null)
   const [kyc, setKyc] = useState<KycData | null>(null)
   const [auditAccounts, setAuditAccounts] = useState<AuditAccount[]>([])
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
@@ -387,11 +388,17 @@ export default function CustomerDetailPage() {
               ? detail.bookings
               : []
 
-        const savingsList = Array.isArray(savingsPayload?.data)
-          ? savingsPayload.data
-          : Array.isArray(savingsPayload)
-            ? savingsPayload
-            : []
+        const savingsList = Array.isArray(savingsPayload?.ufitSaveGoals)
+          ? savingsPayload.ufitSaveGoals
+          : Array.isArray(savingsPayload?.data)
+            ? savingsPayload.data
+            : Array.isArray(savingsPayload)
+              ? savingsPayload
+              : []
+
+        if (savingsPayload?.wefitSummary) {
+          setWefitSummary(savingsPayload.wefitSummary)
+        }
 
         setCustomer({
           id: pick(detail?.id, customerId),
@@ -491,7 +498,7 @@ export default function CustomerDetailPage() {
   const tabs = [
     { id: "overview", label: "Overview", icon: User },
     { id: "kyc", label: "KYC & Docs", icon: ShieldCheck },
-    { id: "financials", label: "Wallet & Savings", icon: Wallet },
+    { id: "financials", label: "Plan & Save", icon: Wallet },
     { id: "audit", label: "Account & Audit", icon: Building },
     { id: "bookings", label: "Bookings", icon: Map },
   ]
@@ -605,11 +612,11 @@ export default function CustomerDetailPage() {
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">Wallet</span>
+                  <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#78817d]">UfitFlex Balance</span>
                   <Wallet className="size-4 text-[#0d7d5f]" />
                 </div>
                 <p className="mt-4 text-2xl font-bold text-[#17201c]">{formatCurrency(customer.walletBalance)}</p>
-                <p className="mt-1 text-xs text-[#7b8580]">Available balance</p>
+                <p className="mt-1 text-xs text-[#7b8580]">Available Plan &amp; Save balance</p>
               </div>
               <div className="rounded-xl border border-[#dbe2de] bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -958,12 +965,12 @@ export default function CustomerDetailPage() {
           <section className="rounded-2xl border border-[#dbe2de] bg-white p-6">
             <h3 className="font-brand text-xl font-bold text-[#17201c] flex items-center gap-2">
               <Target className="size-5 text-[#07845f]" />
-              Target savings goals
+              UfitSave personal goals
             </h3>
             <div className="mt-6 space-y-4">
               {savings.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[#d9dfdc] bg-[#f9fbfa] p-8 text-center text-sm text-[#7b8580]">
-                  No active savings goals.
+                  No active personal UfitSave goals.
                 </div>
               ) : (
                 savings.map((goal) => (
@@ -980,6 +987,69 @@ export default function CustomerDetailPage() {
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-[#dbe2de] bg-white p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-brand text-xl font-bold text-[#17201c] flex items-center gap-2">
+                <User className="size-5 text-[#6d28d9]" />
+                WefitSave group pools &amp; contributions
+              </h3>
+              {wefitSummary?.myTotalContribution != null && (
+                <span className="rounded-full bg-[#f3e8ff] px-3 py-1 text-xs font-bold text-[#6d28d9]">
+                  Customer&apos;s Total Group Share: {formatCurrency(wefitSummary.myTotalContribution)}
+                </span>
+              )}
+            </div>
+
+            <div className="mt-6 space-y-4">
+              {!wefitSummary?.goals?.length && !wefitSummary?.myPendingJoinRequests?.length ? (
+                <div className="rounded-xl border border-dashed border-[#d9dfdc] bg-[#f9fbfa] p-8 text-center text-sm text-[#7b8580]">
+                  Not participating in any WefitSave group pool yet.
+                </div>
+              ) : (
+                <>
+                  {(wefitSummary?.goals || []).map((g: any) => (
+                    <div key={String(g.id)} className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-sm font-bold text-[#17201c]">{g.title}</h4>
+                            <span className="rounded bg-[#ede9fe] px-2 py-0.5 font-mono text-[11px] font-bold text-[#6d28d9]">
+                              {g.inviteCode}
+                            </span>
+                            <span className="rounded-full bg-[#eaf9f3] px-2 py-0.5 text-[10px] font-bold text-[#0c6b50]">
+                              {g.isAdmin ? "Group Admin" : "Approved Member"}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-[#7b8580]">
+                            Group Saved: {formatCurrency(g.savedAmount)} of {formatCurrency(g.targetAmount)} • {g.membersCount} Members • Maturity: {g.deadline || "Flexible"}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs text-[#7b8580]">Personal Share</div>
+                          <div className="text-sm font-bold text-[#07845f]">{formatCurrency(g.myContribution)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {(wefitSummary?.myPendingJoinRequests || []).map((req: any) => (
+                    <div key={String(req.id || req.memberId)} className="rounded-xl border border-[#fde68a] bg-[#fffbeb] p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-bold text-[#92400e]">{req.goalTitle}</h4>
+                          <p className="text-xs text-[#b45309]">Requested {req.requestedAt} • Invite Code: {req.inviteCode}</p>
+                        </div>
+                        <span className="rounded-full bg-[#fef3c7] px-2.5 py-1 text-[10px] font-bold text-[#b45309]">
+                          Pending Admin Approval
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
           </section>

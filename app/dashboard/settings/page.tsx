@@ -159,14 +159,14 @@ const featureToggles: Array<{
   { key: "enableVisaProgress", label: "Visa progress", desc: "Enable internal visa status updates, customer timeline, and the official Saudi portal link." },
   { key: "enablePassportAssist", badgeId: "passport", label: "Passport assist", desc: "Enable passport application and renewal services." },
   { key: "enableTravelDocs", badgeId: "docs", label: "Travel documents", desc: "Enable visa processing and travel document services." },
-  { key: "enableTargetSavings", badgeId: "savings", label: "Target savings", desc: "Enable user target savings plans for travel." },
+  { key: "enableTargetSavings", badgeId: "savings", label: "Plan & Save (Target Savings)", desc: "Enable the Plan & Save feature (UfitFlex, UfitSave, and WefitSave plans) for travel." },
   { key: "enableHalalLock", badgeId: "halal-lock", label: "Halal Lock (Fixed Tenor)", desc: "Enable fixed-tenor Halal lump-sum locks (90–365 days) with Mudarabah profit or 0% Wadiah safekeeping." },
   { key: "enableTravelIntelligence", badgeId: "intelligence", label: "Plan Open Slot (Hajj Intelligence)", desc: "Enable the Plan Open Slot banner/card on Home, availability alerts, and Hajj package comparison." },
   { key: "enableProactiveAdvisorNudge", label: "Proactive AI nudge", desc: "Show a bottom-sheet inviting users to chat with the AI Advisor after repeated zero-result searches." },
   { key: "enableReferralProgram", label: "Referral & rewards", desc: "Enable the refer & earn program (signup and package-sale bonuses) across the app." },
   { key: "enableOperatorDirectory", label: "Operator directory", desc: "Show the browsable \"All Operators\" list in the app. Consider keeping off while onboarding few operators." },
   { key: "enableOperatorWhatsAppInquiry", label: "Operator WhatsApp inquiry button", desc: "Show the 'Inquire via WhatsApp' sticky button on the Operator Details page in the mobile app (off by default)." },
-  { key: "enableWalletCheckout", label: "UfitFlex Wallet & Providus Direct Transfer (#1 Checkout)", desc: "Place UfitFlex Wallet & Providus Bank Transfer as Option #1 on all booking and installment checkouts (₦0 PSP cost to UfitGo)." },
+  { key: "enableWalletCheckout", label: "UfitFlex Balance & Providus Direct Transfer (#1 Checkout)", desc: "Place UfitFlex Balance & Providus Bank Transfer as Option #1 on all booking and installment checkouts (₦0 PSP cost to UfitGo)." },
   { key: "enablePaystack", label: "Paystack", desc: "Allow package payments through Paystack, including cards, bank transfer, and USSD." },
   { key: "enableOpay", label: "OPay", desc: "Allow package payments through OPay." },
   { key: "enablePayForMe", label: "Pay for Me", desc: "Allow customers to request a payment link for another person to pay for their booking." },
@@ -180,8 +180,8 @@ const toolkitModulesMeta: Record<
 > = {
   savings: {
     id: "savings",
-    label: "Target Savings",
-    desc: "Direct wallet deposits, TVL growth, and package lock-in.",
+    label: "Plan & Save",
+    desc: "Direct savings deposits (UfitFlex, UfitSave & WefitSave), TVL growth, and package lock-in.",
     featureKey: "enableTargetSavings",
     commercialTier: "Revenue Driver",
   },
@@ -1073,7 +1073,7 @@ export default function SettingsPage() {
           <h2 className="font-brand text-lg font-bold text-[#17201c]">Fees & savings automation</h2>
           <p className="mt-1 text-sm text-[#68716d]">Numbers that drive early-exit service charges and savings-plan enforcement.</p>
           <div className="mt-5 space-y-3">
-            <CollapsibleFeeCard title="Target Savings Platform Service Charge (UfitSave & WefitSave)" description="Applied per individual cash withdrawal from UfitSave or WefitSave (both early and matured non-package cash-outs), up to the configured NGN cap. Booking an Umrah, Hajj, or Tour package on UfitGo is always 0% (Free)." isExpanded={!collapsedFeeCards.includes("early-exit")} onToggle={() => toggleFeeCard("early-exit")}>
+            <CollapsibleFeeCard title="Plan & Save Platform Service Charge (UfitSave & WefitSave)" description="Applied per individual early cash withdrawal from UfitSave or WefitSave before maturity, up to the configured NGN cap. Moving matured funds to UfitFlex or booking an Umrah, Hajj, or Tour package on UfitGo is always 0% (Free)." isExpanded={!collapsedFeeCards.includes("early-exit")} onToggle={() => toggleFeeCard("early-exit")}>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <input aria-label="Early exit charge percentage" type="number" step="0.01" min="0" max="100" value={earlyExitChargePercentDraft ?? earlyExitChargePercent.toFixed(2)} onChange={(event) => setEarlyExitChargePercentDraft(event.target.value)} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">%</span>

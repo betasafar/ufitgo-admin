@@ -94,7 +94,7 @@ function formatDate(value: string) {
 }
 
 function purposeLabel(purpose: AlertPurpose) {
-  return purpose === "HAJJ_OPENING" ? "Hajj opening" : "Target Savings"
+  return purpose === "HAJJ_OPENING" ? "Hajj opening" : "Plan & Save"
 }
 
 function createDraft(purpose: AlertPurpose): CampaignDraft {
@@ -102,14 +102,14 @@ function createDraft(purpose: AlertPurpose): CampaignDraft {
   return {
     purpose,
     audience: "ALL_ACTIVE",
-    title: isHajj ? "Hajj packages are now available" : "Target Savings is now available",
+    title: isHajj ? "Hajj packages are now available" : "Plan & Save is now available",
     message: isHajj
       ? "Verified Hajj packages are now available. View current options and compare departures from your city."
-      : "Target Savings is now available. Start planning and building towards your journey today.",
-    emailSubject: isHajj ? "Hajj packages are now available on UfitGo" : "Target Savings is now available on UfitGo",
+      : "Plan & Save is now available. Start planning and building towards your journey today.",
+    emailSubject: isHajj ? "Hajj packages are now available on UfitGo" : "Plan & Save is now available on UfitGo",
     emailBody: isHajj
       ? "Verified Hajj packages are now available on UfitGo. View current options and compare departures from your city."
-      : "Target Savings is now available on UfitGo. Start planning and building towards your journey today.",
+      : "Plan & Save is now available on UfitGo. Start planning and building towards your journey today.",
     actionUrl: isHajj ? "ufitgo://intelligence?type=hajj" : "ufitgo://wallet/target-savings",
     scheduledAt: "",
   }
@@ -211,7 +211,7 @@ export default function JourneyAlertsPage() {
       <div className="flex flex-col justify-between gap-4 rounded-2xl bg-gradient-to-r from-[#07845f] to-[#0c6b7e] p-6 text-white shadow-lg sm:flex-row sm:items-center">
         <div>
           <div className="flex items-center gap-2"><BellRing className="size-6 text-[#ffcf4d]" /><h2 className="font-brand text-xl font-bold">Journey alerts</h2></div>
-          <p className="mt-1 text-sm text-white/80">Manage release announcements for Hajj-opening and Target Savings subscribers.</p>
+          <p className="mt-1 text-sm text-white/80">Manage release announcements for Hajj-opening and Plan &amp; Save subscribers.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => Promise.all([alertsQuery.refetch(), campaignsQuery.refetch()])} disabled={alertsQuery.isFetching || campaignsQuery.isFetching} className="border-white/30 bg-transparent text-white hover:bg-white/10 hover:text-white">
@@ -233,7 +233,7 @@ export default function JourneyAlertsPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-1.5 text-sm font-medium text-[#36413d]">Audience
-              <AppSelect value={draft.purpose} onValueChange={(value) => setDraft(createDraft(value as AlertPurpose))} options={[{ value: "HAJJ_OPENING", label: "Active Hajj-opening subscribers" }, { value: "TARGET_SAVINGS", label: "Active Target Savings subscribers" }]} />
+              <AppSelect value={draft.purpose} onValueChange={(value) => setDraft(createDraft(value as AlertPurpose))} options={[{ value: "HAJJ_OPENING", label: "Active Hajj-opening subscribers" }, { value: "TARGET_SAVINGS", label: "Active Plan & Save subscribers" }]} />
             </label>
             <label className="space-y-1.5 text-sm font-medium text-[#36413d]">Recipients
               <AppSelect value={draft.audience} onValueChange={(value) => setDraft({ ...draft, audience: value as CampaignAudience })} options={[{ value: "ALL_ACTIVE", label: "All active subscribers" }, { value: "UNNOTIFIED", label: "Only subscribers not yet notified" }]} />
@@ -255,7 +255,7 @@ export default function JourneyAlertsPage() {
       )}
 
       <section className="overflow-hidden rounded-xl border border-[#d9dfdc] bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1ef] px-5 py-4"><div><h3 className="text-sm font-bold text-[#36413d]">Campaign history</h3><p className="mt-1 text-xs text-[#68716d]">Test before sending. Publishing delivers a persistent in-app notice, requests push where available, and sends email through Notification Service.</p></div>{canPublish && <Button size="sm" variant="outline" onClick={() => openComposer("TARGET_SAVINGS")}><Mail className="size-4" /> New Target Savings campaign</Button>}</div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1ef] px-5 py-4"><div><h3 className="text-sm font-bold text-[#36413d]">Campaign history</h3><p className="mt-1 text-xs text-[#68716d]">Test before sending. Publishing delivers a persistent in-app notice, requests push where available, and sends email through Notification Service.</p></div>{canPublish && <Button size="sm" variant="outline" onClick={() => openComposer("TARGET_SAVINGS")}><Mail className="size-4" /> New Plan &amp; Save campaign</Button>}</div>
         {campaignsQuery.isPending ? <div role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-[#68716d]"><Loader2 className="size-5 animate-spin" /> Loading campaigns...</div> : campaignsQuery.isError ? <p role="alert" className="px-5 py-6 text-sm text-[#a43229]">{campaignsQuery.error.message}</p> : campaignsQuery.data?.length === 0 ? <p className="px-5 py-10 text-center text-sm text-[#68716d]">No campaigns have been created yet.</p> : (
           <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-[#f7faf9] text-xs text-[#68716d]"><tr>{["Campaign", "Audience", "Delivery", "Status", "Actions"].map((heading) => <th key={heading} scope="col" className="whitespace-nowrap px-5 py-3 font-semibold">{heading}</th>)}</tr></thead><tbody className="divide-y divide-[#edf1ef]">{campaignsQuery.data?.map((campaign) => <tr key={campaign.id}><td className="min-w-72 px-5 py-4"><p className="font-medium text-[#36413d]">{campaign.title}</p><p className="mt-0.5 text-xs text-[#68716d]">{purposeLabel(campaign.purpose)} · {campaign.scheduledAt ? `Scheduled ${formatDate(campaign.scheduledAt)}` : `Created ${formatDate(campaign.createdAt)}`}</p></td><td className="px-5 py-4 text-[#68716d]"><p className="whitespace-nowrap">{campaign.audienceCount.toLocaleString()} recipients</p><p className="mt-0.5 text-xs">{campaign.audience === "UNNOTIFIED" ? "Not yet notified only" : "All active subscribers"}</p></td><td className="whitespace-nowrap px-5 py-4 text-xs text-[#68716d]"><p>In-app: {campaign.inAppDeliveredCount}</p><p>Push requested: {campaign.pushRequestedCount}</p><p>Email accepted: {campaign.emailAcceptedCount}</p>{campaign.failedCount > 0 && <p className="text-[#a43229]">Failures: {campaign.failedCount}</p>}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle(campaign.status)}`}>{campaign.status.replace("_", " ")}</span>{campaign.availabilityLive && <p className="mt-2 whitespace-nowrap text-xs font-semibold text-[#0c6b50]">Availability live</p>}</td><td className="min-w-56 px-5 py-4">{canPublish && (campaign.status === "DRAFT" || campaign.status === "SCHEDULED") ? <div className="space-y-2"><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { const email = testRecipientEmail.trim(); if (email) testCampaign.mutate({ campaignId: campaign.id, recipientEmail: email }) }} disabled={testCampaign.isPending || !testRecipientEmail.trim()}><Mail className="size-3.5" /> Test</Button><Button size="sm" onClick={() => sendCampaign.mutate(campaign.id)} disabled={sendCampaign.isPending} className="bg-[#07845f] text-white hover:bg-[#0c6b50]"><Send className="size-3.5" /> Send now</Button><Button size="sm" variant="ghost" onClick={() => cancelCampaign.mutate(campaign.id)} disabled={cancelCampaign.isPending}>Cancel</Button></div><Input aria-label="Test recipient email" type="email" placeholder="Test customer email" value={testRecipientEmail} onChange={(event) => setTestRecipientEmail(event.target.value)} /></div> : canPublish && campaign.availabilityLive ? <Button size="sm" variant="outline" onClick={() => closeAvailability.mutate(campaign.id)} disabled={closeAvailability.isPending}>End availability</Button> : <span className="text-xs text-[#68716d]">{campaign.sentAt ? `Sent ${formatDate(campaign.sentAt)}` : "No actions available"}</span>}</td></tr>)}</tbody></table></div>
         )}
@@ -265,7 +265,7 @@ export default function JourneyAlertsPage() {
       <section className="space-y-4">
         <div className="flex flex-col gap-4 rounded-xl border border-[#d9dfdc] bg-white p-4 lg:flex-row">
           <form onSubmit={handleSearch} className="flex flex-1 gap-2"><Input aria-label="Search alerts by customer name or email" type="search" maxLength={254} placeholder="Search name or email" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} /><Button type="submit" className="bg-[#07845f] text-white hover:bg-[#0c6b50]"><Search className="size-4" /> Search</Button></form>
-          <div className="flex items-center gap-2 sm:w-56"><span className="text-sm text-[#68716d]">Alert</span><AppSelect value={purpose} onValueChange={(value) => { setPurpose(value); setPage(1) }} options={[{ value: "all", label: "All alerts" }, { value: "HAJJ_OPENING", label: "Hajj opening" }, { value: "TARGET_SAVINGS", label: "Target Savings" }]} /></div>
+          <div className="flex items-center gap-2 sm:w-56"><span className="text-sm text-[#68716d]">Alert</span><AppSelect value={purpose} onValueChange={(value) => { setPurpose(value); setPage(1) }} options={[{ value: "all", label: "All alerts" }, { value: "HAJJ_OPENING", label: "Hajj opening" }, { value: "TARGET_SAVINGS", label: "Plan & Save" }]} /></div>
           <div className="flex items-center gap-2 sm:w-52"><span className="text-sm text-[#68716d]">Status</span><AppSelect value={status} onValueChange={(value) => { setStatus(value); setPage(1) }} options={[{ value: "all", label: "All subscribers" }, { value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} /></div>
         </div>
         {alertsQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-[#f4c7c3] bg-[#fff4f2] px-4 py-3 text-sm text-[#9f261f]"><p>{alertsQuery.error.message}</p><Button variant="outline" onClick={() => alertsQuery.refetch()} disabled={alertsQuery.isFetching}>Retry</Button></div>}
