@@ -42,6 +42,14 @@ type CustomerRecord = {
   role?: string
   country?: string
   city?: string
+  state?: string
+  lga?: string
+  address?: string
+  dob?: string
+  gender?: string
+  maritalStatus?: string
+  authProvider?: string
+  referredByCode?: string
 }
 
 type BookingRecord = {
@@ -81,12 +89,44 @@ type SetupStagesState = {
   withdrawal_bank?: { done?: boolean; count?: number }
 }
 
+type WithdrawalBankRecord = {
+  id?: string
+  bankName?: string
+  accountNumber?: string
+  accountName?: string
+  bankCode?: string
+  isVerified?: boolean
+}
+
+type ApprovedDeviceRecord = {
+  deviceId: string
+  deviceName?: string
+  approvedAt?: string
+}
+
 type KycData = {
   status?: string
   tier?: number
   bvn?: string | number | null
   nin?: string | number | null
+  passportNo?: string | null
   verifiedName?: string
+  dob?: string | null
+  gender?: string | null
+  address?: string | null
+  city?: string | null
+  lga?: string | null
+  state?: string | null
+  landmark?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  addressVerificationMethod?: string | null
+  utilityBillUrl?: string | null
+  livenessSelfieUrl?: string | null
+  livenessConfidence?: number | null
+  securityQuestion?: string | null
+  approvedDevices?: ApprovedDeviceRecord[]
+  withdrawalBanks?: WithdrawalBankRecord[]
   docStatus?: string
   setupStages?: SetupStagesState
 }
@@ -413,16 +453,41 @@ export default function CustomerDetailPage() {
           isVerified: Boolean(detail?.isVerified ?? (String(detail?.kycStatus || "").toLowerCase().includes("verified"))),
           walletBalance: pick(detail?.walletBalance, detail?.wallet_balance, detail?.balance, detail?.availableBalance),
           role: pick(detail?.role, detail?.accountType),
-          country: pick(detail?.country, detail?.countryCode),
-          city: pick(detail?.city, detail?.location),
+          country: pick(detail?.country, detail?.countryCode, "Nigeria"),
+          city: pick(detail?.city, detail?.location, kycPayload?.city),
+          state: pick(detail?.state, kycPayload?.state),
+          lga: pick(detail?.lga, kycPayload?.lga),
+          address: pick(detail?.address, kycPayload?.address, detail?.location),
+          dob: pick(detail?.dob, kycPayload?.dob),
+          gender: pick(detail?.gender, kycPayload?.gender),
+          maritalStatus: pick(detail?.maritalStatus),
+          authProvider: pick(detail?.authProvider),
+          referredByCode: pick(detail?.referredByCode),
         })
 
         setKyc({
           status: pick(kycPayload?.status, kycPayload?.kycStatus, detail?.kycStatus, "pending"),
-          tier: Number(pick(kycPayload?.tier, kycPayload?.level, 0) ?? 0),
-          bvn: pick(kycPayload?.bvn, kycPayload?.nin, kycPayload?.bvnNumber, "Not provided"),
+          tier: Number(pick(kycPayload?.tier, kycPayload?.level, detail?.kycTier, 0) ?? 0),
+          bvn: pick(kycPayload?.bvn, kycPayload?.bvnNumber, "Not provided"),
           nin: pick(kycPayload?.nin, kycPayload?.nationalId, "Not provided"),
+          passportNo: pick(kycPayload?.passportNo),
           verifiedName: pick(kycPayload?.verifiedName, detail?.verifiedName),
+          dob: pick(kycPayload?.dob, detail?.dob),
+          gender: pick(kycPayload?.gender, detail?.gender),
+          address: pick(kycPayload?.address, detail?.address, detail?.location),
+          city: pick(kycPayload?.city, detail?.city),
+          lga: pick(kycPayload?.lga, detail?.lga),
+          state: pick(kycPayload?.state, detail?.state),
+          landmark: pick(kycPayload?.landmark),
+          latitude: typeof kycPayload?.latitude === "number" ? kycPayload.latitude : null,
+          longitude: typeof kycPayload?.longitude === "number" ? kycPayload.longitude : null,
+          addressVerificationMethod: pick(kycPayload?.addressVerificationMethod),
+          utilityBillUrl: pick(kycPayload?.utilityBillUrl),
+          livenessSelfieUrl: pick(kycPayload?.livenessSelfieUrl),
+          livenessConfidence: typeof kycPayload?.livenessConfidence === "number" ? kycPayload.livenessConfidence : null,
+          securityQuestion: pick(kycPayload?.securityQuestion),
+          approvedDevices: Array.isArray(kycPayload?.approvedDevices) ? kycPayload.approvedDevices : [],
+          withdrawalBanks: Array.isArray(kycPayload?.withdrawalBanks) ? kycPayload.withdrawalBanks : [],
           docStatus: pick(kycPayload?.docStatus, kycPayload?.documentStatus, "Not uploaded"),
           setupStages: kycPayload?.setupStages,
         })
@@ -600,10 +665,41 @@ export default function CustomerDetailPage() {
               </div>
 
               <div className="mt-8 space-y-4 text-sm text-[#68716d]">
-                <div className="flex items-center gap-3"><Mail className="size-4 text-[#66716c]" /> <span className="break-all">{customer.email || "No email on file"}</span></div>
-                <div className="flex items-center gap-3"><Phone className="size-4 text-[#66716c]" /> <span>{contactPhone}</span></div>
-                <div className="flex items-center gap-3"><CalendarDays className="size-4 text-[#66716c]" /> <span>Joined {formatDate(customer.createdAt)}</span></div>
-                <div className="flex items-center gap-3"><MapPin className="size-4 text-[#66716c]" /> <span>{customer.city || customer.country || "Location not specified"}</span></div>
+                <div className="flex items-center gap-3"><Mail className="size-4 shrink-0 text-[#66716c]" /> <span className="break-all">{customer.email || "No email on file"}</span></div>
+                <div className="flex items-center gap-3"><Phone className="size-4 shrink-0 text-[#66716c]" /> <span>{contactPhone}</span></div>
+                <div className="flex items-center gap-3"><CalendarDays className="size-4 shrink-0 text-[#66716c]" /> <span>Joined {formatDate(customer.createdAt)}</span></div>
+                <div className="flex items-start gap-3">
+                  <MapPin className="mt-0.5 size-4 shrink-0 text-[#66716c]" />
+                  <div>
+                    <div className="font-medium text-[#17201c]">
+                      {customer.address || kyc?.address || [customer.city, customer.state, customer.country].filter(Boolean).join(", ") || "Address not specified"}
+                    </div>
+                    {(kyc?.city || kyc?.state) && customer.address && (
+                      <div className="mt-0.5 text-xs text-[#7b8580]">
+                        {[kyc?.city, kyc?.state].filter(Boolean).join(", ")}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-2 gap-2.5 border-t border-[#edf1ef] pt-5 text-xs">
+                <div className="rounded-lg bg-[#f7faf9] p-2.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#78817d]">Date of birth</div>
+                  <div className="mt-1 font-bold text-[#17201c]">{customer.dob || kyc?.dob || "—"}</div>
+                </div>
+                <div className="rounded-lg bg-[#f7faf9] p-2.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#78817d]">Gender</div>
+                  <div className="mt-1 font-bold capitalize text-[#17201c]">{customer.gender || kyc?.gender || "—"}</div>
+                </div>
+                <div className="rounded-lg bg-[#f7faf9] p-2.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#78817d]">Sign-in method</div>
+                  <div className="mt-1 font-bold text-[#17201c]">{customer.authProvider || "Email"}</div>
+                </div>
+                <div className="rounded-lg bg-[#f7faf9] p-2.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#78817d]">KYC Tier</div>
+                  <div className="mt-1 font-bold text-[#0c6b50]">Tier {kyc?.tier ?? 0}</div>
+                </div>
               </div>
             </section>
           </aside>
@@ -699,14 +795,103 @@ export default function CustomerDetailPage() {
 
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <div className="space-y-4">
-              <h4 className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#78817d]">Identity</h4>
-              <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">BVN / NIN</div>
-                <div className="mt-2 text-sm font-bold text-[#17201c]">{kyc?.bvn ?? kyc?.nin ?? "Not provided"}</div>
+              <h4 className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#78817d]">Identity &amp; Demographics</h4>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Verified Legal Name</div>
+                  <div className="mt-1.5 text-sm font-bold text-[#17201c]">{kyc?.verifiedName || fullName || "Pending"}</div>
+                </div>
+                <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Active CBN Tier</div>
+                  <div className="mt-1.5 text-sm font-bold text-[#0c6b50]">
+                    Tier {kyc?.tier ?? 0} {Number(kyc?.tier ?? 0) >= 3 ? "(Unlimited)" : Number(kyc?.tier ?? 0) === 2 ? "(₦500k cap)" : Number(kyc?.tier ?? 0) === 1 ? "(₦300k cap)" : "(No account)"}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">NIN (National ID)</div>
+                  <div className="mt-1.5 font-mono text-sm font-bold text-[#17201c]">{kyc?.nin || "Not provided"}</div>
+                </div>
+                <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">BVN (Bank Verification)</div>
+                  <div className="mt-1.5 font-mono text-sm font-bold text-[#17201c]">{kyc?.bvn || "Not provided"}</div>
+                </div>
+                <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Date of Birth</div>
+                  <div className="mt-1.5 text-sm font-bold text-[#17201c]">{kyc?.dob || customer.dob || "Not provided"}</div>
+                </div>
+                <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Gender</div>
+                  <div className="mt-1.5 text-sm font-bold capitalize text-[#17201c]">{kyc?.gender || customer.gender || "Not provided"}</div>
+                </div>
               </div>
-              <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">Verified name</div>
-                <div className="mt-2 text-sm font-bold text-[#17201c]">{kyc?.verifiedName || "Pending"}</div>
+
+              {/* Residential Address & Tier 3 Verification Details */}
+              <div className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#78817d]">
+                    Residential Address &amp; Tier 3 Verification
+                  </div>
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${statusTone(kyc?.setupStages?.address?.status || "unverified")}`}>
+                    {(kyc?.setupStages?.address?.status || "unverified").replaceAll("_", " ").toUpperCase()}
+                  </span>
+                </div>
+                <div className="text-sm font-bold text-[#17201c]">
+                  {kyc?.address || customer.address || "No residential address submitted yet"}
+                </div>
+                {(kyc?.city || kyc?.lga || kyc?.state || kyc?.landmark) && (
+                  <div className="grid grid-cols-2 gap-2 text-xs text-[#68716d] pt-1">
+                    <div>
+                      <span className="font-semibold text-[#17201c]">City / LGA:</span>{" "}
+                      {[kyc?.city, kyc?.lga && kyc?.lga !== kyc?.city ? kyc.lga : null].filter(Boolean).join(" / ") || "—"}
+                    </div>
+                    <div>
+                      <span className="font-semibold text-[#17201c]">State:</span>{" "}
+                      {kyc?.state || "—"}
+                    </div>
+                    {kyc?.landmark && (
+                      <div className="col-span-2">
+                        <span className="font-semibold text-[#17201c]">Landmark:</span> {kyc.landmark}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {kyc?.addressVerificationMethod && (
+                    <span className="rounded-md border border-[#dbe2de] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#32443d]">
+                      Method: {kyc.addressVerificationMethod.replaceAll("_", " ")}
+                    </span>
+                  )}
+                  {kyc?.latitude != null && kyc?.longitude != null && (
+                    <a
+                      href={`https://www.google.com/maps?q=${kyc.latitude},${kyc.longitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-[#cbd5d0] bg-white px-2.5 py-1 text-[11px] font-bold text-[#07845f] hover:bg-[#edf3f0]"
+                    >
+                      GPS ({kyc.latitude.toFixed(4)}, {kyc.longitude.toFixed(4)}) <ExternalLink className="size-3" />
+                    </a>
+                  )}
+                  {kyc?.utilityBillUrl && (
+                    <a
+                      href={kyc.utilityBillUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md bg-[#07845f] px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#056b4d]"
+                    >
+                      View Utility Bill <ExternalLink className="size-3" />
+                    </a>
+                  )}
+                  {kyc?.livenessSelfieUrl && (
+                    <a
+                      href={kyc.livenessSelfieUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-[#cbd5d0] bg-white px-2.5 py-1 text-[11px] font-bold text-[#32443d] hover:bg-[#edf3f0]"
+                    >
+                      View Liveness Selfie {kyc?.livenessConfidence ? `(${kyc.livenessConfidence}%)` : ""} <ExternalLink className="size-3" />
+                    </a>
+                  )}
+                </div>
               </div>
 
               {/* Temporary Super-Admin-Only Setup Stage Reset Controls (matches Mobile "Complete your setup") */}
@@ -959,6 +1144,34 @@ export default function CustomerDetailPage() {
                     : "Not assigned"}
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-[#dbe2de] bg-white p-6">
+            <h3 className="font-brand text-xl font-bold text-[#17201c] flex items-center gap-2">
+              <CreditCard className="size-5 text-[#07845f]" />
+              Saved withdrawal bank accounts ({kyc?.withdrawalBanks?.length ?? 0})
+            </h3>
+            <div className="mt-4">
+              {!kyc?.withdrawalBanks?.length ? (
+                <div className="rounded-xl border border-dashed border-[#d9dfdc] bg-[#f9fbfa] p-6 text-center text-sm text-[#7b8580]">
+                  No payout bank account linked by this customer yet.
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {kyc.withdrawalBanks.map((bank, idx) => (
+                    <div key={bank.id || idx} className="rounded-xl border border-[#edf1ef] bg-[#f9fbfa] p-4 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-bold text-[#17201c]">{bank.accountName || fullName}</div>
+                        <div className="mt-1 text-xs font-semibold text-[#49615b]">{bank.bankName} • <span className="font-mono">{bank.accountNumber}</span></div>
+                      </div>
+                      <span className="rounded-full bg-[#eaf9f3] px-2.5 py-1 text-[10px] font-bold text-[#0c6b50]">
+                        {bank.isVerified ? "Verified" : "Saved"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
 
