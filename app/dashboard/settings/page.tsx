@@ -67,6 +67,22 @@ type HalalLockConfig = {
   tiers: HalalLockTierConfig[]
 }
 
+type PilgrimFxConfig = {
+  wholesaleNgnPerUsd: number
+  sellSpreadPercent: number
+  buyBackSpreadPercent: number
+  virtualCardFeeUsd: number
+  physicalCardFeeNgn: number
+}
+
+const defaultPilgrimFxConfig: PilgrimFxConfig = {
+  wholesaleNgnPerUsd: 1600,
+  sellSpreadPercent: 1.5,
+  buyBackSpreadPercent: 1.0,
+  virtualCardFeeUsd: 3,
+  physicalCardFeeNgn: 8500,
+}
+
 const defaultHalalLockConfig: HalalLockConfig = {
   minAmount: 100000,
   allowMudarabahProfit: true,
@@ -125,6 +141,7 @@ type SystemConfig = {
     intelligence?: IntelligenceConfig
     hajjSeasonCampaign?: HajjSeasonCampaignConfig
     halalLock?: HalalLockConfig
+    pilgrimFx?: PilgrimFxConfig
   }
   tiers?: Array<{
     provider: string
@@ -140,7 +157,7 @@ type SystemConfig = {
 type PlatformSetting = { key: string; value?: string; description?: string }
 type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit"
 type TierLimitDraft = Partial<Record<TierLimitKey, string>>
-const feeCardIds = ["early-exit", "halal-lock", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
+const feeCardIds = ["early-exit", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
 type FeeCardId = (typeof feeCardIds)[number]
 
 const featureToggles: Array<{
@@ -151,8 +168,9 @@ const featureToggles: Array<{
   superAdminOnly?: boolean
 }> = [
   { key: "enableConciergeCalls", label: "In-App Concierge Voice Calls", desc: "Enable free in-app Agora voice calls between pilgrims and the admin Concierge Call Desk.", superAdminOnly: true },
-  { key: "enableTravelFx", badgeId: "fx", label: "Travel FX (BDC Finder)", desc: "Enable CBN-licensed Bureau De Change directory and stock availability finder." },
-  { key: "enableCurrencyCalculator", badgeId: "calculator", label: "Currency Calculator", desc: "Enable the 3-way SAR/USD/NGN Pilgrim Currency Calculator, Makkah cost benchmarks, and personal BDC rate override." },
+  { key: "enablePilgrimFxAccount", badgeId: "pilgrim-fx", label: "Pilgrim FX Account & Cards (SAR / USD)", desc: "Enable the SAR / USD Pilgrim Virtual Account, 1-click Virtual Card, Physical Contactless Card ordering, and NFC Tap-to-Pay." },
+  { key: "enablePilgrimFxConvertBack", label: "Allow Convert Back (SAR / USD → NGN)", desc: "Allow returning pilgrims to convert unspent SAR/USD back into their UfitFlex Naira balance. Keep OFF in Year 1 to lock in repeat trip retention." },
+  { key: "enableCurrencyCalculator", badgeId: "calculator", label: "Currency Calculator", desc: "Enable the 3-way SAR/USD/NGN Pilgrim Currency Calculator, Makkah cost benchmarks, and personal exchange rate override." },
   { key: "enableTour", label: "Tours", desc: "Show tour packages alongside Hajj and Umrah on the mobile home screen." },
   { key: "enableHomeAds", label: "Home ads", desc: "Show sponsored and promotional ads on the mobile home screen." },
   { key: "enableAiAdvisor", label: "AI Advisor (Lima)", desc: "Enable Lima chat, recommendations, proactive prompts, and AI package assistance." },
@@ -172,7 +190,7 @@ const featureToggles: Array<{
   { key: "enablePayForMe", label: "Pay for Me", desc: "Allow customers to request a payment link for another person to pay for their booking." },
 ]
 
-const DEFAULT_TOOLKIT_PRIORITY_ORDER = ["savings", "fx", "calculator", "readiness", "passport", "docs"] as const
+const DEFAULT_TOOLKIT_PRIORITY_ORDER = ["savings", "calculator", "readiness", "passport", "docs"] as const
 
 const toolkitModulesMeta: Record<
   string,
@@ -185,17 +203,10 @@ const toolkitModulesMeta: Record<
     featureKey: "enableTargetSavings",
     commercialTier: "Revenue Driver",
   },
-  fx: {
-    id: "fx",
-    label: "Travel FX (BDC Finder)",
-    desc: "CBN-licensed BDC directory and BTA cash pickup finder.",
-    featureKey: "enableTravelFx",
-    commercialTier: "Revenue Driver",
-  },
   calculator: {
     id: "calculator",
     label: "Currency Calculator",
-    desc: "3-way SAR/USD/NGN converter, Makkah expense presets & My BDC Rate.",
+    desc: "3-way SAR/USD/NGN converter, Makkah expense presets & My Personal Rate.",
     featureKey: "enableCurrencyCalculator",
     commercialTier: "Core Engagement",
   },
@@ -328,6 +339,8 @@ export default function SettingsPage() {
   const [savingCampaign, setSavingCampaign] = useState(false)
   const [halalLockDraft, setHalalLockDraft] = useState<HalalLockConfig | null>(null)
   const [savingHalalLock, setSavingHalalLock] = useState(false)
+  const [pilgrimFxDraft, setPilgrimFxDraft] = useState<PilgrimFxConfig | null>(null)
+  const [savingPilgrimFx, setSavingPilgrimFx] = useState(false)
   const [tierDrafts, setTierDrafts] = useState<Record<string, TierLimitDraft>>({})
   const [savingTier, setSavingTier] = useState<string | null>(null)
 
@@ -713,6 +726,38 @@ export default function SettingsPage() {
     }
   }
 
+  async function savePilgrimFxConfig() {
+    const value = pilgrimFxDraft ?? pilgrimFxConfig
+    if (!Number.isFinite(value.wholesaleNgnPerUsd) || value.wholesaleNgnPerUsd < 100) {
+      showToast("error", "Enter a valid wholesale NGN per $1 USD reference rate.")
+      return
+    }
+    if (!Number.isFinite(value.sellSpreadPercent) || value.sellSpreadPercent < 0 || value.sellSpreadPercent > 25) {
+      showToast("error", "Enter a valid NGN → SAR/USD sell spread between 0% and 25%.")
+      return
+    }
+    if (!Number.isFinite(value.buyBackSpreadPercent) || value.buyBackSpreadPercent < 0 || value.buyBackSpreadPercent > 25) {
+      showToast("error", "Enter a valid SAR/USD → NGN buy-back spread between 0% and 25%.")
+      return
+    }
+    setSavingPilgrimFx(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ savingsConfig: { pilgrimFx: value } }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((previous) => ({ ...previous, savingsConfig: { ...previous?.savingsConfig, pilgrimFx: value } }))
+      setPilgrimFxDraft(null)
+      showToast("success", "Pilgrim FX & Card pricing saved.")
+    } catch {
+      showToast("error", "Failed to save Pilgrim FX & Card pricing.")
+    } finally {
+      setSavingPilgrimFx(false)
+    }
+  }
+
   async function saveWhatsappNumber() {
     const value = whatsappNumber.trim()
     if (!value) return
@@ -802,6 +847,17 @@ export default function SettingsPage() {
       tiers: mergedTiers,
     }
   }, [config, halalLockDraft])
+
+  const pilgrimFxConfig: PilgrimFxConfig = useMemo(() => {
+    const remote = config?.savingsConfig?.pilgrimFx
+    return pilgrimFxDraft ?? {
+      wholesaleNgnPerUsd: Number(remote?.wholesaleNgnPerUsd ?? defaultPilgrimFxConfig.wholesaleNgnPerUsd),
+      sellSpreadPercent: Number(remote?.sellSpreadPercent ?? defaultPilgrimFxConfig.sellSpreadPercent),
+      buyBackSpreadPercent: Number(remote?.buyBackSpreadPercent ?? defaultPilgrimFxConfig.buyBackSpreadPercent),
+      virtualCardFeeUsd: Number(remote?.virtualCardFeeUsd ?? defaultPilgrimFxConfig.virtualCardFeeUsd),
+      physicalCardFeeNgn: Number(remote?.physicalCardFeeNgn ?? defaultPilgrimFxConfig.physicalCardFeeNgn),
+    }
+  }, [config, pilgrimFxDraft])
 
   return (
     <main className="space-y-6 p-5 sm:p-8">
@@ -1081,6 +1137,132 @@ export default function SettingsPage() {
                 <span className="text-sm font-bold text-[#68716d]">NGN cap</span>
                 {earlyExitChargeHasChanges && <button type="button" onClick={() => void saveEarlyExitCharge()} disabled={savingEarlyExitCharge} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingEarlyExitCharge ? "Saving..." : "Save"}</button>}
               </div>
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard
+              title="Pilgrim FX Account & Cards (SAR / USD Pricing & Spreads)"
+              description="Configure wholesale NGN/USD rate, NGN → SAR/USD conversion spread, Convert-Back buy-back spread, and Virtual/Physical Pilgrim Card issuance fees. Both toggles default to OFF until you enable them."
+              isExpanded={!collapsedFeeCards.includes("pilgrim-fx")}
+              onToggle={() => toggleFeeCard("pilgrim-fx")}
+              action={
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs font-bold text-[#17201c]">
+                    <span>FX Account &amp; Cards</span>
+                    <ToggleSwitch
+                      checked={config?.features?.enablePilgrimFxAccount === true}
+                      disabled={savingFeature === "enablePilgrimFxAccount"}
+                      onChange={() => void toggleFeature("enablePilgrimFxAccount", config?.features?.enablePilgrimFxAccount === true)}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-bold text-[#17201c]">
+                    <span>Convert Back (SAR → NGN)</span>
+                    <ToggleSwitch
+                      checked={config?.features?.enablePilgrimFxConvertBack === true}
+                      disabled={savingFeature === "enablePilgrimFxConvertBack"}
+                      onChange={() => void toggleFeature("enablePilgrimFxConvertBack", config?.features?.enablePilgrimFxConvertBack === true)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void savePilgrimFxConfig()}
+                    disabled={savingPilgrimFx}
+                    className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50"
+                  >
+                    {savingPilgrimFx ? "Saving..." : "Save Pilgrim FX"}
+                  </button>
+                </div>
+              }
+            >
+              <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
+                <label className="text-xs font-semibold text-[#68716d]">
+                  Wholesale Rate (₦ per $1 USD)
+                  <input
+                    type="number"
+                    min="100"
+                    step="1"
+                    value={String(pilgrimFxConfig.wholesaleNgnPerUsd)}
+                    onChange={(event) =>
+                      setPilgrimFxDraft((current) => ({
+                        ...(current ?? pilgrimFxConfig),
+                        wholesaleNgnPerUsd: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold text-[#68716d]">
+                  NGN → SAR/USD Sell Spread (%)
+                  <input
+                    type="number"
+                    min="0"
+                    max="25"
+                    step="0.1"
+                    value={String(pilgrimFxConfig.sellSpreadPercent)}
+                    onChange={(event) =>
+                      setPilgrimFxDraft((current) => ({
+                        ...(current ?? pilgrimFxConfig),
+                        sellSpreadPercent: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold text-[#68716d]">
+                  SAR/USD → NGN Buy-Back Spread (%)
+                  <input
+                    type="number"
+                    min="0"
+                    max="25"
+                    step="0.1"
+                    value={String(pilgrimFxConfig.buyBackSpreadPercent)}
+                    onChange={(event) =>
+                      setPilgrimFxDraft((current) => ({
+                        ...(current ?? pilgrimFxConfig),
+                        buyBackSpreadPercent: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold text-[#68716d]">
+                  Virtual Card Issuance Fee ($ USD)
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={String(pilgrimFxConfig.virtualCardFeeUsd)}
+                    onChange={(event) =>
+                      setPilgrimFxDraft((current) => ({
+                        ...(current ?? pilgrimFxConfig),
+                        virtualCardFeeUsd: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold text-[#68716d]">
+                  Physical Card + Delivery (₦ NGN)
+                  <input
+                    type="number"
+                    min="0"
+                    step="500"
+                    value={String(pilgrimFxConfig.physicalCardFeeNgn)}
+                    onChange={(event) =>
+                      setPilgrimFxDraft((current) => ({
+                        ...(current ?? pilgrimFxConfig),
+                        physicalCardFeeNgn: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                </label>
+              </div>
+              <p className="mt-3 text-xs text-[#68716d]">
+                Effective Pilgrim Buy Rate: <strong>₦{Math.round(pilgrimFxConfig.wholesaleNgnPerUsd * (1 + pilgrimFxConfig.sellSpreadPercent / 100)).toLocaleString()} / $1 USD</strong> (<strong>₦{(pilgrimFxConfig.wholesaleNgnPerUsd * (1 + pilgrimFxConfig.sellSpreadPercent / 100) / 3.75).toFixed(2)} / 1 SAR</strong>) · Effective Convert-Back Rate: <strong>₦{Math.round(pilgrimFxConfig.wholesaleNgnPerUsd * (1 - pilgrimFxConfig.buyBackSpreadPercent / 100)).toLocaleString()} / $1 USD</strong>
+              </p>
             </CollapsibleFeeCard>
             <CollapsibleFeeCard
               title="Halal Lock (Fixed-Tenor Mudarabah & Wadiah)"
