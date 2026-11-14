@@ -168,8 +168,8 @@ const featureToggles: Array<{
   superAdminOnly?: boolean
 }> = [
   { key: "enableConciergeCalls", label: "In-App Concierge Voice Calls", desc: "Enable free in-app Agora voice calls between pilgrims and the admin Concierge Call Desk.", superAdminOnly: true },
-  { key: "enablePilgrimFxAccount", badgeId: "pilgrim-fx", label: "Pilgrim FX Account & Cards (SAR / USD)", desc: "Enable the SAR / USD Pilgrim Virtual Account, 1-click Virtual Card, Physical Contactless Card ordering, and NFC Tap-to-Pay." },
-  { key: "enablePilgrimFxConvertBack", label: "Allow Convert Back (SAR / USD → NGN)", desc: "Allow returning pilgrims to convert unspent SAR/USD back into their UfitFlex Naira balance. Keep OFF in Year 1 to lock in repeat trip retention." },
+  { key: "enablePilgrimFxAccount", badgeId: "fx", label: "Travel FX (SAR / USD Account & Cards)", desc: "Enable the Travel FX SAR / USD Virtual Account, 1-click Virtual Card, Physical Contactless Card ordering, and NFC Tap-to-Pay." },
+  { key: "enablePilgrimFxConvertBack", label: "Allow Convert Back (SAR / USD → NGN)", desc: "Allow returning travellers to convert unspent SAR/USD back into their UfitFlex Naira balance. Keep OFF in Year 1 to lock in repeat trip retention." },
   { key: "enableCurrencyCalculator", badgeId: "calculator", label: "Currency Calculator", desc: "Enable the 3-way SAR/USD/NGN Pilgrim Currency Calculator, Makkah cost benchmarks, and personal exchange rate override." },
   { key: "enableTour", label: "Tours", desc: "Show tour packages alongside Hajj and Umrah on the mobile home screen." },
   { key: "enableHomeAds", label: "Home ads", desc: "Show sponsored and promotional ads on the mobile home screen." },
@@ -190,7 +190,7 @@ const featureToggles: Array<{
   { key: "enablePayForMe", label: "Pay for Me", desc: "Allow customers to request a payment link for another person to pay for their booking." },
 ]
 
-const DEFAULT_TOOLKIT_PRIORITY_ORDER = ["savings", "calculator", "readiness", "passport", "docs"] as const
+const DEFAULT_TOOLKIT_PRIORITY_ORDER = ["savings", "fx", "calculator", "readiness", "passport", "docs"] as const
 
 const toolkitModulesMeta: Record<
   string,
@@ -201,6 +201,13 @@ const toolkitModulesMeta: Record<
     label: "Plan & Save",
     desc: "Direct savings deposits (UfitFlex, UfitSave & WefitSave), TVL growth, and package lock-in.",
     featureKey: "enableTargetSavings",
+    commercialTier: "Revenue Driver",
+  },
+  fx: {
+    id: "fx",
+    label: "Travel FX",
+    desc: "SAR / USD Travel FX Account, Virtual & Physical Visa Cards, and NFC Tap-to-Pay.",
+    featureKey: "enablePilgrimFxAccount",
     commercialTier: "Revenue Driver",
   },
   calculator: {
@@ -1139,14 +1146,14 @@ export default function SettingsPage() {
               </div>
             </CollapsibleFeeCard>
             <CollapsibleFeeCard
-              title="Pilgrim FX Account & Cards (SAR / USD Pricing & Spreads)"
-              description="Configure wholesale NGN/USD rate, NGN → SAR/USD conversion spread, Convert-Back buy-back spread, and Virtual/Physical Pilgrim Card issuance fees. Both toggles default to OFF until you enable them."
+              title="Travel FX (SAR / USD Account & Cards Pricing & Spreads)"
+              description="Configure wholesale NGN/USD rate, NGN → SAR/USD conversion spread, Convert-Back buy-back spread, and Virtual/Physical Travel FX Card issuance fees. Both toggles default to OFF until you enable them."
               isExpanded={!collapsedFeeCards.includes("pilgrim-fx")}
               onToggle={() => toggleFeeCard("pilgrim-fx")}
               action={
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="flex items-center gap-2 text-xs font-bold text-[#17201c]">
-                    <span>FX Account &amp; Cards</span>
+                    <span>Travel FX &amp; Cards</span>
                     <ToggleSwitch
                       checked={config?.features?.enablePilgrimFxAccount === true}
                       disabled={savingFeature === "enablePilgrimFxAccount"}
@@ -1167,7 +1174,7 @@ export default function SettingsPage() {
                     disabled={savingPilgrimFx}
                     className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50"
                   >
-                    {savingPilgrimFx ? "Saving..." : "Save Pilgrim FX"}
+                    {savingPilgrimFx ? "Saving..." : "Save Travel FX"}
                   </button>
                 </div>
               }
