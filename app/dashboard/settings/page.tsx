@@ -134,6 +134,8 @@ type SystemConfig = {
     savingsEarlyExitChargePercent?: number
     savingsEarlyExitChargeCap?: number
     savingsBreakPenaltyPercent?: number
+    wefitSystemMinContribution?: number
+    wefitGroupAdminMinFloor?: number
   }
   savingsConfig?: {
     gracePeriodDays?: number
@@ -157,7 +159,7 @@ type SystemConfig = {
 type PlatformSetting = { key: string; value?: string; description?: string }
 type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit"
 type TierLimitDraft = Partial<Record<TierLimitKey, string>>
-const feeCardIds = ["early-exit", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
+const feeCardIds = ["early-exit", "wefit-save", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
 type FeeCardId = (typeof feeCardIds)[number]
 
 const featureToggles: Array<{
@@ -178,6 +180,7 @@ const featureToggles: Array<{
   { key: "enablePassportAssist", badgeId: "passport", label: "Passport assist", desc: "Enable passport application and renewal services." },
   { key: "enableTravelDocs", badgeId: "docs", label: "Travel documents", desc: "Enable visa processing and travel document services." },
   { key: "enableTargetSavings", badgeId: "savings", label: "Plan & Save (Target Savings)", desc: "Enable the Plan & Save feature (UfitFlex, UfitSave, and WefitSave plans) for travel." },
+  { key: "enableWefitSave", badgeId: "wefit-save", label: "WeFitSave (Group Savings)", desc: "Enable WeFitSave group savings pools, group invite codes, and shared Hajj/Umrah goals. Turn off to pause or hide WeFitSave if not launching it yet." },
   { key: "enableHalalLock", badgeId: "halal-lock", label: "Halal Lock (Fixed Tenor)", desc: "Enable fixed-tenor Halal lump-sum locks (90–365 days) with Mudarabah profit or 0% Wadiah safekeeping." },
   { key: "enableTravelIntelligence", badgeId: "intelligence", label: "Plan Open Slot (Hajj Intelligence)", desc: "Enable the Plan Open Slot banner/card on Home, availability alerts, and Hajj package comparison." },
   { key: "enableProactiveAdvisorNudge", label: "Proactive AI nudge", desc: "Show a bottom-sheet inviting users to chat with the AI Advisor after repeated zero-result searches." },
@@ -340,6 +343,9 @@ export default function SettingsPage() {
   const [earlyExitChargePercentDraft, setEarlyExitChargePercentDraft] = useState<string | null>(null)
   const [earlyExitChargeCapDraft, setEarlyExitChargeCapDraft] = useState<string | null>(null)
   const [savingEarlyExitCharge, setSavingEarlyExitCharge] = useState(false)
+  const [wefitSystemMinDraft, setWefitSystemMinDraft] = useState<string | null>(null)
+  const [wefitGroupFloorDraft, setWefitGroupFloorDraft] = useState<string | null>(null)
+  const [savingWefitConfig, setSavingWefitConfig] = useState(false)
   const [intelligenceDraft, setIntelligenceDraft] = useState<IntelligenceConfig | null>(null)
   const [savingIntelligence, setSavingIntelligence] = useState(false)
   const [campaignDraft, setCampaignDraft] = useState<HajjSeasonCampaignConfig | null>(null)
@@ -625,6 +631,53 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveWefitConfig() {
+    const sysMin = Number(wefitSystemMinDraft ?? wefitSystemMinContribution)
+    const groupFloor = Number(wefitGroupFloorDraft ?? wefitGroupAdminMinFloor)
+    if (!Number.isFinite(sysMin) || sysMin < 100) {
+      showToast("error", "UfitGo system minimum contribution must be at least ₦100.")
+      return
+    }
+    if (!Number.isFinite(groupFloor) || groupFloor < 10000) {
+      showToast("error", "Group Admin minimum standard floor cannot be less than ₦10,000.")
+      return
+    }
+    if (groupFloor < sysMin) {
+      showToast("error", "Group Admin minimum standard floor cannot be less than the UfitGo system minimum.")
+      return
+    }
+
+    setSavingWefitConfig(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fees: {
+            wefitSystemMinContribution: sysMin,
+            wefitGroupAdminMinFloor: groupFloor,
+          },
+        }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((previous) => ({
+        ...previous,
+        fees: {
+          ...previous?.fees,
+          wefitSystemMinContribution: sysMin,
+          wefitGroupAdminMinFloor: groupFloor,
+        },
+      }))
+      setWefitSystemMinDraft(null)
+      setWefitGroupFloorDraft(null)
+      showToast("success", "WeFitSave configuration saved.")
+    } catch {
+      showToast("error", "Failed to save WeFitSave configuration.")
+    } finally {
+      setSavingWefitConfig(false)
+    }
+  }
+
   async function saveIntelligenceConfig() {
     const value = intelligenceDraft ?? config?.savingsConfig?.intelligence
     if (!value) return
@@ -812,6 +865,8 @@ export default function SettingsPage() {
 
   const earlyExitChargePercent = useMemo(() => Number(config?.fees?.savingsEarlyExitChargePercent ?? config?.fees?.savingsBreakPenaltyPercent ?? 0), [config])
   const earlyExitChargeCap = useMemo(() => Number(config?.fees?.savingsEarlyExitChargeCap ?? 0), [config])
+  const wefitSystemMinContribution = useMemo(() => Number(config?.fees?.wefitSystemMinContribution ?? 500), [config])
+  const wefitGroupAdminMinFloor = useMemo(() => Math.max(10000, Number(config?.fees?.wefitGroupAdminMinFloor ?? 10000)), [config])
   const gracePeriodDays = useMemo(() => Number(config?.savingsConfig?.gracePeriodDays ?? 3), [config])
   const dropThresholdDays = useMemo(() => Number(config?.savingsConfig?.dropThresholdDays ?? 30), [config])
   const earlyExitChargeHasChanges =
@@ -947,7 +1002,7 @@ export default function SettingsPage() {
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                 {featureToggles.map((feature) => {
-                  const isActive = (feature.key === "enableHomeAds" || feature.key === "enableHalalLock" || feature.key === "enableConciergeCalls")
+                  const isActive = (feature.key === "enableHomeAds" || feature.key === "enableWefitSave" || feature.key === "enableHalalLock" || feature.key === "enableConciergeCalls")
                     ? config?.features?.[feature.key] !== false
                     : config?.features?.[feature.key] === true
                   const isSuperAdmin = admin.role === "SUPER_ADMIN" || admin.permissions.includes("*")
@@ -1143,6 +1198,64 @@ export default function SettingsPage() {
                 <input aria-label="Early exit charge cap" type="number" min="0" value={earlyExitChargeCapDraft ?? String(earlyExitChargeCap)} onChange={(event) => setEarlyExitChargeCapDraft(event.target.value)} className="h-10 w-28 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">NGN cap</span>
                 {earlyExitChargeHasChanges && <button type="button" onClick={() => void saveEarlyExitCharge()} disabled={savingEarlyExitCharge} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingEarlyExitCharge ? "Saving..." : "Save"}</button>}
+              </div>
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard
+              title="WeFitSave (Group Savings & Minimum Contribution Rules)"
+              description="Turn WeFitSave (Group Savings) on or off independently of UfitSave, and configure the UfitGo system minimum deposit floor alongside the minimum contribution standard Group Admins can set for their group (must never be less than ₦10,000)."
+              isExpanded={!collapsedFeeCards.includes("wefit-save")}
+              onToggle={() => toggleFeeCard("wefit-save")}
+              action={
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs font-bold text-[#17201c]">
+                    <span>Feature enabled</span>
+                    <ToggleSwitch
+                      checked={config?.features?.enableWefitSave !== false}
+                      disabled={savingFeature === "enableWefitSave"}
+                      onChange={() => void toggleFeature("enableWefitSave", config?.features?.enableWefitSave !== false)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void saveWefitConfig()}
+                    disabled={savingWefitConfig}
+                    className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50"
+                  >
+                    {savingWefitConfig ? "Saving..." : "Save WeFitSave"}
+                  </button>
+                </div>
+              }
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-xs font-semibold text-[#68716d]">
+                  UfitGo System Minimum Deposit (NGN · Hard Floor)
+                  <input
+                    type="number"
+                    min="100"
+                    step="100"
+                    value={wefitSystemMinDraft ?? String(wefitSystemMinContribution)}
+                    onChange={(event) => setWefitSystemMinDraft(event.target.value)}
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                  <span className="mt-1 block text-[11px] font-normal text-[#7b8580]">
+                    Hard-enforced minimum for any single WeFitSave deposit across wallet, card, or bank transfer (default ₦500).
+                  </span>
+                </label>
+
+                <label className="text-xs font-semibold text-[#68716d]">
+                  Group Admin Minimum Standard Floor (NGN · Min ₦10,000)
+                  <input
+                    type="number"
+                    min="10000"
+                    step="1000"
+                    value={wefitGroupFloorDraft ?? String(wefitGroupAdminMinFloor)}
+                    onChange={(event) => setWefitGroupFloorDraft(event.target.value)}
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                  <span className="mt-1 block text-[11px] font-normal text-[#7b8580]">
+                    Lowest recommended contribution standard a Group Admin can configure when creating a group goal (cannot be below ₦10,000).
+                  </span>
+                </label>
               </div>
             </CollapsibleFeeCard>
             <CollapsibleFeeCard
