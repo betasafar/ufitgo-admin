@@ -214,6 +214,12 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     capability: "Can inspect administrator audit logs and sensitive document access records",
     group: "Platform",
   },
+  {
+    key: "sandbox.wallet.fund",
+    label: "Fund Sandbox Customer Wallets",
+    capability: "Can simulate inward bank transfers and fund customer UfitFlex wallets in Sandbox/Test mode",
+    group: "Monitoring",
+  },
 ]
 
 export const PERMISSION_GROUPS = {
@@ -231,7 +237,7 @@ export const PERMISSION_GROUPS = {
   Compliance: ["kyc.manage", "kyb.manage", "compliance.manage"],
   Support: ["leads.manage"],
   Growth: ["referrals.manage"],
-  Monitoring: ["monitoring.read", "infrastructure.read"],
+  Monitoring: ["monitoring.read", "infrastructure.read", "sandbox.wallet.fund"],
   "Marketing & Tools": ["marketing.manage", "communications.publish", "extensions.manage"],
   Platform: ["settings.manage", "audit.read"],
 } as const
@@ -283,7 +289,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly (Permission | "*"
   FINANCE: ["analytics.read", "finance.summary.read", "payments.read", "settlements.manage", "commissions.manage", "reconciliation.manage", "audit.read"],
   OPERATIONS: ["users.manage", "operators.manage", "packages.manage", "bookings.manage", "journeys.manage", "analytics.read"],
   COMPLIANCE: ["kyc.manage", "kyb.manage", "compliance.manage", "payments.read", "reconciliation.manage", "audit.read"],
-  TECHNICAL: ["monitoring.read", "infrastructure.read", "secrets.view", "extensions.manage", "audit.read"],
+  TECHNICAL: ["monitoring.read", "infrastructure.read", "sandbox.wallet.fund", "secrets.view", "extensions.manage", "audit.read"],
   SUPPORT: ["users.manage", "bookings.manage", "leads.manage"],
 }
 

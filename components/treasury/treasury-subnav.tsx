@@ -2,13 +2,26 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Database, ListChecks, Radio, RefreshCw, ShieldAlert } from "lucide-react"
+import { CreditCard, Database, ListChecks, Radio, RefreshCw, ShieldAlert } from "lucide-react"
+import { useCan } from "@/components/auth/permission-gate"
+import type { Permission } from "@/lib/rbac/permissions"
 
-const TREASURY_TABS = [
+const TREASURY_TABS: Array<{
+  label: string
+  href: string
+  icon: typeof Database
+  permissions?: readonly Permission[]
+}> = [
   { label: "Float & Revenue", href: "/dashboard/treasury/float", icon: Database },
   { label: "BaaS Routing & Health", href: "/dashboard/treasury/providers", icon: ShieldAlert },
   { label: "DVA & Ledger Recon", href: "/dashboard/treasury/reconciliation", icon: ListChecks },
   { label: "Webhooks & Sandbox", href: "/dashboard/treasury/webhooks", icon: Radio },
+  {
+    label: "Sandbox Wallet Funder",
+    href: "/dashboard/treasury/sandbox-funder",
+    icon: CreditCard,
+    permissions: ["sandbox.wallet.fund"],
+  },
 ]
 
 export function TreasurySubnav({
@@ -23,6 +36,10 @@ export function TreasurySubnav({
   onRefresh?: () => void
 }>) {
   const pathname = usePathname()
+  const can = useCan()
+  const visibleTabs = TREASURY_TABS.filter(
+    (tab) => !tab.permissions || can(tab.permissions, "all")
+  )
 
   return (
     <div className="mb-6 border-b border-[#d7e2dc] pb-5">
@@ -48,7 +65,7 @@ export function TreasurySubnav({
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {TREASURY_TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon
           const active = pathname === tab.href
           return (

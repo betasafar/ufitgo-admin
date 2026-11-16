@@ -85,13 +85,14 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
   {
     label: "Treasury & Float",
     icon: Landmark,
-    permissions: ["payments.read", "reconciliation.manage"],
+    permissions: ["payments.read", "reconciliation.manage", "sandbox.wallet.fund"],
     mode: "any",
     items: [
       { label: "Float & Revenue", href: "/dashboard/treasury/float", icon: Database, permissions: ["payments.read", "reconciliation.manage"], mode: "any", available: true },
       { label: "BaaS Routing & Health", href: "/dashboard/treasury/providers", icon: ShieldAlert, permissions: ["payments.read", "reconciliation.manage"], mode: "any", available: true },
       { label: "DVA & Ledger Recon", href: "/dashboard/treasury/reconciliation", icon: ListChecks, permissions: ["payments.read", "reconciliation.manage"], mode: "any", available: true },
       { label: "Webhooks & Sandbox", href: "/dashboard/treasury/webhooks", icon: Radio, permissions: ["payments.read", "reconciliation.manage"], mode: "any", available: true },
+      { label: "Sandbox Wallet Funder", href: "/dashboard/treasury/sandbox-funder", icon: CreditCard, permissions: ["sandbox.wallet.fund"], mode: "all", available: true },
     ],
   },
   {
