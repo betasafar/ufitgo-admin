@@ -446,7 +446,7 @@ export default function SettingsPage() {
   ) {
     setSavingFeature(key)
     const boolActive = nextMode === "live"
-    const extraPayload =
+    const extraPayload: Record<string, string | boolean | string[]> =
       key === "enablePilgrimFxAccount" ? { pilgrimFxReleaseMode: nextMode } : {}
     try {
       const response = await fetch("/api/admin/customers/system/config", {
