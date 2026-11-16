@@ -340,6 +340,8 @@ export default function SettingsPage() {
   const [savingCallAiProvider, setSavingCallAiProvider] = useState(false)
   const [savingToolkitOrder, setSavingToolkitOrder] = useState(false)
   const [savingDemoMode, setSavingDemoMode] = useState(false)
+  const [newTesterEmailInput, setNewTesterEmailInput] = useState("")
+  const [savingTesterEmails, setSavingTesterEmails] = useState(false)
   const [earlyExitChargePercentDraft, setEarlyExitChargePercentDraft] = useState<string | null>(null)
   const [earlyExitChargeCapDraft, setEarlyExitChargeCapDraft] = useState<string | null>(null)
   const [savingEarlyExitCharge, setSavingEarlyExitCharge] = useState(false)
@@ -483,6 +485,69 @@ export default function SettingsPage() {
     } finally {
       setSavingFeature(null)
     }
+  }
+
+  const internalTesterEmails = useMemo(() => {
+    const raw = config?.features?.internalTesterEmails
+    if (Array.isArray(raw)) {
+      return raw
+        .map((e) => String(e || "").trim().toLowerCase())
+        .filter(Boolean)
+    }
+    return [
+      "shafiakinropo@gmail.com",
+      "sakinropo@gmail.com",
+      "arcabdulrahmandolapobello@gmail.com",
+    ]
+  }, [config?.features?.internalTesterEmails])
+
+  async function saveInternalTesterEmails(nextEmails: string[]) {
+    const cleaned = [...new Set(nextEmails.map((e) => e.trim().toLowerCase()).filter(Boolean))]
+    setSavingTesterEmails(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          features: {
+            internalTesterEmails: cleaned,
+          },
+        }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((prev) => ({
+        ...prev,
+        features: {
+          ...prev?.features,
+          internalTesterEmails: cleaned,
+        },
+      }))
+      showToast("success", "Dev / Beta tester email allowlist updated.")
+    } catch {
+      showToast("error", "Failed to update Dev / Beta tester emails.")
+    } finally {
+      setSavingTesterEmails(false)
+    }
+  }
+
+  function handleAddTesterEmail() {
+    const candidate = newTesterEmailInput.trim().toLowerCase()
+    if (!candidate || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate)) {
+      showToast("error", "Enter a valid email address.")
+      return
+    }
+    if (internalTesterEmails.includes(candidate)) {
+      showToast("error", "This email is already in the Dev / Beta tester allowlist.")
+      return
+    }
+    setNewTesterEmailInput("")
+    void saveInternalTesterEmails([...internalTesterEmails, candidate])
+  }
+
+  function handleRemoveTesterEmail(emailToRemove: string) {
+    void saveInternalTesterEmails(
+      internalTesterEmails.filter((e) => e !== emailToRemove)
+    )
   }
 
   async function selectCallAiProvider(nextProvider: "openai" | "gemini") {
@@ -1070,6 +1135,76 @@ export default function SettingsPage() {
                   <p className="mt-0.5 max-w-xl text-xs text-[#7b5b26]">Uses simulated NIN, wallet, bank-resolution, savings funding, and payout responses. Turn this off before live FCMB testing.</p>
                 </div>
                 <ToggleSwitch checked={Boolean(config?.demoMode)} disabled={savingDemoMode} onChange={() => void toggleDemoMode(Boolean(config?.demoMode))} />
+              </div>
+
+              <div className="mt-3 rounded-xl border border-[#dbe2de] bg-[#f7faf9] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full bg-[#fef3c7] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#92400e]">
+                        Dev Only Access Gate
+                      </span>
+                      <p className="font-bold text-[#17201c]">
+                        Whitelisted Dev / Beta Tester Accounts
+                      </p>
+                    </div>
+                    <p className="mt-1 max-w-2xl text-xs text-[#68716d]">
+                      Any feature set to <strong>Dev Only</strong> below is hidden in Guest Mode and from regular users, and is unlocked <strong>only</strong> when signed into the mobile app with one of these email addresses.
+                    </p>
+                  </div>
+
+                  <div className="flex w-full sm:w-auto items-center gap-2">
+                    <input
+                      type="email"
+                      value={newTesterEmailInput}
+                      onChange={(e) => setNewTesterEmailInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          handleAddTesterEmail()
+                        }
+                      }}
+                      placeholder="Add tester email (e.g. name@ufitgo.ng)"
+                      disabled={savingTesterEmails}
+                      className="w-full sm:w-64 rounded-lg border border-[#cfdad5] bg-white px-3 py-1.5 text-xs font-medium text-[#17201c] placeholder:text-[#9aa39e] focus:border-[#0d7d5f] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={savingTesterEmails || !newTesterEmailInput.trim()}
+                      onClick={handleAddTesterEmail}
+                      className="shrink-0 rounded-lg bg-[#0d7d5f] px-3.5 py-1.5 text-xs font-bold text-white transition hover:bg-[#09634b] disabled:opacity-50"
+                    >
+                      + Add Email
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {internalTesterEmails.length === 0 ? (
+                    <span className="text-xs italic text-[#7b8580]">
+                      No tester emails added yet. Add an email above to test Dev Only features in the app.
+                    </span>
+                  ) : (
+                    internalTesterEmails.map((email) => (
+                      <span
+                        key={email}
+                        className="inline-flex items-center gap-2 rounded-full border border-[#cfdad5] bg-white py-1 pl-3 pr-2 text-xs font-semibold text-[#17201c] shadow-2xs"
+                      >
+                        <Mail className="size-3 text-[#0d7d5f]" />
+                        {email}
+                        <button
+                          type="button"
+                          disabled={savingTesterEmails}
+                          onClick={() => handleRemoveTesterEmail(email)}
+                          title={`Remove ${email}`}
+                          className="ml-0.5 grid size-4 place-items-center rounded-full bg-[#f0f4f2] text-[11px] font-bold text-[#52605a] hover:bg-[#fee2e2] hover:text-[#b91c1c] disabled:opacity-40"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                 {featureToggles.map((feature) => {
