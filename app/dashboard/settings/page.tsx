@@ -414,17 +414,49 @@ export default function SettingsPage() {
     }
   }
 
-  async function selectPilgrimFxReleaseMode(nextMode: "disabled" | "beta" | "live") {
-    setSavingFeature("enablePilgrimFxAccount")
-    const enablePilgrimFxAccount = nextMode === "live"
+  function getFeatureReleaseMode(key: string): "disabled" | "beta" | "live" {
+    const legacyFxMode =
+      key === "enablePilgrimFxAccount"
+        ? String(config?.features?.pilgrimFxReleaseMode || "").toLowerCase()
+        : ""
+    const rawMode = String(
+      config?.features?.[`${key}ReleaseMode`] || legacyFxMode || ""
+    ).toLowerCase()
+    if (rawMode === "live" || rawMode === "beta" || rawMode === "disabled") {
+      return rawMode
+    }
+    const rawVal = config?.features?.[key]
+    if (rawVal === "beta") return "beta"
+    const defaultOn =
+      key === "enableHomeAds" ||
+      key === "enableWefitSave" ||
+      key === "enableHalalLock" ||
+      key === "enableConciergeCalls" ||
+      key === "enableCurrencyCalculator" ||
+      key === "enableWalletCheckout" ||
+      key === "enablePaystack" ||
+      key === "enableOpay"
+    const isBoolActive = defaultOn ? rawVal !== false : rawVal === true
+    return isBoolActive ? "live" : "disabled"
+  }
+
+  async function selectFeatureReleaseMode(
+    key: string,
+    nextMode: "disabled" | "beta" | "live"
+  ) {
+    setSavingFeature(key)
+    const boolActive = nextMode === "live"
+    const extraPayload =
+      key === "enablePilgrimFxAccount" ? { pilgrimFxReleaseMode: nextMode } : {}
     try {
       const response = await fetch("/api/admin/customers/system/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           features: {
-            enablePilgrimFxAccount,
-            pilgrimFxReleaseMode: nextMode,
+            [key]: boolActive,
+            [`${key}ReleaseMode`]: nextMode,
+            ...extraPayload,
           },
         }),
       })
@@ -433,19 +465,21 @@ export default function SettingsPage() {
         ...prev,
         features: {
           ...prev?.features,
-          enablePilgrimFxAccount,
-          pilgrimFxReleaseMode: nextMode,
+          [key]: boolActive,
+          [`${key}ReleaseMode`]: nextMode,
+          ...extraPayload,
         },
       }))
+      const label = featureToggles.find((f) => f.key === key)?.label || key
       const modeLabel =
         nextMode === "live"
           ? "LIVE for all users"
           : nextMode === "beta"
-            ? "DEV / BETA ONLY (hidden from public users)"
+            ? "DEV ONLY (visible only when signed into an admin/tester account)"
             : "OFF for everyone"
-      showToast("success", `Travel FX is now ${modeLabel}.`)
+      showToast("success", `${label} is now ${modeLabel}.`)
     } catch {
-      showToast("error", "Failed to update Travel FX release mode.")
+      showToast("error", "Failed to update feature release mode.")
     } finally {
       setSavingFeature(null)
     }
@@ -1039,22 +1073,8 @@ export default function SettingsPage() {
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                 {featureToggles.map((feature) => {
-                  const rawFxMode = String(config?.features?.pilgrimFxReleaseMode || "")
-                  const activeFxMode: "disabled" | "beta" | "live" =
-                    rawFxMode === "live" || rawFxMode === "beta" || rawFxMode === "disabled"
-                      ? rawFxMode
-                      : config?.features?.enablePilgrimFxAccount === true
-                        ? "live"
-                        : "beta"
-                  const isActive =
-                    feature.key === "enablePilgrimFxAccount"
-                      ? activeFxMode !== "disabled"
-                      : feature.key === "enableHomeAds" ||
-                          feature.key === "enableWefitSave" ||
-                          feature.key === "enableHalalLock" ||
-                          feature.key === "enableConciergeCalls"
-                        ? config?.features?.[feature.key] !== false
-                        : config?.features?.[feature.key] === true
+                  const activeMode = getFeatureReleaseMode(feature.key)
+                  const isActive = activeMode !== "disabled"
                   const isSuperAdmin = admin.role === "SUPER_ADMIN" || admin.permissions.includes("*")
                   const lockedForRole = Boolean(feature.superAdminOnly && !isSuperAdmin)
                   const showNewBadge = feature.badgeId ? Boolean((config?.features?.newFeatureBadges as string[] | undefined)?.includes(feature.badgeId)) : false
@@ -1071,45 +1091,45 @@ export default function SettingsPage() {
                           )}
                         </div>
                         <p className="mt-0.5 text-xs leading-5 text-[#7b8580]">{feature.desc}</p>
-                        {feature.key === "enablePilgrimFxAccount" && (
-                          <div className="mt-3 rounded-lg border border-[#d6e4dd] bg-white p-2.5">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#52605a]">
-                              Rollout Visibility Mode
-                            </p>
-                            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
-                              {(
-                                [
-                                  { id: "disabled", label: "Off" },
-                                  { id: "beta", label: "Dev / Beta" },
-                                  { id: "live", label: "Live (All)" },
-                                ] as const
-                              ).map((opt) => (
-                                <button
-                                  key={opt.id}
-                                  type="button"
-                                  disabled={savingFeature === "enablePilgrimFxAccount" || lockedForRole}
-                                  onClick={() => void selectPilgrimFxReleaseMode(opt.id)}
-                                  className={`rounded-md px-2 py-1.5 text-[11px] font-bold transition ${
-                                    activeFxMode === opt.id
-                                      ? opt.id === "beta"
-                                        ? "bg-[#b45309] text-white shadow-2xs"
-                                        : "bg-[#0d7d5f] text-white shadow-2xs"
-                                      : "border border-[#d3dad7] bg-[#f7faf9] text-[#35443e] hover:bg-[#eaf9f3]"
-                                  } disabled:opacity-50`}
-                                >
-                                  {opt.label}
-                                </button>
-                              ))}
-                            </div>
-                            <p className="mt-1.5 text-[10px] text-[#7b8580]">
-                              {activeFxMode === "beta"
-                                ? "Visible ONLY on Beta builds & internal admin accounts. Hidden from live customers."
-                                : activeFxMode === "live"
-                                  ? "Visible to all customers on Production & Beta builds."
-                                  : "Completely hidden on all builds."}
-                            </p>
+                        <div className="mt-3 rounded-lg border border-[#d6e4dd] bg-white p-2.5">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-[#52605a]">
+                            Rollout Visibility Mode
+                          </p>
+                          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+                            {(
+                              [
+                                { id: "disabled", label: "Off" },
+                                { id: "beta", label: "Dev Only" },
+                                { id: "live", label: "Live (All)" },
+                              ] as const
+                            ).map((opt) => (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                disabled={savingFeature === feature.key || lockedForRole}
+                                onClick={() => void selectFeatureReleaseMode(feature.key, opt.id)}
+                                className={`rounded-md px-2 py-1.5 text-[11px] font-bold transition ${
+                                  activeMode === opt.id
+                                    ? opt.id === "beta"
+                                      ? "bg-[#b45309] text-white shadow-2xs"
+                                      : opt.id === "live"
+                                        ? "bg-[#0d7d5f] text-white shadow-2xs"
+                                        : "bg-[#475569] text-white shadow-2xs"
+                                    : "border border-[#d3dad7] bg-[#f7faf9] text-[#35443e] hover:bg-[#eaf9f3]"
+                                } disabled:opacity-50`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
                           </div>
-                        )}
+                          <p className="mt-1.5 text-[10px] text-[#7b8580]">
+                            {activeMode === "beta"
+                              ? "Visible ONLY when signed into a whitelisted Admin / Dev account. Hidden in Guest mode & from public users."
+                              : activeMode === "live"
+                                ? "Visible to all users on Production & Beta."
+                                : "Completely hidden for everyone."}
+                          </p>
+                        </div>
                         {feature.key === "enableConciergeCalls" && (
                           <div className="mt-3 rounded-lg border border-[#d6e4dd] bg-white p-2.5">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-[#52605a]">
@@ -1162,11 +1182,10 @@ export default function SettingsPage() {
                           checked={isActive}
                           disabled={savingFeature === feature.key || lockedForRole}
                           onChange={() => {
-                            if (feature.key === "enablePilgrimFxAccount") {
-                              void selectPilgrimFxReleaseMode(isActive ? "disabled" : "beta")
-                            } else {
-                              void toggleFeature(feature.key, isActive)
-                            }
+                            void selectFeatureReleaseMode(
+                              feature.key,
+                              isActive ? "disabled" : "live"
+                            )
                           }}
                         />
                       </div>
