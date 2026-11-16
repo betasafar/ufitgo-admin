@@ -414,7 +414,7 @@ export default function SettingsPage() {
     }
   }
 
-  async selectPilgrimFxReleaseMode(nextMode: "disabled" | "beta" | "live") {
+  async function selectPilgrimFxReleaseMode(nextMode: "disabled" | "beta" | "live") {
     setSavingFeature("enablePilgrimFxAccount")
     const enablePilgrimFxAccount = nextMode === "live"
     try {
