@@ -936,6 +936,14 @@ export default function SettingsPage() {
       showToast("error", "Enter a valid SAR/USD → NGN buy-back spread between 0% and 25%.")
       return
     }
+    if (!Number.isFinite(value.virtualCardFeeUsd) || value.virtualCardFeeUsd < 0) {
+      showToast("error", "Enter a valid Virtual Card fee ($0 or higher).")
+      return
+    }
+    if (!Number.isFinite(value.physicalCardFeeNgn) || value.physicalCardFeeNgn < 0) {
+      showToast("error", "Enter a valid Physical Card fee (₦0 or higher).")
+      return
+    }
     setSavingPilgrimFx(true)
     try {
       const response = await fetch("/api/admin/customers/system/config", {
@@ -1564,39 +1572,87 @@ export default function SettingsPage() {
                 </label>
 
                 <label className="text-xs font-semibold text-[#68716d]">
-                  NGN → SAR/USD Sell Spread (%)
+                  Local → Foreign Rate (₦ per $1 USD)
                   <input
                     type="number"
-                    min="0"
-                    max="25"
-                    step="0.1"
-                    value={String(pilgrimFxConfig.sellSpreadPercent)}
-                    onChange={(event) =>
-                      setPilgrimFxDraft((current) => ({
-                        ...(current ?? pilgrimFxConfig),
-                        sellSpreadPercent: Number(event.target.value),
-                      }))
-                    }
+                    min="100"
+                    step="1"
+                    value={String(
+                      Math.round(
+                        pilgrimFxConfig.wholesaleNgnPerUsd *
+                          (1 + pilgrimFxConfig.sellSpreadPercent / 100) *
+                          100
+                      ) / 100
+                    )}
+                    onChange={(event) => {
+                      const nextSellRate = Number(event.target.value)
+                      setPilgrimFxDraft((current) => {
+                        const base = current ?? pilgrimFxConfig
+                        const wholesale = Math.max(100, base.wholesaleNgnPerUsd || 1600)
+                        const computedSpread = Math.max(
+                          0,
+                          Math.min(25, Number((((nextSellRate / wholesale) - 1) * 100).toFixed(2)))
+                        )
+                        return {
+                          ...base,
+                          sellSpreadPercent: Number.isFinite(computedSpread) ? computedSpread : base.sellSpreadPercent,
+                        }
+                      })
+                    }}
                     className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
                   />
+                  <span className="mt-1 block text-[11px] font-normal text-[#68716d]">
+                    Spread: +{pilgrimFxConfig.sellSpreadPercent}% · ₦
+                    {(
+                      (pilgrimFxConfig.wholesaleNgnPerUsd *
+                        (1 + pilgrimFxConfig.sellSpreadPercent / 100)) /
+                      3.75
+                    ).toFixed(2)}{" "}
+                    / 1 SAR
+                  </span>
                 </label>
 
                 <label className="text-xs font-semibold text-[#68716d]">
-                  SAR/USD → NGN Buy-Back Spread (%)
+                  Foreign → Local Rate (₦ per $1 USD)
                   <input
                     type="number"
-                    min="0"
-                    max="25"
-                    step="0.1"
-                    value={String(pilgrimFxConfig.buyBackSpreadPercent)}
-                    onChange={(event) =>
-                      setPilgrimFxDraft((current) => ({
-                        ...(current ?? pilgrimFxConfig),
-                        buyBackSpreadPercent: Number(event.target.value),
-                      }))
-                    }
+                    min="100"
+                    step="1"
+                    value={String(
+                      Math.round(
+                        pilgrimFxConfig.wholesaleNgnPerUsd *
+                          (1 - pilgrimFxConfig.buyBackSpreadPercent / 100) *
+                          100
+                      ) / 100
+                    )}
+                    onChange={(event) => {
+                      const nextBuyBackRate = Number(event.target.value)
+                      setPilgrimFxDraft((current) => {
+                        const base = current ?? pilgrimFxConfig
+                        const wholesale = Math.max(100, base.wholesaleNgnPerUsd || 1600)
+                        const computedSpread = Math.max(
+                          0,
+                          Math.min(25, Number(((1 - nextBuyBackRate / wholesale) * 100).toFixed(2)))
+                        )
+                        return {
+                          ...base,
+                          buyBackSpreadPercent: Number.isFinite(computedSpread)
+                            ? computedSpread
+                            : base.buyBackSpreadPercent,
+                        }
+                      })
+                    }}
                     className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
                   />
+                  <span className="mt-1 block text-[11px] font-normal text-[#68716d]">
+                    Spread: -{pilgrimFxConfig.buyBackSpreadPercent}% · ₦
+                    {(
+                      (pilgrimFxConfig.wholesaleNgnPerUsd *
+                        (1 - pilgrimFxConfig.buyBackSpreadPercent / 100)) /
+                      3.75
+                    ).toFixed(2)}{" "}
+                    / 1 SAR
+                  </span>
                 </label>
 
                 <label className="text-xs font-semibold text-[#68716d]">

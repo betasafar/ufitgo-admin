@@ -30,9 +30,10 @@ function validateLogin(values: LoginFormState): LoginErrors {
   return errors
 }
 
-// Next.js inlines process.env.NODE_ENV at build time, so this branch is
-// dead-code-eliminated from production bundles (e.g. Vercel builds).
-const DEV_DEFAULTS = process.env.NODE_ENV === "development" ? { email: "admin@ufitgo.com", password: "admin123" } : { email: "", password: "" }
+const DEV_DEFAULTS = {
+  email: process.env.NEXT_PUBLIC_DEV_ADMIN_EMAIL || "",
+  password: "",
+}
 
 export function LoginForm() {
   const router = useRouter()

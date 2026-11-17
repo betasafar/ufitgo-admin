@@ -63,7 +63,25 @@ type SandboxStatusPayload = {
   recentCredits?: SandboxCreditRecord[]
 }
 
+type TravelFxSandboxStatePayload = {
+  environment: string
+  userId: string
+  ufitFlexNgnBalance: string
+  sandboxAccount?: {
+    status?: string
+    total?: { currency: string; amount: string }
+    available?: { currency: string; amount: string }
+    held?: { currency: string; amount: string }
+    sarEstimate?: { currency: string; amount: string }
+  }
+  sandboxFunding?: {
+    seeded?: boolean
+    balance?: { currency: string; amount: string }
+  }
+}
+
 const AMOUNT_PRESETS = [50000, 100000, 250000, 500000, 1000000, 5000000]
+const FX_USD_PRESETS = [100, 250, 500, 1000, 2500]
 
 function formatCurrency(value: number) {
   return `₦${Number(value || 0).toLocaleString("en-NG", {
@@ -95,6 +113,12 @@ export default function SandboxWalletFunderPage() {
   const [selectedAccountIndex, setSelectedAccountIndex] = useState<number>(0)
   const [amountInput, setAmountInput] = useState<string>("100000")
   const [narration, setNarration] = useState<string>("Sandbox QA Test Wallet Deposit")
+  const [funderMode, setFunderMode] = useState<"ufitflex_ngn" | "travel_fx">("ufitflex_ngn")
+  const [fxState, setFxState] = useState<TravelFxSandboxStatePayload | null>(null)
+  const [fxLoading, setFxLoading] = useState<boolean>(false)
+  const [fxNgnSeedInput, setFxNgnSeedInput] = useState<string>("162400")
+  const [fxUsdSeedInput, setFxUsdSeedInput] = useState<string>("100")
+  const [fxSyncUfitFlex, setFxSyncUfitFlex] = useState<boolean>(true)
   const [loading, setLoading] = useState<boolean>(true)
   const [submitting, setSubmitting] = useState<boolean>(false)
   const [notice, setNotice] = useState<string>("")
@@ -173,6 +197,31 @@ export default function SandboxWalletFunderPage() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  const loadTravelFxState = useCallback(async (userId: string) => {
+    if (!userId) return
+    setFxLoading(true)
+    try {
+      const res = await fetch(
+        `/api/admin/fcmb-diagnostics/sandbox-wallet-funder/travel-fx/${encodeURIComponent(userId)}`,
+        { cache: "no-store" }
+      )
+      const data = await res.json().catch(() => null)
+      if (res.ok && data) {
+        setFxState(data)
+      }
+    } catch {
+      // Ignore transient FX state load errors
+    } finally {
+      setFxLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (selectedUserId && funderMode === "travel_fx") {
+      void loadTravelFxState(selectedUserId)
+    }
+  }, [selectedUserId, funderMode, loadTravelFxState])
 
   const filteredCustomers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -294,6 +343,67 @@ export default function SandboxWalletFunderPage() {
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to fund sandbox wallet."
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleSeedTravelFx = async () => {
+    if (!selectedCustomer) {
+      setError("Please select a customer first.")
+      return
+    }
+    const ngnVal = Number(String(fxNgnSeedInput || "0").replace(/,/g, ""))
+    const usdVal = Number(String(fxUsdSeedInput || "0").replace(/,/g, ""))
+    if ((!Number.isFinite(ngnVal) || ngnVal <= 0) && (!Number.isFinite(usdVal) || usdVal <= 0)) {
+      setError("Enter a positive NGN funding amount or USD balance amount to seed.")
+      return
+    }
+
+    setSubmitting(true)
+    setError("")
+    setNotice("")
+    try {
+      const res = await fetch(
+        "/api/admin/fcmb-diagnostics/sandbox-wallet-funder/travel-fx/seed",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: selectedCustomer.id,
+            ngnAmount: Math.max(0, ngnVal),
+            usdAmount: Math.max(0, usdVal),
+            mode: "add",
+            syncUfitFlexNgn: fxSyncUfitFlex,
+          }),
+        }
+      )
+      const payload = await res.json().catch(() => null)
+      if (!res.ok) {
+        throw new Error(
+          payload?.details?.message ||
+            payload?.message ||
+            "Failed to seed Travel FX Sandbox account."
+        )
+      }
+      const seeded = payload?.seeded || {}
+      setNotice(
+        `Travel FX Sandbox seeded for ${selectedCustomer.email}! Status: ${
+          seeded?.status || "active"
+        } · Sandbox NGN Funding: ₦${seeded?.ngnFunding?.amount || "0.00"} · USD Available: $${
+          seeded?.available?.amount || "0.00"
+        } (≈ SAR ${seeded?.sarEstimate?.amount || "0.00"}).`
+      )
+      await Promise.all([
+        loadTravelFxState(selectedCustomer.id),
+        loadData(searchQuery),
+      ])
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to seed Travel FX Sandbox account."
       )
     } finally {
       setSubmitting(false)
@@ -566,84 +676,250 @@ export default function SandboxWalletFunderPage() {
               </div>
             )}
 
-            {/* Amount & Narration Form */}
-            <div className="space-y-4 border-t border-[#e5ede8] pt-4">
-              <div>
-                <label
-                  htmlFor="sandbox-fund-amount"
-                  className="block text-sm font-bold text-[#18241f]"
+            {/* Funder Mode Switcher: NGN UfitFlex vs Travel FX Sandbox Seeder */}
+            <div className="border-t border-[#e5ede8] pt-4">
+              <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-[#d7e2dc] bg-[#f4faf6] p-1">
+                <button
+                  type="button"
+                  onClick={() => setFunderMode("ufitflex_ngn")}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                    funderMode === "ufitflex_ngn"
+                      ? "bg-[#07845f] text-white shadow-xs"
+                      : "text-[#204236] hover:bg-white/70"
+                  }`}
                 >
-                  2. Amount to Credit (NGN)
-                </label>
-                <input
-                  id="sandbox-fund-amount"
-                  type="number"
-                  min={100}
-                  max={50000000}
-                  disabled={isLocked || submitting}
-                  value={amountInput}
-                  onChange={(e) => setAmountInput(e.target.value)}
-                  className="mt-1.5 h-11 w-full rounded-lg border border-[#b9ccc2] bg-white px-3.5 text-base font-bold text-[#18241f] outline-none focus:border-[#07845f] disabled:bg-[#f3f6f4]"
-                  placeholder="e.g. 100000"
-                />
+                  NGN UfitFlex Wallet Funder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFunderMode("travel_fx")}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                    funderMode === "travel_fx"
+                      ? "bg-[#07845f] text-white shadow-xs"
+                      : "text-[#204236] hover:bg-white/70"
+                  }`}
+                >
+                  Travel FX Sandbox Seeder (NGN ⇄ USD/SAR)
+                </button>
+              </div>
 
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {AMOUNT_PRESETS.map((preset) => {
-                    const active = Number(amountInput) === preset
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        disabled={isLocked || submitting}
-                        onClick={() => setAmountInput(String(preset))}
-                        className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition ${
-                          active
-                            ? "border-[#07845f] bg-[#07845f] text-white"
-                            : "border-[#c9d8d0] bg-[#f8fbf9] text-[#204236] hover:bg-[#edf5f0]"
-                        }`}
-                      >
-                        +₦{preset.toLocaleString("en-NG")}
-                      </button>
-                    )
-                  })}
+              {funderMode === "ufitflex_ngn" ? (
+                <div className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="sandbox-fund-amount"
+                      className="block text-sm font-bold text-[#18241f]"
+                    >
+                      2. Amount to Credit (NGN)
+                    </label>
+                    <input
+                      id="sandbox-fund-amount"
+                      type="number"
+                      min={100}
+                      max={50000000}
+                      disabled={isLocked || submitting}
+                      value={amountInput}
+                      onChange={(e) => setAmountInput(e.target.value)}
+                      className="mt-1.5 h-11 w-full rounded-lg border border-[#b9ccc2] bg-white px-3.5 text-base font-bold text-[#18241f] outline-none focus:border-[#07845f] disabled:bg-[#f3f6f4]"
+                      placeholder="e.g. 100000"
+                    />
+
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {AMOUNT_PRESETS.map((preset) => {
+                        const active = Number(amountInput) === preset
+                        return (
+                          <button
+                            key={preset}
+                            type="button"
+                            disabled={isLocked || submitting}
+                            onClick={() => setAmountInput(String(preset))}
+                            className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition ${
+                              active
+                                ? "border-[#07845f] bg-[#07845f] text-white"
+                                : "border-[#c9d8d0] bg-[#f8fbf9] text-[#204236] hover:bg-[#edf5f0]"
+                            }`}
+                          >
+                            +₦{preset.toLocaleString("en-NG")}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="sandbox-fund-narration"
+                      className="block text-xs font-bold text-[#204236]"
+                    >
+                      Transaction Narration (Optional)
+                    </label>
+                    <input
+                      id="sandbox-fund-narration"
+                      type="text"
+                      disabled={isLocked || submitting}
+                      value={narration}
+                      onChange={(e) => setNarration(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-lg border border-[#c9d8d0] bg-white px-3 text-sm outline-none focus:border-[#07845f] disabled:bg-[#f3f6f4]"
+                      placeholder="Sandbox QA Test Wallet Deposit"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleFundWallet()}
+                    disabled={isLocked || submitting || !selectedCustomer}
+                    className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#07845f] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#05684a] disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {submitting ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Play className="size-4" />
+                    )}
+                    {isLocked
+                      ? "Locked in Live Mode"
+                      : selectedCustomer
+                        ? `Credit ${formatCurrency(Number(amountInput || 0))} via ${autoFilledProvider}`
+                        : "Select a Customer to Fund"}
+                  </button>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-[#cbe4d6] bg-[#f9fcfb] p-3.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold uppercase tracking-wider text-[#07845f]">
+                        Live Travel FX Sandbox State
+                      </p>
+                      <span className="rounded-full bg-[#e4f5ec] px-2.5 py-0.5 text-[11px] font-bold text-[#0b683a]">
+                        {fxLoading
+                          ? "Loading..."
+                          : `Status: ${fxState?.sandboxAccount?.status || "not_open"}`}
+                      </span>
+                    </div>
+                    <div className="mt-2.5 grid grid-cols-3 gap-2.5">
+                      <div className="rounded-lg border border-[#d7e2dc] bg-white p-2.5">
+                        <p className="text-[10px] font-bold uppercase text-[#63736b]">
+                          BaaS NGN Funding
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold text-[#18241f]">
+                          ₦{fxState?.sandboxFunding?.balance?.amount || "0.00"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-[#d7e2dc] bg-white p-2.5">
+                        <p className="text-[10px] font-bold uppercase text-[#63736b]">
+                          USD Available
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold text-[#18241f]">
+                          ${fxState?.sandboxAccount?.available?.amount || "0.00"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-[#d7e2dc] bg-white p-2.5">
+                        <p className="text-[10px] font-bold uppercase text-[#63736b]">
+                          SAR Estimate
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold text-[#07845f]">
+                          SAR {fxState?.sandboxAccount?.sarEstimate?.amount || "0.00"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
-              <div>
-                <label
-                  htmlFor="sandbox-fund-narration"
-                  className="block text-xs font-bold text-[#204236]"
-                >
-                  Transaction Narration (Optional)
-                </label>
-                <input
-                  id="sandbox-fund-narration"
-                  type="text"
-                  disabled={isLocked || submitting}
-                  value={narration}
-                  onChange={(e) => setNarration(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-lg border border-[#c9d8d0] bg-white px-3 text-sm outline-none focus:border-[#07845f] disabled:bg-[#f3f6f4]"
-                  placeholder="Sandbox QA Test Wallet Deposit"
-                />
-              </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor="fx-seed-ngn"
+                        className="block text-xs font-bold text-[#18241f]"
+                      >
+                        Seed Sandbox NGN Funding (₦)
+                      </label>
+                      <input
+                        id="fx-seed-ngn"
+                        type="number"
+                        min={0}
+                        max={50000000}
+                        disabled={isLocked || submitting}
+                        value={fxNgnSeedInput}
+                        onChange={(e) => setFxNgnSeedInput(e.target.value)}
+                        className="mt-1 h-10 w-full rounded-lg border border-[#b9ccc2] bg-white px-3 text-sm font-bold text-[#18241f] outline-none focus:border-[#07845f]"
+                        placeholder="162400"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="fx-seed-usd"
+                        className="block text-xs font-bold text-[#18241f]"
+                      >
+                        Seed Sandbox USD Balance ($)
+                      </label>
+                      <input
+                        id="fx-seed-usd"
+                        type="number"
+                        min={0}
+                        max={100000}
+                        disabled={isLocked || submitting}
+                        value={fxUsdSeedInput}
+                        onChange={(e) => setFxUsdSeedInput(e.target.value)}
+                        className="mt-1 h-10 w-full rounded-lg border border-[#b9ccc2] bg-white px-3 text-sm font-bold text-[#18241f] outline-none focus:border-[#07845f]"
+                        placeholder="100"
+                      />
+                    </div>
+                  </div>
 
-              <button
-                type="button"
-                onClick={() => void handleFundWallet()}
-                disabled={isLocked || submitting || !selectedCustomer}
-                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#07845f] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#05684a] disabled:cursor-not-allowed disabled:opacity-55"
-              >
-                {submitting ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Play className="size-4" />
-                )}
-                {isLocked
-                  ? "Locked in Live Mode"
-                  : selectedCustomer
-                    ? `Credit ${formatCurrency(Number(amountInput || 0))} via ${autoFilledProvider}`
-                    : "Select a Customer to Fund"}
-              </button>
+                  <div className="flex flex-wrap gap-1.5">
+                    {FX_USD_PRESETS.map((usdPreset) => {
+                      const active = Number(fxUsdSeedInput) === usdPreset
+                      return (
+                        <button
+                          key={usdPreset}
+                          type="button"
+                          disabled={isLocked || submitting}
+                          onClick={() => {
+                            setFxUsdSeedInput(String(usdPreset))
+                            setFxNgnSeedInput(String(usdPreset * 1624))
+                          }}
+                          className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition ${
+                            active
+                              ? "border-[#07845f] bg-[#07845f] text-white"
+                              : "border-[#c9d8d0] bg-[#f8fbf9] text-[#204236] hover:bg-[#edf5f0]"
+                          }`}
+                        >
+                          +${usdPreset} (SAR {(usdPreset * 3.75).toFixed(0)} + ₦
+                          {(usdPreset * 1624).toLocaleString("en-NG")})
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <label className="flex items-center gap-2 text-xs font-semibold text-[#204236]">
+                    <input
+                      type="checkbox"
+                      checked={fxSyncUfitFlex}
+                      onChange={(e) => setFxSyncUfitFlex(e.target.checked)}
+                      className="size-4 accent-[#07845f]"
+                    />
+                    Also credit the NGN amount into the customer&apos;s UfitFlex NGN balance
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleSeedTravelFx()}
+                    disabled={isLocked || submitting || !selectedCustomer}
+                    className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#07845f] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#05684a] disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {submitting ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Play className="size-4" />
+                    )}
+                    {isLocked
+                      ? "Locked in Live Mode"
+                      : selectedCustomer
+                        ? `Activate & Seed Travel FX Sandbox (+₦${Number(
+                            fxNgnSeedInput || 0
+                          ).toLocaleString("en-NG")} / +$${Number(fxUsdSeedInput || 0)})`
+                        : "Select a Customer to Seed"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
