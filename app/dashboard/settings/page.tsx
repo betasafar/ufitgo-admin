@@ -526,8 +526,24 @@ export default function SettingsPage() {
   ) {
     setSavingFeature(key)
     const boolActive = nextMode === "live"
+    const currentCampaignId = String(
+      config?.features?.festivalCampaignId || "ramadan-heritage-v1"
+    )
     const extraPayload: Record<string, string | boolean | string[]> =
-      key === "enablePilgrimFxAccount" ? { pilgrimFxReleaseMode: nextMode } : {}
+      key === "enablePilgrimFxAccount"
+        ? { pilgrimFxReleaseMode: nextMode }
+        : key === "enableFestivalMode"
+          ? {
+              festivalReleaseMode: nextMode,
+              festivalCampaignId:
+                nextMode !== "disabled"
+                  ? currentCampaignId
+                  : currentCampaignId,
+              festivalSeasonName: String(
+                config?.features?.festivalSeasonName || "Ramadan & Arabian Heritage"
+              ),
+            }
+          : {}
     try {
       const response = await fetch("/api/admin/customers/system/config", {
         method: "PATCH",
@@ -550,7 +566,10 @@ export default function SettingsPage() {
           ...extraPayload,
         },
       }))
-      const label = featureToggles.find((f) => f.key === key)?.label || key
+      const label =
+        key === "enableFestivalMode"
+          ? "Festival Mode (Ramadan / Arabian Heritage)"
+          : featureToggles.find((f) => f.key === key)?.label || key
       const modeLabel =
         nextMode === "live"
           ? "LIVE for all users"
@@ -1292,6 +1311,114 @@ export default function SettingsPage() {
                   )}
                 </div>
               </div>
+
+              {/* Ramadan & Seasonal Festival Mode Control Card */}
+              {(() => {
+                const festivalMode = getFeatureReleaseMode("enableFestivalMode")
+                const festivalCampaignId = String(
+                  config?.features?.festivalCampaignId || "ramadan-heritage-v1"
+                )
+                return (
+                  <div className="mt-3 rounded-xl border border-[#d9c082] bg-gradient-to-r from-[#faf6eb] via-[#f5eedb] to-[#efe4c6] p-4 shadow-2xs">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="max-w-2xl">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center rounded-full bg-[#0d4a2e] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#e9ce86]">
+                            Seasonal Design Override
+                          </span>
+                          <p className="font-bold text-[#14291e]">
+                            Festival Mode (Ramadan / Arabian Heritage Design)
+                          </p>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-[#49584f]">
+                          When set to <strong>Live</strong> (or <strong>Dev Only</strong> for whitelisted tester emails), this superimposes the Arabian Heritage parchment, gold &amp; skyline theme across Travel FX, Home, and supported screens for all users — regardless of their current theme — until a user intentionally switches back in their personal Settings.
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-[#5c6b62]">
+                          <span>
+                            Active Campaign Stamp: <strong className="font-mono text-[#0d4a2e]">{festivalCampaignId}</strong>
+                          </span>
+                          <button
+                            type="button"
+                            disabled={savingFeature === "enableFestivalMode"}
+                            onClick={async () => {
+                              const nextStamp = `ramadan-${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 6)}`
+                              setSavingFeature("enableFestivalMode")
+                              try {
+                                const res = await fetch("/api/admin/customers/system/config", {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    features: {
+                                      festivalCampaignId: nextStamp,
+                                    },
+                                  }),
+                                })
+                                if (!res.ok) throw new Error()
+                                setConfig((prev) => ({
+                                  ...prev,
+                                  features: {
+                                    ...prev?.features,
+                                    festivalCampaignId: nextStamp,
+                                  },
+                                }))
+                                showToast(
+                                  "success",
+                                  `New Festival Campaign (${nextStamp}) pushed — Festival Mode will now re-superimpose for all users!`
+                                )
+                              } catch {
+                                showToast("error", "Could not update Festival Campaign stamp.")
+                              } finally {
+                                setSavingFeature(null)
+                              }
+                            }}
+                            className="rounded-lg border border-[#c8ad68] bg-white/80 px-2.5 py-1 text-[11px] font-bold text-[#0d4a2e] transition hover:bg-white disabled:opacity-50"
+                          >
+                            ↻ Push Fresh Campaign Stamp (Re-apply to All Users)
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="w-full sm:w-72 rounded-xl border border-[#d6c28f] bg-white/90 p-2.5">
+                        <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-[#68716d]">
+                          Festival Mode Rollout
+                        </p>
+                        <div className="grid grid-cols-3 gap-1 rounded-lg bg-[#eef2f0] p-1">
+                          {(
+                            [
+                              { id: "disabled", label: "Off" },
+                              { id: "beta", label: "Dev Only" },
+                              { id: "live", label: "Live" },
+                            ] as const
+                          ).map((opt) => {
+                            const selected = festivalMode === opt.id
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                disabled={savingFeature === "enableFestivalMode"}
+                                onClick={() =>
+                                  void selectFeatureReleaseMode("enableFestivalMode", opt.id)
+                                }
+                                className={`rounded-md px-2 py-1.5 text-[11px] font-bold transition ${
+                                  selected
+                                    ? opt.id === "live"
+                                      ? "bg-[#0d4a2e] text-[#f3dca2] shadow-xs"
+                                      : opt.id === "beta"
+                                        ? "bg-[#d97706] text-white shadow-xs"
+                                        : "bg-white text-[#17201c] shadow-xs"
+                                    : "text-[#617069] hover:text-[#17201c]"
+                                } disabled:opacity-50`}
+                              >
+                                {opt.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
               <div className="mt-3 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                 {featureToggles.map((feature) => {
                   const activeMode = getFeatureReleaseMode(feature.key)
