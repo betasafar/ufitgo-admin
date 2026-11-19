@@ -174,6 +174,7 @@ const featureToggles: Array<{
   { key: "enablePilgrimFxConvertBack", label: "Allow Convert Back (SAR / USD → NGN)", desc: "Allow returning travellers to convert unspent SAR/USD back into their UfitFlex Naira balance. Keep OFF in Year 1 to lock in repeat trip retention." },
   { key: "enableCurrencyCalculator", badgeId: "calculator", label: "Currency Calculator", desc: "Enable the 3-way SAR/USD/NGN Pilgrim Currency Calculator, Makkah cost benchmarks, and personal exchange rate override." },
   { key: "enableTour", label: "Tours", desc: "Show tour packages alongside Hajj and Umrah on the mobile home screen." },
+  { key: "enableZiyarahGuide", label: "Ziyarah Guide", desc: "Show the self-guided Makkah and Madinah visit reference in the mobile Travel Toolkit." },
   { key: "enableHomeAds", label: "Home ads", desc: "Show sponsored and promotional ads on the mobile home screen." },
   { key: "enableAiAdvisor", label: "AI Advisor (Lima)", desc: "Enable Lima chat, recommendations, proactive prompts, and AI package assistance." },
   { key: "enableVisaProgress", label: "Visa progress", desc: "Enable internal visa status updates, customer timeline, and the official Saudi portal link." },
@@ -193,7 +194,7 @@ const featureToggles: Array<{
   { key: "enablePayForMe", label: "Pay for Me", desc: "Allow customers to request a payment link for another person to pay for their booking." },
 ]
 
-const DEFAULT_TOOLKIT_PRIORITY_ORDER = ["savings", "fx", "calculator", "readiness", "passport", "docs"] as const
+const DEFAULT_TOOLKIT_PRIORITY_ORDER = ["savings", "fx", "calculator", "readiness", "passport", "docs", "ziyarah"] as const
 
 const toolkitModulesMeta: Record<
   string,
@@ -239,6 +240,13 @@ const toolkitModulesMeta: Record<
     desc: "Post-booking document vault and sharing (also inside Manage Booking).",
     featureKey: "enableTravelDocs",
     commercialTier: "Post-Booking Utility",
+  },
+  ziyarah: {
+    id: "ziyarah",
+    label: "Ziyarah Guide",
+    desc: "Self-guided places to visit in Makkah and Madinah.",
+    featureKey: "enableZiyarahGuide",
+    commercialTier: "Core Engagement",
   },
 }
 
