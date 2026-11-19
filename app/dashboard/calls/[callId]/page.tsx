@@ -45,6 +45,46 @@ interface ConciergeCallSession {
   adminUid: number
   adminToken: string
   createdAt: string
+  ringingAt?: string
+}
+
+// Long "pooom… pooom" ringback (440 Hz + 480 Hz, 2 s on / 4 s off) while the pilgrim's phone rings.
+function startRingbackTone(): () => void {
+  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+  if (!AudioCtx) return () => undefined
+  const ctx: AudioContext = new AudioCtx()
+  void ctx.resume().catch(() => undefined)
+  const gain = ctx.createGain()
+  gain.gain.value = 0
+  gain.connect(ctx.destination)
+  const oscillators = [440, 480].map((frequency) => {
+    const osc = ctx.createOscillator()
+    osc.frequency.value = frequency
+    osc.connect(gain)
+    osc.start()
+    return osc
+  })
+  const ring = () => {
+    const t = ctx.currentTime
+    gain.gain.cancelScheduledValues(t)
+    gain.gain.setValueAtTime(0, t)
+    gain.gain.linearRampToValueAtTime(0.12, t + 0.05)
+    gain.gain.setValueAtTime(0.12, t + 1.95)
+    gain.gain.linearRampToValueAtTime(0, t + 2)
+  }
+  ring()
+  const interval = window.setInterval(ring, 6000)
+  return () => {
+    window.clearInterval(interval)
+    for (const osc of oscillators) {
+      try {
+        osc.stop()
+      } catch {
+        // already stopped
+      }
+    }
+    void ctx.close().catch(() => undefined)
+  }
 }
 
 interface BookingItem {
@@ -227,7 +267,7 @@ export default function ConciergeCallDeskPage() {
 
   const [session, setSession] = useState<ConciergeCallSession | null>(null)
   const [callStage, setCallStage] = useState<
-    "standby" | "connecting" | "ringing" | "connected" | "declined" | "ended" | "error"
+    "standby" | "connecting" | "calling" | "ringing" | "connected" | "declined" | "ended" | "error"
   >("standby")
   const [isStartingCall, setIsStartingCall] = useState(false)
   const [callError, setCallError] = useState("")
@@ -279,6 +319,11 @@ export default function ConciergeCallDeskPage() {
   useEffect(() => {
     elapsedSecondsRef.current = elapsedSeconds
   }, [elapsedSeconds])
+
+  useEffect(() => {
+    if (callStage !== "ringing") return
+    return startRingbackTone()
+  }, [callStage])
 
   const attachLocalAudioToRecorder = (localAudioTrack: any) => {
     try {
@@ -741,7 +786,9 @@ export default function ConciergeCallDeskPage() {
           statusPayload?.data ?? statusPayload
         if (!latest) return
 
-        if (latest.status === "ACCEPTED" || latest.status === "ON_HOLD") {
+        if (latest.status === "RINGING" && latest.ringingAt) {
+          setCallStage((prev) => (prev === "calling" ? "ringing" : prev))
+        } else if (latest.status === "ACCEPTED" || latest.status === "ON_HOLD") {
           hasPilgrimAnsweredRef.current = true
           setCallStage("connected")
           setIsOnHold(latest.status === "ON_HOLD")
@@ -793,7 +840,7 @@ export default function ConciergeCallDeskPage() {
         )
       }
       setSession(nextCall)
-      setCallStage("ringing")
+      setCallStage(nextCall.ringingAt ? "ringing" : "calling")
       await connectLiveCallRtc(nextCall)
     } catch (err) {
       setCallStage("error")
@@ -1066,10 +1113,16 @@ export default function ConciergeCallDeskPage() {
                     <Loader2 className="size-3.5 animate-spin" /> Connecting voice channel…
                   </span>
                 )}
+                {callStage === "calling" && (
+                  <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-bold text-[#a7f3d0]">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Calling…
+                  </span>
+                )}
                 {callStage === "ringing" && (
                   <span className="inline-flex items-center gap-2 rounded-full bg-[#f59e0b]/20 px-4 py-1.5 text-xs font-bold text-[#fde68a]">
                     <span className="size-2 animate-ping rounded-full bg-[#fbbf24]" />
-                    Ringing Pilgrim&apos;s UfitGo App…
+                    Ringing…
                   </span>
                 )}
                 {callStage === "connected" && (
@@ -1120,7 +1173,7 @@ export default function ConciergeCallDeskPage() {
 
               {/* Audio Controls */}
               <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-                {(callStage === "ringing" || callStage === "connected") && (
+                {(callStage === "calling" || callStage === "ringing" || callStage === "connected") && (
                   <button
                     type="button"
                     onClick={toggleMute}
@@ -1164,7 +1217,7 @@ export default function ConciergeCallDeskPage() {
                   </button>
                 )}
 
-                {callStage === "ringing" || callStage === "connected" ? (
+                {callStage === "calling" || callStage === "ringing" || callStage === "connected" ? (
                   <button
                     type="button"
                     onClick={() => void handleEndCall()}
