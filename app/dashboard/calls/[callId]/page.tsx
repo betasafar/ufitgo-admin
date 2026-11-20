@@ -299,6 +299,24 @@ export default function ConciergeCallDeskPage() {
   const pollTimerRef = useRef<number | null>(null)
   const durationTimerRef = useRef<number | null>(null)
   const hasJoinedRtcRef = useRef(false)
+  // Set once a call is being torn down so late async callbacks (poll, user-published) cannot re-open the mic
+  const callTeardownRef = useRef(true)
+  const unmountedRef = useRef(false)
+  // Call ID the server still considers live; ended via keepalive on unmount / tab close so Agora minutes stop
+  const serverLiveCallIdRef = useRef<string | null>(null)
+
+  const endCallOnServer = (id: string | null | undefined) => {
+    if (!id) return Promise.resolve()
+    if (serverLiveCallIdRef.current === id) serverLiveCallIdRef.current = null
+    return fetch(`/api/admin/customers/call/${encodeURIComponent(id)}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "end" }),
+      keepalive: true,
+    })
+      .then(() => undefined)
+      .catch(() => undefined)
+  }
 
   // WebAudio Mixer + MediaRecorder + Web Speech API refs
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -348,6 +366,7 @@ export default function ConciergeCallDeskPage() {
   }
 
   const startAutoRecordingAndTranscriber = () => {
+    if (callTeardownRef.current || hasUploadedRecordingRef.current) return
     try {
       if (typeof window !== "undefined") {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
@@ -474,17 +493,11 @@ export default function ConciergeCallDeskPage() {
   const finalizeAndUploadRecording = async () => {
     if (!callId || hasUploadedRecordingRef.current) return
     hasUploadedRecordingRef.current = true
+    callTeardownRef.current = true
     setIsRecordingAudio(false)
 
     try {
-      if (speechRecRef.current) {
-        try {
-          speechRecRef.current.stop()
-        } catch {
-          // ignore
-        }
-        speechRecRef.current = null
-      }
+      stopSpeechRecognition()
 
       let audioBase64: string | undefined
       let mimeType = "audio/webm"
@@ -515,6 +528,9 @@ export default function ConciergeCallDeskPage() {
         audioCtxRef.current = null
         mixDestRef.current = null
       }
+
+      // Release the microphone before the (potentially slow) upload starts
+      await cleanupRtc()
 
       const wasAnsweredAndSpoken =
         hasPilgrimAnsweredRef.current && elapsedSecondsRef.current >= 1
@@ -580,7 +596,25 @@ export default function ConciergeCallDeskPage() {
     }
   }
 
+  const stopSpeechRecognition = () => {
+    const recognition = speechRecRef.current
+    if (!recognition) return
+    // Clear the ref and onend first so the auto-restart handler cannot re-open the mic
+    speechRecRef.current = null
+    recognition.onend = null
+    try {
+      recognition.abort()
+    } catch {
+      try {
+        recognition.stop()
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   const cleanupRtc = async () => {
+    callTeardownRef.current = true
     if (pollTimerRef.current) {
       window.clearInterval(pollTimerRef.current)
       pollTimerRef.current = null
@@ -589,23 +623,77 @@ export default function ConciergeCallDeskPage() {
       window.clearInterval(durationTimerRef.current)
       durationTimerRef.current = null
     }
-    try {
-      if (localAudioTrackRef.current) {
-        localAudioTrackRef.current.stop()
-        localAudioTrackRef.current.close()
-        localAudioTrackRef.current = null
+    stopSpeechRecognition()
+
+    const localTrack = localAudioTrackRef.current
+    localAudioTrackRef.current = null
+    if (localTrack) {
+      try {
+        localTrack.stop()
+      } catch {
+        // ignore
       }
-      if (rtcClientRef.current) {
-        await rtcClientRef.current.leave()
-        rtcClientRef.current = null
+      try {
+        localTrack.close()
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore cleanup errors
+    }
+
+    const remoteTrack = remoteAudioTrackRef.current
+    remoteAudioTrackRef.current = null
+    if (remoteTrack) {
+      try {
+        remoteTrack.stop()
+      } catch {
+        // ignore
+      }
+    }
+
+    const client = rtcClientRef.current
+    rtcClientRef.current = null
+    if (client) {
+      try {
+        client.removeAllListeners?.()
+      } catch {
+        // ignore
+      }
+      try {
+        await client.leave()
+      } catch {
+        // ignore
+      }
+    }
+
+    // Keep the mixer alive only while a recording still needs to be finalized
+    if (!mediaRecorderRef.current && audioCtxRef.current) {
+      const ctx = audioCtxRef.current
+      audioCtxRef.current = null
+      mixDestRef.current = null
+      void ctx.close().catch(() => undefined)
     }
   }
 
   useEffect(() => {
+    unmountedRef.current = false
+    // Tab close / reload does not run React unmount, so end the live call explicitly
+    const handlePageHide = () => {
+      void endCallOnServer(serverLiveCallIdRef.current)
+    }
+    window.addEventListener("pagehide", handlePageHide)
     return () => {
+      window.removeEventListener("pagehide", handlePageHide)
+      unmountedRef.current = true
+      void endCallOnServer(serverLiveCallIdRef.current)
+      const recorder = mediaRecorderRef.current
+      mediaRecorderRef.current = null
+      if (recorder && recorder.state !== "inactive") {
+        try {
+          recorder.stop()
+        } catch {
+          // ignore
+        }
+      }
       void cleanupRtc()
     }
   }, [])
@@ -705,7 +793,14 @@ export default function ConciergeCallDeskPage() {
   }
 
   const connectLiveCallRtc = async (callData: ConciergeCallSession) => {
+    serverLiveCallIdRef.current = callData.callId
     await cleanupRtc()
+    if (unmountedRef.current) {
+      // Page closed before we could join (e.g. during inbound accept) — don't leave the call open server-side
+      void endCallOnServer(callData.callId)
+      return
+    }
+    callTeardownRef.current = false
     hasJoinedRtcRef.current = true
     hasUploadedRecordingRef.current = false
     hasPilgrimAnsweredRef.current = false
@@ -734,11 +829,16 @@ export default function ConciergeCallDeskPage() {
     }
 
     const AgoraRTC = await loadAgoraSdkScript()
+    if (unmountedRef.current || callTeardownRef.current) return
     const client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" })
     rtcClientRef.current = client
+    const isAborted = () =>
+      unmountedRef.current || callTeardownRef.current || rtcClientRef.current !== client
 
     client.on("user-published", async (remoteUser: any, mediaType: string) => {
+      if (isAborted()) return
       await client.subscribe(remoteUser, mediaType)
+      if (isAborted()) return
       if (mediaType === "audio" && remoteUser.audioTrack) {
         hasPilgrimAnsweredRef.current = true
         remoteAudioTrackRef.current = remoteUser.audioTrack
@@ -759,21 +859,45 @@ export default function ConciergeCallDeskPage() {
       setCallStage("ended")
       void finalizeAndUploadRecording()
       void cleanupRtc()
+      void endCallOnServer(callData.callId)
     })
 
-    await client.join(
-      callData.appId,
-      callData.channelName,
-      callData.adminToken || null,
-      callData.adminUid,
-    )
-    const micTrack = await AgoraRTC.createMicrophoneAudioTrack({
-      AEC: true,
-      ANS: true,
-      AGC: true,
-    })
-    localAudioTrackRef.current = micTrack
-    await client.publish([micTrack])
+    try {
+      await client.join(
+        callData.appId,
+        callData.channelName,
+        callData.adminToken || null,
+        callData.adminUid,
+      )
+      if (isAborted()) {
+        await client.leave().catch(() => undefined)
+        return
+      }
+      const micTrack = await AgoraRTC.createMicrophoneAudioTrack({
+        AEC: true,
+        ANS: true,
+        AGC: true,
+      })
+      // Call may have been dropped while the mic permission prompt / device open was pending
+      if (isAborted()) {
+        try {
+          micTrack.stop()
+          micTrack.close()
+        } catch {
+          // ignore
+        }
+        await client.leave().catch(() => undefined)
+        return
+      }
+      localAudioTrackRef.current = micTrack
+      await client.publish([micTrack])
+    } catch (err) {
+      // e.g. mic permission denied — don't leave the pilgrim ringing / connected to an empty channel
+      await cleanupRtc()
+      void endCallOnServer(callData.callId)
+      throw err
+    }
+    if (isAborted()) return
 
     pollTimerRef.current = window.setInterval(async () => {
       try {
@@ -784,7 +908,7 @@ export default function ConciergeCallDeskPage() {
         const statusPayload = await statusRes.json().catch(() => null)
         const latest: ConciergeCallSession | undefined =
           statusPayload?.data ?? statusPayload
-        if (!latest) return
+        if (!latest || callTeardownRef.current) return
 
         if (latest.status === "RINGING" && latest.ringingAt) {
           setCallStage((prev) => (prev === "calling" ? "ringing" : prev))
@@ -799,9 +923,11 @@ export default function ConciergeCallDeskPage() {
             }, 1000)
           }
         } else if (latest.status === "DECLINED") {
+          serverLiveCallIdRef.current = null
           setCallStage("declined")
           await cleanupRtc()
         } else if (latest.status === "ENDED" || latest.status === "MISSED") {
+          serverLiveCallIdRef.current = null
           setCallStage("ended")
           await finalizeAndUploadRecording()
           await cleanupRtc()
@@ -963,14 +1089,14 @@ export default function ConciergeCallDeskPage() {
   const handleEndCall = async () => {
     const activeId = session?.callId || callId
     setCallStage("ended")
-    await finalizeAndUploadRecording()
+    // finalize flushes the recorder synchronously, then releases the mic before uploading
+    const finalizing = finalizeAndUploadRecording()
     await cleanupRtc()
     if (activeId) {
-      await fetch(`/api/admin/customers/call/${encodeURIComponent(activeId)}/respond`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "end" }),
-      }).catch(() => undefined)
+      await endCallOnServer(activeId)
+    }
+    await finalizing
+    if (activeId) {
       setHistoryRefreshKey((k) => k + 1)
     }
   }
