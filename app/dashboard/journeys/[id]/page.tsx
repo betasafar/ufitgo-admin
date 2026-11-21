@@ -1146,10 +1146,10 @@ export default function JourneyDetailPage() {
 
             <section className="rounded-2xl border border-[#dbe2de] bg-white p-5">
               <h3 className="font-brand text-lg font-bold text-[#17201c]">Apply surcharge</h3>
-              <p className="mt-1 text-xs text-[#7b8580]">Increases the booking total and notifies the pilgrim.</p>
+              <p className="mt-1 text-xs text-[#7b8580]">Adds to the balance the traveller owes and notifies them. If they had paid in full, their payment step reopens. <strong>The reason is shown to the traveller</strong>, so write it for them (e.g. &quot;Hotel upgrade to Makkah Clock Tower&quot;).</p>
               <div className="mt-3 space-y-2">
                 <input type="number" value={surchargeAmount} onChange={(event) => setSurchargeAmount(event.target.value)} placeholder="Amount (₦)" className="h-10 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-                <textarea value={surchargeReason} onChange={(event) => setSurchargeReason(event.target.value)} placeholder="Reason" className="h-20 w-full resize-none rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" />
+                <textarea value={surchargeReason} onChange={(event) => setSurchargeReason(event.target.value)} placeholder="Reason the traveller will see" className="h-20 w-full resize-none rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" />
                 <button type="button" onClick={() => void applySurcharge()} disabled={savingSurcharge} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#8a6500] px-4 text-sm font-bold text-white hover:bg-[#725300] disabled:opacity-50">
                   {savingSurcharge ? <Loader2 className="size-4 animate-spin" /> : null} Apply surcharge
                 </button>
