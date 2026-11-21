@@ -31,6 +31,7 @@ import {
   X,
 } from "lucide-react"
 import { OperatorReviewsAdminPanel } from "@/components/calls/operator-reviews-admin-panel"
+import { OperatorDocumentContacts } from "@/components/operators/operator-document-contacts"
 
 type PackageRecord = {
   id?: string | number
@@ -691,6 +692,8 @@ export default function OperatorDetailPage() {
                 <div className="flex items-start gap-3"><CalendarDays className="mt-0.5 size-4 text-[#66716c]" /> <span>Joined {formatDate(operator.createdAt)}</span></div>
               </div>
             </section>
+
+            <OperatorDocumentContacts operatorId={String(operatorId)} />
 
             <section className="rounded-2xl border border-[#dbe2de] bg-white p-5">
               <h3 className="font-brand text-lg font-bold text-[#17201c]">Business owner</h3>

@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
+import { OperatorReleasePanel } from "./operator-release-panel"
 import { HelpButton, TitleWithHelp, travelersHelp, visaHelp } from "./staff-help"
 import { TravelerDetailsForm, detailsFromTraveler, emptyTravelerDetails, type TravelerDetails } from "./traveler-details-form"
 import { AppSelect } from "@/components/ui/app-select"
@@ -23,6 +24,7 @@ import {
   Phone,
   Receipt,
   Save,
+  Send,
   Stamp,
   Trash2,
   Upload,
@@ -276,6 +278,7 @@ const tabs = [
   { id: "documents", label: "Documents", icon: ClipboardCheck },
   { id: "visa", label: "Visa progress", icon: Stamp },
   { id: "travelers", label: "Travelers", icon: IdCard },
+  { id: "operator", label: "Share with operator", icon: Send },
 ] as const
 
 const stageLabels: Record<string, string> = {
@@ -1453,10 +1456,12 @@ export default function JourneyDetailPage() {
         </section>
       )}
 
+      {activeTab === "operator" && id && <OperatorReleasePanel bookingId={String(id)} onToast={showToast} />}
+
       {activeTab === "travelers" && (
         <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
           <TitleWithHelp guide={travelersHelp}>Travelers & travel documents</TitleWithHelp>
-          <p className="mt-1 text-sm text-[#68716d]">Fill each traveller from their passport data page. Only the main applicant&apos;s documents go to their personal Travel Docs vault; everyone else&apos;s stay on this booking.</p>
+          <p className="mt-1 text-sm text-[#68716d]">Fill each traveller from their passport data page. Only the main applicant&apos;s documents go to their personal Travel Docs vault; everyone else&apos;s stay on this booking. When you&apos;re satisfied with what you&apos;ve collected, release them on the <button type="button" onClick={() => setActiveTab("operator")} className="font-bold text-[#0d7d5f] hover:underline">Share with operator</button> tab.</p>
           {travelersMeta && (
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <label className="inline-flex items-center gap-2 rounded-lg border border-[#dbe2de] px-3 py-2 text-sm text-[#17201c]">

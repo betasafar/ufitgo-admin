@@ -106,6 +106,44 @@ export const visaHelp: { title: string; intro: string; sections: HelpSection[] }
   ],
 }
 
+export const operatorReleaseHelp: { title: string; intro: string; sections: HelpSection[] } = {
+  title: "Sharing documents with the operator",
+  intro:
+    "When you're satisfied with what you've collected, release the travellers' documents so the operator can start the visa. Nothing reaches the operator until you press Release.",
+  sections: [
+    {
+      heading: "Step by step",
+      items: [
+        { term: "1. Check the list", meaning: "Each traveller shows what is still missing or not yet verified. You can release anyway. It's a warning, not a block." },
+        { term: "2. Tick travellers", meaning: "Everyone travelling is ticked by default. Untick anyone whose documents shouldn't go yet." },
+        { term: "3. Release documents", meaning: "The operator's document contacts get an email and a portal notification. They open the booking in their portal to view the files." },
+        { term: "Send update", meaning: "Use this after a document changes (e.g. a renewed passport or a better photo) or to add travellers. The operator is told to use the latest versions." },
+        { term: "Withdraw access", meaning: "Stops the operator seeing the documents immediately, e.g. if the booking moves to another operator. They are told by email." },
+      ],
+    },
+    {
+      heading: "What the operator gets",
+      items: [
+        { term: "Traveller details", meaning: "Names as on the passport, gender, date of birth, nationality, relationship and visa status." },
+        { term: "Files", meaning: "Passport, passport photo and any other documents on file for the travellers you ticked." },
+        { term: "No email attachments", meaning: "The email never contains documents or links to them. Files open only after the operator logs in, through links that expire after 5 minutes." },
+      ],
+    },
+    {
+      heading: "How long access lasts",
+      body: "Until 60 days after departure (30 days after the trip is marked completed). Access ends straight away if you withdraw it or the booking is cancelled or refunded.",
+    },
+    {
+      heading: "Who viewed what",
+      body: "Every file the operator opens is recorded below with the person's email and the time. Use it to confirm the operator has started work, or to answer a traveller's privacy question.",
+    },
+    {
+      heading: "Who gets the email",
+      body: "The operator's document notification emails, set on the operator's page in Operators. If none are set, their account email is used.",
+    },
+  ],
+}
+
 export function HelpButton({ guide, label = "How this works" }: { guide: { title: string; intro: string; sections: HelpSection[] }; label?: string }) {
   const [open, setOpen] = useState(false)
 
