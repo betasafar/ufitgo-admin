@@ -20,7 +20,7 @@ type ReleaseView = {
     revokedBy: string | null
   } | null
   travelers: { travelerId: string; fullName: string; isAccountHolder: boolean; missing: { label: string; status: string }[] }[]
-  views: { travelerName: string; documentType: string | null; viewedBy: string | null; viewedAt: string }[]
+  views: { travelerName: string; documentType: string | null; action?: "view" | "download"; viewedBy: string | null; viewedAt: string }[]
 }
 
 const statusWord: Record<string, string> = {
@@ -216,14 +216,17 @@ export function OperatorReleasePanel({ bookingId, onToast }: { bookingId: string
       )}
 
       <div className="mt-6 border-t border-[#edf1ef] pt-4">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-[#17201c]"><Eye className="size-4" /> Who viewed what</h3>
+        <h3 className="flex items-center gap-2 text-sm font-bold text-[#17201c]"><Eye className="size-4" /> Who viewed or downloaded what</h3>
         {data.views.length === 0 ? (
-          <p className="mt-2 text-sm text-[#7b8580]">{data.release ? "The operator hasn't opened any files yet." : "Views will appear here once documents are shared."}</p>
+          <p className="mt-2 text-sm text-[#7b8580]">{data.release ? "The operator hasn't opened or downloaded any files yet." : "Views will appear here once documents are shared."}</p>
         ) : (
           <ul className="mt-2 divide-y divide-[#edf1ef] text-sm">
             {data.views.map((view, index) => (
               <li key={index} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span className="text-[#17201c]">{view.travelerName} · {docLabel(view.documentType)}</span>
+                <span className="text-[#17201c]">
+                  {view.travelerName} · {docLabel(view.documentType)}
+                  <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-bold ${view.action === "download" ? "bg-[#fff3e0] text-[#8a5a00]" : "bg-[#eef3f1] text-[#4b5551]"}`}>{view.action === "download" ? "Downloaded" : "Viewed"}</span>
+                </span>
                 <span className="text-xs text-[#7b8580]">{view.viewedBy || "Operator"} · {formatDateTime(view.viewedAt)}</span>
               </li>
             ))}

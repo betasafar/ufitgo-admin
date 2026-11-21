@@ -127,6 +127,7 @@ export const operatorReleaseHelp: { title: string; intro: string; sections: Help
         { term: "Traveller details", meaning: "Names as on the passport, gender, date of birth, nationality, relationship and visa status." },
         { term: "Files", meaning: "Passport, passport photo and any other documents on file for the travellers you ticked." },
         { term: "No email attachments", meaning: "The email never contains documents or links to them. Files open only after the operator logs in, through links that expire after 5 minutes." },
+        { term: "View or download", meaning: "In their portal the operator can open each file or download it (named after the traveller, e.g. YUSUF-AMINA-passport.jpg) to upload to the visa portal. They're reminded to store downloads securely and delete them once the visa is issued." },
       ],
     },
     {
@@ -134,8 +135,8 @@ export const operatorReleaseHelp: { title: string; intro: string; sections: Help
       body: "Until 60 days after departure (30 days after the trip is marked completed). Access ends straight away if you withdraw it or the booking is cancelled or refunded.",
     },
     {
-      heading: "Who viewed what",
-      body: "Every file the operator opens is recorded below with the person's email and the time. Use it to confirm the operator has started work, or to answer a traveller's privacy question.",
+      heading: "Who viewed or downloaded what",
+      body: "Every file the operator opens or downloads is recorded below with the person's email, the time, and whether it was viewed or downloaded. Use it to confirm the operator has started work, or to answer a traveller's privacy question.",
     },
     {
       heading: "Who gets the email",
