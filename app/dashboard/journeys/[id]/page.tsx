@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
+import { TravelerDetailsForm, detailsFromTraveler, emptyTravelerDetails, type TravelerDetails } from "./traveler-details-form"
 import { AppSelect } from "@/components/ui/app-select"
 import { ConciergeCallWidget } from "@/components/calls/concierge-call-widget"
 import { CallHistoryAndCtaPanel } from "@/components/calls/call-history-and-cta-panel"
@@ -82,7 +83,25 @@ type DocumentChecklist = {
     items: { key: string; type: string; label: string; status: ChecklistStatus; note: string | null; documentId: string | null; expiryDate: string | null; fromVault?: boolean }[]
   }[]
 }
-type Traveler = { id: string; fullName: string; relationship?: string; nin?: string; linkedUserId?: string }
+type VisaProgressView = { status: string; note?: string; applicationNumber?: string; updatedAt?: string; history?: { status: string; note?: string; updatedAt: string; updatedBy?: string }[] }
+type Traveler = {
+  id: string
+  fullName: string
+  firstName?: string | null
+  middleName?: string | null
+  lastName?: string | null
+  gender?: string | null
+  dateOfBirth?: string | null
+  nationality?: string | null
+  relationship?: string
+  nin?: string
+  linkedUserId?: string
+  bookingId?: number | null
+  isMainApplicant?: boolean
+  travelling?: boolean
+  visaProgress?: VisaProgressView | null
+}
+type TravelersMeta = { accountHolderTravelling: boolean; expectedTravelers: number; travellingCount: number }
 
 function operationalAction(stage: string | undefined, booking: BookingRecord) {
   const normalized = stage || "CHECKOUT_INITIATED"
@@ -479,10 +498,11 @@ export default function JourneyDetailPage() {
   const [travelers, setTravelers] = useState<Traveler[]>([])
   const [travelersLoading, setTravelersLoading] = useState(false)
   const [travelerDocs, setTravelerDocs] = useState<Record<string, TravelerDocument[]>>({})
-  const [newTraveler, setNewTraveler] = useState({ fullName: "", relationship: "", nin: "" })
-  const [addingTraveler, setAddingTraveler] = useState(false)
+  const [travelersMeta, setTravelersMeta] = useState<TravelersMeta | null>(null)
+  const [editingTravelerId, setEditingTravelerId] = useState<string | null>(null)
+  const [visaSelection, setVisaSelection] = useState<string[]>([])
+  const [travelerVisaForm, setTravelerVisaForm] = useState({ status: "DOCUMENTS_REQUESTED", applicationNumber: "", note: "" })
 
-  const [visaForm, setVisaForm] = useState({ status: "NOT_STARTED", applicationNumber: "", passportLast4: "", submittedAt: "", note: "" })
   const [savingVisa, setSavingVisa] = useState(false)
 
   const [docSaving, setDocSaving] = useState<string | null>(null)
@@ -520,14 +540,6 @@ export default function JourneyDetailPage() {
       const configPayload = await configRes.json().catch(() => null)
       setVisaFeatureEnabled(configPayload?.features?.enableVisaProgress !== false)
 
-      const visa = found.visaProgress
-      setVisaForm({
-        status: visa?.status || "NOT_STARTED",
-        applicationNumber: visa?.applicationNumber || "",
-        passportLast4: visa?.passportNumberMasked?.slice(-4) || "",
-        submittedAt: visa?.submittedAt?.slice(0, 10) || "",
-        note: "",
-      })
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load booking")
       setBooking(null)
@@ -543,6 +555,8 @@ export default function JourneyDetailPage() {
       const payload = await response.json().catch(() => null)
       const list: Traveler[] = Array.isArray(payload?.data) ? payload.data : []
       setTravelers(list)
+      setTravelersMeta(payload?.meta || null)
+      setVisaSelection((current) => current.filter((travelerId) => list.some((t) => t.id === travelerId && t.travelling !== false)))
       for (const traveler of list) {
         void loadTravelerDocs(traveler.id)
       }
@@ -621,7 +635,7 @@ export default function JourneyDetailPage() {
   }, [id])
 
   useEffect(() => {
-    if (activeTab === "travelers" && id) void loadTravelers()
+    if ((activeTab === "travelers" || activeTab === "visa") && id) void loadTravelers()
     if (activeTab === "documents" && id) void loadChecklist()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, id])
@@ -819,48 +833,90 @@ export default function JourneyDetailPage() {
     }
   }
 
-  async function saveVisaProgress() {
-    setSavingVisa(true)
-    try {
-      const response = await fetch(`/api/admin/bookings/${id}/visa-progress`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: visaForm.status,
-          applicationNumber: visaForm.applicationNumber || undefined,
-          passportNumberLast4: visaForm.passportLast4 || undefined,
-          submittedAt: visaForm.submittedAt || undefined,
-          note: visaForm.note || undefined,
-        }),
-      })
-      if (!response.ok) throw new Error("Unable to save")
-      setVisaForm((current) => ({ ...current, note: "" }))
-      await refreshBookingSilently()
-      showToast("success", "Visa progress updated.")
-    } catch (requestError) {
-      showToast("error", requestError instanceof Error ? requestError.message : "Failed to update visa progress.")
-    } finally {
-      setSavingVisa(false)
-    }
-  }
+  const travelerPayload = (details: TravelerDetails) => ({
+    firstName: details.firstName,
+    middleName: details.middleName || null,
+    lastName: details.lastName,
+    gender: details.gender || null,
+    dateOfBirth: details.dateOfBirth || null,
+    nationality: details.nationality || null,
+    relationship: details.relationship || null,
+    nin: details.nin || null,
+  })
 
-  async function addTraveler() {
-    if (!newTraveler.fullName.trim()) return
-    setAddingTraveler(true)
+  async function addTraveler(details: TravelerDetails) {
     try {
       const response = await fetch(`/api/admin/bookings/${id}/travelers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newTraveler),
+        body: JSON.stringify(travelerPayload(details)),
       })
-      if (!response.ok) throw new Error("Unable to add traveler")
-      setNewTraveler({ fullName: "", relationship: "", nin: "" })
+      if (!response.ok) throw await responseError(response, "Unable to add traveller")
       await loadTravelers()
-      showToast("success", "Traveler added.")
+      showToast("success", "Traveller added to this booking.")
+      return true
     } catch (requestError) {
-      showToast("error", requestError instanceof Error ? requestError.message : "Failed to add traveler.")
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to add traveller.")
+      return false
+    }
+  }
+
+  async function saveTravelerDetails(travelerId: string, details: TravelerDetails) {
+    try {
+      const response = await fetch(`/api/admin/bookings/travelers/${travelerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(travelerPayload(details)),
+      })
+      if (!response.ok) throw await responseError(response, "Unable to save traveller")
+      setEditingTravelerId(null)
+      await loadTravelers()
+      showToast("success", "Traveller details saved.")
+      return true
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to save traveller.")
+      return false
+    }
+  }
+
+  async function setAccountHolderTravelling(travelling: boolean) {
+    try {
+      const response = await fetch(`/api/admin/bookings/${id}/account-holder-travelling`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ travelling }),
+      })
+      if (!response.ok) throw await responseError(response, "Unable to update")
+      await loadTravelers()
+      showToast("success", travelling ? "Account holder marked as travelling." : "Account holder marked as not travelling.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to update.")
+    }
+  }
+
+  async function saveTravelerVisa() {
+    if (visaSelection.length === 0) return
+    setSavingVisa(true)
+    try {
+      const response = await fetch(`/api/admin/bookings/${id}/traveler-visa-progress`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          travelerIds: visaSelection,
+          status: travelerVisaForm.status,
+          applicationNumber: visaSelection.length === 1 ? travelerVisaForm.applicationNumber || undefined : undefined,
+          note: travelerVisaForm.note || undefined,
+        }),
+      })
+      if (!response.ok) throw await responseError(response, "Unable to save visa update")
+      setTravelerVisaForm((current) => ({ ...current, applicationNumber: "", note: "" }))
+      setVisaSelection([])
+      await Promise.all([loadTravelers(), refreshBookingSilently()])
+      showToast("success", "Visa update saved. The account holder has been notified.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to update visa progress.")
     } finally {
-      setAddingTraveler(false)
+      setSavingVisa(false)
     }
   }
 
@@ -1317,35 +1373,66 @@ export default function JourneyDetailPage() {
             <p className="mt-3 text-sm text-[#7b8580]">Visa progress tracking is currently disabled platform-wide.</p>
           ) : (
             <>
-              <p className="mt-1 text-sm text-[#68716d]">Record updates confirmed through the operator. Only the last four passport digits are stored.</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <p className="mt-1 text-sm text-[#68716d]">Visas are tracked per traveller. Tick the travellers in this batch, choose the status, and save. The account holder gets one notification.</p>
+              {travelersLoading && travelers.length === 0 ? (
+                <div className="mt-4"><Loader2 className="size-5 animate-spin text-[#0d7d5f]" /></div>
+              ) : (
+                <div className="mt-4 overflow-hidden rounded-xl border border-[#dbe2de]">
+                  {(() => {
+                    const travellingList = travelers.filter((traveler) => traveler.travelling !== false)
+                    const allSelected = travellingList.length > 0 && travellingList.every((traveler) => visaSelection.includes(traveler.id))
+                    return (
+                      <>
+                        <label className="flex items-center gap-3 border-b border-[#edf1ef] bg-[#f8faf9] px-4 py-2.5 text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">
+                          <input type="checkbox" checked={allSelected} onChange={() => setVisaSelection(allSelected ? [] : travellingList.map((traveler) => traveler.id))} />
+                          Select all travellers
+                        </label>
+                        {travellingList.length === 0 && <p className="px-4 py-3 text-sm text-[#68716d]">No travellers yet. Add them on the Travelers tab.</p>}
+                        {travellingList.map((traveler) => {
+                          const visa = traveler.visaProgress
+                          const status = visa?.status || "NOT_STARTED"
+                          const tone = status === "APPROVED" ? "border-[#bfe5d4] bg-[#eef8f3] text-[#0d7d5f]" : status === "REJECTED_OR_DELAYED" || status === "ADDITIONAL_INFORMATION_REQUIRED" ? "border-[#f4d0ca] bg-[#fdf1ef] text-[#a43229]" : "border-[#dbe2de] bg-[#f8faf9] text-[#4b5551]"
+                          return (
+                            <label key={traveler.id} className="flex items-center gap-3 border-b border-[#edf1ef] px-4 py-3 last:border-b-0">
+                              <input
+                                type="checkbox"
+                                checked={visaSelection.includes(traveler.id)}
+                                onChange={() => setVisaSelection((current) => current.includes(traveler.id) ? current.filter((value) => value !== traveler.id) : [...current, traveler.id])}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-bold text-[#17201c]">{traveler.fullName}{traveler.isMainApplicant && <span className="ml-2 text-xs font-semibold text-[#0d7d5f]">Main applicant</span>}</p>
+                                <p className="text-xs text-[#7b8580]">{[visa?.applicationNumber ? `App. no. ${visa.applicationNumber}` : null, visa?.updatedAt ? `Updated ${formatDateTime(visa.updatedAt)}` : null].filter(Boolean).join(" · ") || "No update yet"}</p>
+                              </div>
+                              <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${tone}`}>{status.replaceAll("_", " ")}</span>
+                            </label>
+                          )
+                        })}
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Status</label>
+                  <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">New status</label>
                   <AppSelect
-                    value={visaForm.status}
-                    onValueChange={(next) => setVisaForm((current) => ({ ...current, status: next }))}
+                    value={travelerVisaForm.status}
+                    onValueChange={(next) => setTravelerVisaForm((current) => ({ ...current, status: next }))}
                     options={visaStatusOptions.map((option) => ({ value: option, label: option.replaceAll("_", " ") }))}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Application number</label>
-                  <input value={visaForm.applicationNumber} onChange={(event) => setVisaForm((current) => ({ ...current, applicationNumber: event.target.value }))} className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Passport last 4 digits</label>
-                  <input value={visaForm.passportLast4} maxLength={4} onChange={(event) => setVisaForm((current) => ({ ...current, passportLast4: event.target.value.replace(/\D/g, "").slice(0, 4) }))} className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Submitted date</label>
-                  <input type="date" value={visaForm.submittedAt} onChange={(event) => setVisaForm((current) => ({ ...current, submittedAt: event.target.value }))} className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                  <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Application number {visaSelection.length > 1 && <span className="normal-case tracking-normal">(one traveller at a time)</span>}</label>
+                  <input disabled={visaSelection.length !== 1} value={travelerVisaForm.applicationNumber} onChange={(event) => setTravelerVisaForm((current) => ({ ...current, applicationNumber: event.target.value }))} className="h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f] disabled:opacity-50" />
                 </div>
               </div>
               <div className="mt-3">
                 <label className="mb-1 block text-xs font-bold uppercase tracking-[0.06em] text-[#78817d]">Customer-visible update</label>
-                <textarea value={visaForm.note} onChange={(event) => setVisaForm((current) => ({ ...current, note: event.target.value }))} placeholder="What was confirmed and what happens next?" className="h-20 w-full resize-none rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" />
+                <textarea value={travelerVisaForm.note} onChange={(event) => setTravelerVisaForm((current) => ({ ...current, note: event.target.value }))} placeholder="What was confirmed and what happens next?" className="h-20 w-full resize-none rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 py-2 text-sm outline-none focus:border-[#0d7d5f]" />
               </div>
-              <button type="button" onClick={() => void saveVisaProgress()} disabled={savingVisa} className="mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#0d7d5f] px-5 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">
-                {savingVisa ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Save update & notify
+              <button type="button" onClick={() => void saveTravelerVisa()} disabled={savingVisa || visaSelection.length === 0} className="mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#0d7d5f] px-5 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">
+                {savingVisa ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {visaSelection.length > 0 ? `Update ${visaSelection.length} traveller${visaSelection.length > 1 ? "s" : ""} & notify` : "Select travellers to update"}
               </button>
 
               {(booking.visaProgress?.history?.length ?? 0) > 0 && (
@@ -1368,7 +1455,20 @@ export default function JourneyDetailPage() {
       {activeTab === "travelers" && (
         <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
           <h2 className="font-brand text-lg font-bold text-[#17201c]">Travelers & travel documents</h2>
-          <p className="mt-1 text-sm text-[#68716d]">Documents belong to each traveler, not this booking — they carry over to future trips.</p>
+          <p className="mt-1 text-sm text-[#68716d]">Fill each traveller from their passport data page. Only the main applicant&apos;s documents go to their personal Travel Docs vault; everyone else&apos;s stay on this booking.</p>
+          {travelersMeta && (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-2 rounded-lg border border-[#dbe2de] px-3 py-2 text-sm text-[#17201c]">
+                <input type="checkbox" checked={travelersMeta.accountHolderTravelling} onChange={(event) => void setAccountHolderTravelling(event.target.checked)} />
+                Account holder is travelling on this trip
+              </label>
+              {travelersMeta.travellingCount !== travelersMeta.expectedTravelers && (
+                <span className="rounded-lg border border-[#f3dfb0] bg-[#fff8e6] px-3 py-2 text-xs font-semibold text-[#8a5a00]">
+                  Booked for {travelersMeta.expectedTravelers} traveller{travelersMeta.expectedTravelers === 1 ? "" : "s"}, {travelersMeta.travellingCount} added. This won&apos;t block anything.
+                </span>
+              )}
+            </div>
+          )}
 
           {travelersLoading ? (
             <div className="mt-6"><Loader2 className="size-6 animate-spin text-[#0d7d5f]" /></div>
@@ -1377,11 +1477,21 @@ export default function JourneyDetailPage() {
               {travelers.map((traveler) => {
                 const docs = travelerDocs[traveler.id] || []
                 return (
-                  <div key={traveler.id} className="rounded-xl border border-[#dbe2de] p-4">
+                  <div key={traveler.id} className={`rounded-xl border border-[#dbe2de] p-4 ${traveler.travelling === false ? "opacity-60" : ""}`}>
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <h3 className="font-bold text-[#17201c]">{traveler.fullName} {traveler.linkedUserId && <span className="ml-2 text-xs font-semibold text-[#0d7d5f]">(Account holder)</span>}</h3>
-                        <p className="mt-0.5 text-sm text-[#68716d]">{traveler.relationship || "—"}</p>
+                        <h3 className="font-bold text-[#17201c]">
+                          {traveler.fullName}
+                          {traveler.isMainApplicant || traveler.linkedUserId ? (
+                            <span className="ml-2 rounded-full bg-[#eef8f3] px-2 py-0.5 text-[11px] font-bold text-[#0d7d5f]">Main applicant · syncs to their vault</span>
+                          ) : (
+                            <span className="ml-2 rounded-full bg-[#f1f3f2] px-2 py-0.5 text-[11px] font-bold text-[#4b5551]">Co-traveller · this booking only</span>
+                          )}
+                          {traveler.travelling === false && <span className="ml-2 text-xs font-semibold text-[#8a5a00]">Not travelling</span>}
+                        </h3>
+                        <p className="mt-0.5 text-sm text-[#68716d]">
+                          {[traveler.relationship, traveler.gender ? (traveler.gender === "MALE" ? "Male" : "Female") : null, traveler.dateOfBirth ? `Born ${String(traveler.dateOfBirth).slice(0, 10)}` : null, traveler.nationality].filter(Boolean).join(" · ") || "Passport details not entered yet"}
+                        </p>
                       </div>
                       {!traveler.linkedUserId && (
                         <button type="button" onClick={() => void removeTraveler(traveler.id)} className="inline-flex items-center gap-1 text-xs font-bold text-[#a43229]">
@@ -1390,16 +1500,22 @@ export default function JourneyDetailPage() {
                       )}
                     </div>
 
-                    <div className="mt-3 flex items-center gap-2">
-                      <span className="text-xs text-[#9aa39e]">NIN:</span>
-                      <input
-                        defaultValue={traveler.nin || ""}
-                        placeholder="Enter NIN"
-                        onBlur={(event) => {
-                          if (event.target.value !== (traveler.nin || "")) void saveTravelerNin(traveler.id, event.target.value)
-                        }}
-                        className="h-9 max-w-xs flex-1 rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]"
-                      />
+                    <div className="mt-3">
+                      {editingTravelerId === traveler.id ? (
+                        <div className="rounded-lg border border-[#dbe2de] bg-[#fbfcfb] p-3">
+                          <TravelerDetailsForm
+                            mode="edit"
+                            initial={detailsFromTraveler(traveler)}
+                            showRelationship={!traveler.linkedUserId}
+                            onSubmit={(details) => saveTravelerDetails(traveler.id, details)}
+                          />
+                          <button type="button" onClick={() => setEditingTravelerId(null)} className="mt-2 text-xs font-bold text-[#68716d]">Cancel</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => setEditingTravelerId(traveler.id)} className="text-xs font-bold text-[#0d7d5f] hover:underline">
+                          {traveler.firstName || traveler.lastName ? "Edit passport details" : "Enter passport details"}
+                        </button>
+                      )}
                     </div>
 
                     <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -1453,15 +1569,8 @@ export default function JourneyDetailPage() {
           )}
 
           <div className="mt-4 rounded-xl border border-dashed border-[#d9dfdc] p-4">
-            <p className="mb-3 flex items-center gap-2 text-sm font-bold text-[#17201c]"><UserPlus className="size-4" /> Add a group member</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <input value={newTraveler.fullName} onChange={(event) => setNewTraveler((current) => ({ ...current, fullName: event.target.value }))} placeholder="Full name" className="h-10 rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-              <input value={newTraveler.relationship} onChange={(event) => setNewTraveler((current) => ({ ...current, relationship: event.target.value }))} placeholder="Relationship (e.g. Spouse)" className="h-10 rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-              <input value={newTraveler.nin} onChange={(event) => setNewTraveler((current) => ({ ...current, nin: event.target.value }))} placeholder="NIN (optional)" className="h-10 rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
-            </div>
-            <button type="button" disabled={!newTraveler.fullName.trim() || addingTraveler} onClick={() => void addTraveler()} className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">
-              {addingTraveler ? <Loader2 className="size-4 animate-spin" /> : null} Add traveler
-            </button>
+            <p className="mb-1 flex items-center gap-2 text-sm font-bold text-[#17201c]"><UserPlus className="size-4" /> Add a co-traveller</p>
+            <TravelerDetailsForm mode="add" initial={emptyTravelerDetails} onSubmit={addTraveler} />
           </div>
         </section>
       )}
