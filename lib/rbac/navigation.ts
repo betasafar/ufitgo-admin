@@ -1,5 +1,6 @@
 import {
   Activity,
+  Archive,
   BellRing,
   Banknote,
   BarChart3,
@@ -70,6 +71,7 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
       { label: "Partners", href: "/dashboard/operators", icon: BriefcaseBusiness, permissions: ["operators.manage"], available: true },
       { label: "Packages", href: "/dashboard/packages", icon: Package, permissions: ["packages.manage"], available: true },
       { label: "Bookings", href: "/dashboard/journeys", icon: Map, permissions: ["bookings.manage", "journeys.manage"], mode: "any", available: true },
+      { label: "Archived bookings", href: "/dashboard/bookings-archive", icon: Archive, permissions: ["bookings.manage"], available: true },
     ],
   },
   {
