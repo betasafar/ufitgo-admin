@@ -67,7 +67,8 @@ type BookingRecord = {
   }
 }
 
-type TravelerDocument = { id: string; type: string; viewUrl?: string; status?: string; reviewNote?: string | null; expiryDate?: string | null }
+type TravelerDocument = { id: string; type: string; viewUrl?: string; status?: string; reviewNote?: string | null; expiryDate?: string | null; documentNumber?: string | null }
+type PassportDetails = { documentNumber: string; expiryDate: string }
 type ChecklistStatus = "missing" | "pending_review" | "verified" | "needs_new_copy" | "expired" | "expires_too_soon" | "to_be_issued"
 type DocumentChecklist = {
   ready: number
@@ -78,7 +79,7 @@ type DocumentChecklist = {
     fullName: string
     relationship?: string
     isAccountHolder: boolean
-    items: { key: string; type: string; label: string; status: ChecklistStatus; note: string | null; documentId: string | null; expiryDate: string | null }[]
+    items: { key: string; type: string; label: string; status: ChecklistStatus; note: string | null; documentId: string | null; expiryDate: string | null; fromVault?: boolean }[]
   }[]
 }
 type Traveler = { id: string; fullName: string; relationship?: string; nin?: string; linkedUserId?: string }
@@ -485,6 +486,9 @@ export default function JourneyDetailPage() {
   const [savingVisa, setSavingVisa] = useState(false)
 
   const [docSaving, setDocSaving] = useState<string | null>(null)
+  // Passport uploads must carry number + expiry so expiry reminders and the 6-month rule work
+  const [passportPrompt, setPassportPrompt] = useState<{ file: File; upload: (details: PassportDetails) => Promise<void> } | null>(null)
+  const [passportForm, setPassportForm] = useState<PassportDetails>({ documentNumber: "", expiryDate: "" })
   const [checklist, setChecklist] = useState<DocumentChecklist | null>(null)
   const [checklistLoading, setChecklistLoading] = useState(false)
 
@@ -781,15 +785,30 @@ export default function JourneyDetailPage() {
     }
   }
 
-  async function uploadDocument(documentType: string, file: File, travelerId?: string) {
+  async function responseError(response: Response, fallback: string) {
+    const body = await response.json().catch(() => null)
+    const message = body?.message
+    return new Error(Array.isArray(message) ? message.join(" ") : message || fallback)
+  }
+
+  function askPassportDetails(file: File, upload: (details: PassportDetails) => Promise<void>) {
+    setPassportForm({ documentNumber: "", expiryDate: "" })
+    setPassportPrompt({ file, upload })
+  }
+
+  async function uploadDocument(documentType: string, file: File, travelerId?: string, details?: PassportDetails) {
     setDocSaving(`${documentType}:${travelerId || "self"}`)
     try {
       const form = new FormData()
       form.append("documentType", documentType)
       if (travelerId) form.append("travelerId", travelerId)
+      if (details) {
+        form.append("documentNumber", details.documentNumber)
+        form.append("expiryDate", details.expiryDate)
+      }
       form.append("file", file)
       const response = await fetch(`/api/admin/bookings/${id}/upload-document`, { method: "POST", body: form })
-      if (!response.ok) throw new Error("Unable to upload document")
+      if (!response.ok) throw await responseError(response, "Unable to upload document")
       await refreshBookingSilently()
       await loadChecklist()
       showToast("success", "Saved to the traveller's vault. They have been notified.")
@@ -859,11 +878,21 @@ export default function JourneyDetailPage() {
     })
   }
 
-  async function uploadTravelerDocument(travelerId: string, type: string, file: File) {
+  async function uploadTravelerDocument(travelerId: string, type: string, file: File, details?: PassportDetails) {
     const form = new FormData()
     form.append("type", type)
+    if (details) {
+      form.append("documentNumber", details.documentNumber)
+      form.append("expiryDate", details.expiryDate)
+    }
     form.append("file", file)
-    await fetch(`/api/admin/bookings/travelers/${travelerId}/documents`, { method: "POST", body: form })
+    try {
+      const response = await fetch(`/api/admin/bookings/travelers/${travelerId}/documents`, { method: "POST", body: form })
+      if (!response.ok) throw await responseError(response, "Unable to upload document")
+      showToast("success", "Saved to the traveller's vault.")
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to upload document.")
+    }
     await loadTravelerDocs(travelerId)
   }
 
@@ -1130,6 +1159,36 @@ export default function JourneyDetailPage() {
         </div>
       )}
 
+      {passportPrompt && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#17201c]/35 p-5" role="dialog" aria-modal="true" aria-label="Passport details">
+          <form
+            className="w-full max-w-md rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-xl"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const details = { documentNumber: passportForm.documentNumber.trim().toUpperCase(), expiryDate: passportForm.expiryDate }
+              if (!details.documentNumber || !details.expiryDate) return
+              const { upload } = passportPrompt
+              setPassportPrompt(null)
+              void upload(details)
+            }}
+          >
+            <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#07845f]">Passport details</p>
+            <h2 className="mt-1 font-brand text-xl font-bold text-[#17201c]">Copy these from the passport</h2>
+            <p className="mt-1 text-sm text-[#68716d]">Needed to remind the traveller before it expires and to check the 6-month rule. File: {passportPrompt.file.name}</p>
+            <label className="mt-4 block text-xs font-bold text-[#17201c]">Passport number
+              <input required value={passportForm.documentNumber} onChange={(event) => setPassportForm((current) => ({ ...current, documentNumber: event.target.value }))} placeholder="e.g. A01234567" pattern="[A-Za-z0-9-]{5,20}" className="mt-1 h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm uppercase outline-none focus:border-[#0d7d5f]" />
+            </label>
+            <label className="mt-3 block text-xs font-bold text-[#17201c]">Expiry date
+              <input required type="date" min={new Date().toISOString().slice(0, 10)} value={passportForm.expiryDate} onChange={(event) => setPassportForm((current) => ({ ...current, expiryDate: event.target.value }))} className="mt-1 h-11 w-full rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setPassportPrompt(null)} className="rounded-lg border border-[#d3dad7] px-4 py-2 text-sm font-bold text-[#68716d]">Cancel</button>
+              <button type="submit" className="rounded-lg bg-[#0d7d5f] px-4 py-2 text-sm font-bold text-white">Upload passport</button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {activityOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[#17201c]/35 p-5" role="dialog" aria-modal="true" aria-label="Booking activity sequence">
           <div className="max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-[#dbe2de] bg-white shadow-xl">
@@ -1210,6 +1269,7 @@ export default function JourneyDetailPage() {
                             <span className={`mt-1 inline-flex rounded-full border px-2.5 py-0.5 text-xs font-bold ${view.tone}`}>{view.label}</span>
                             {item.note && <p className="mt-1 text-xs text-[#a43229]">{item.note}</p>}
                             {item.expiryDate && <p className="mt-1 text-xs text-[#7b8580]">Expires {item.expiryDate}</p>}
+                            {item.fromVault && <p className="mt-1 text-xs font-semibold text-[#0d7d5f]">Reused from the traveller&apos;s vault</p>}
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
                             {item.status === "pending_review" && item.documentId && (
@@ -1230,7 +1290,10 @@ export default function JourneyDetailPage() {
                                   onChange={(event) => {
                                     const file = event.target.files?.[0]
                                     event.target.value = ""
-                                    if (file) void uploadDocument(item.key, file, traveler.isAccountHolder ? undefined : traveler.travelerId)
+                                    if (!file) return
+                                    const target = traveler.isAccountHolder ? undefined : traveler.travelerId
+                                    if (item.key === "passport") askPassportDetails(file, (details) => uploadDocument(item.key, file, target, details))
+                                    else void uploadDocument(item.key, file, target)
                                   }}
                                 />
                               </label>
@@ -1351,6 +1414,7 @@ export default function JourneyDetailPage() {
                                   {doc.status === "VERIFIED" ? "Verified" : doc.status === "REJECTED" ? "New copy requested" : doc.status === "EXPIRED" ? "Expired" : "Needs review"}
                                 </span>
                                 {doc.status === "REJECTED" && doc.reviewNote && <p className="text-xs text-[#a43229]">{doc.reviewNote}</p>}
+                                {(doc.documentNumber || doc.expiryDate) && <p className="text-xs text-[#68716d]">{doc.documentNumber && <>No. {doc.documentNumber}</>}{doc.documentNumber && doc.expiryDate && " · "}{doc.expiryDate && <>Expires {doc.expiryDate}</>}</p>}
                                 <div className="flex items-center justify-between gap-2">
                                   <a href={doc.viewUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0d7d5f] hover:underline">View file</a>
                                   <button type="button" onClick={() => void removeTravelerDocument(traveler.id, doc.id)} className="text-[#a43229]"><Trash2 className="size-4" /></button>
@@ -1371,7 +1435,9 @@ export default function JourneyDetailPage() {
                                   accept="image/*,.pdf"
                                   onChange={(event) => {
                                     const file = event.target.files?.[0]
-                                    if (file) void uploadTravelerDocument(traveler.id, type, file)
+                                    if (!file) return
+                                    if (type === "PASSPORT") askPassportDetails(file, (details) => uploadTravelerDocument(traveler.id, type, file, details))
+                                    else void uploadTravelerDocument(traveler.id, type, file)
                                   }}
                                 />
                               </label>
