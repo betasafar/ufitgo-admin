@@ -17,6 +17,7 @@ const rangeOptions = [
 type RevenueStats = {
   bookingValue?: number
   packageValue?: number
+  surchargeValue?: number
   collectedRevenue?: number
   registrationRevenue?: number
   packageRevenue?: number
@@ -68,12 +69,13 @@ export default function RevenueAnalyticsPage() {
   const total = Number(stats?.packageValue ?? stats?.bookingValue ?? 0)
   const collected = Number(stats?.packageRevenue ?? stats?.collectedRevenue ?? 0)
   const registration = Number(stats?.registrationRevenue ?? 0)
+  const surcharges = Number(stats?.surchargeValue ?? 0)
   const packageRevenue = Number(stats?.packageRevenue ?? 0)
   const outstanding = Number(stats?.packageOutstanding ?? stats?.outstandingRevenue ?? 0)
   const collectionRate = total > 0 ? Math.round((collected / total) * 100) : 0
   const metricCards: Array<{ label: string; value: string; note: string; Icon: LucideIcon; tone: string }> = [
     { label: "Collected revenue", value: money(collected), note: "Actually paid across bookings", Icon: Wallet, tone: "text-[#0c6b50]" },
-    { label: "Package value", value: money(total), note: "Registration fees excluded", Icon: CircleDollarSign, tone: "text-[#0f74c1]" },
+    { label: "Package value", value: money(total), note: surcharges > 0 ? `Includes ${money(surcharges)} in surcharges · registration excluded` : "Registration fees excluded", Icon: CircleDollarSign, tone: "text-[#0f74c1]" },
     { label: "Outstanding balance", value: money(outstanding), note: "Still owed by pilgrims", Icon: AlertCircle, tone: "text-[#a43229]" },
     { label: "Collection rate", value: `${collectionRate}%`, note: `${number(stats?.totalBookings)} bookings in period`, Icon: TrendingUp, tone: "text-[#8a6500]" },
   ]
