@@ -67,7 +67,20 @@ type BookingRecord = {
   }
 }
 
-type TravelerDocument = { id: string; type: string; viewUrl?: string; status?: string }
+type TravelerDocument = { id: string; type: string; viewUrl?: string; status?: string; reviewNote?: string | null; expiryDate?: string | null }
+type ChecklistStatus = "missing" | "pending_review" | "verified" | "needs_new_copy" | "expired" | "expires_too_soon" | "to_be_issued"
+type DocumentChecklist = {
+  ready: number
+  total: number
+  travelersNotAddedYet: number
+  travelers: {
+    travelerId: string
+    fullName: string
+    relationship?: string
+    isAccountHolder: boolean
+    items: { key: string; type: string; label: string; status: ChecklistStatus; note: string | null; documentId: string | null; expiryDate: string | null }[]
+  }[]
+}
 type Traveler = { id: string; fullName: string; relationship?: string; nin?: string; linkedUserId?: string }
 
 function operationalAction(stage: string | undefined, booking: BookingRecord) {
@@ -197,15 +210,29 @@ const stageGuidance: Record<string, { meaning: string; beforeAdvancing: string; 
   COMPLETED: { meaning: "The booking workflow is complete.", beforeAdvancing: "Keep the record available for support and audit." },
 }
 
+// Vaccination is arranged with the operator after handoff, so it is not part of the UfitGo checklist
 const documentRequirements = [
-  { key: "passport", label: "Valid passport", hint: "At least 6 months validity from travel date and 2 blank pages." },
-  { key: "vaccination", label: "Vaccination certificate", hint: "Meningitis ACWY plus current requirements based on origin." },
-  { key: "passport_photo", label: "Passport photos", hint: "Recent colour passport photos on a white background." },
-  { key: "relationship_proof", label: "Proof of relationship", hint: "Marriage certificate for spouses or birth certificates for children." },
-  { key: "shahadah", label: "Shahadah certificate", hint: "Official Islamic centre letter when a convert passport has no Muslim name." },
+  { key: "passport", label: "Valid passport", hint: "At least 6 months validity after departure and 2 blank pages.", alwaysRequired: true },
+  { key: "passport_photo", label: "Passport photos", hint: "Recent colour passport photos on a white background.", alwaysRequired: true },
+  { key: "relationship_proof", label: "Proof of relationship", hint: "Marriage certificate for spouses or birth certificates for children.", alwaysRequired: false },
+  { key: "shahadah", label: "Shahadah certificate", hint: "Official Islamic centre letter when a convert passport has no Muslim name.", alwaysRequired: false },
 ]
 
-const documentStatusOptions = ["missing", "received", "approved", "rejected", "not_applicable", "to_be_issued"]
+const requirementOptions = (alwaysRequired: boolean) => [
+  { value: "required", label: "Required for this trip" },
+  { value: "not_applicable", label: alwaysRequired ? "Not needed for this trip" : "Not requested" },
+  { value: "to_be_issued", label: "Will be issued later" },
+]
+
+const checklistStatusView: Record<ChecklistStatus, { label: string; tone: string }> = {
+  missing: { label: "Not in vault", tone: "border-[#dbe2de] bg-[#f7faf9] text-[#36413d]" },
+  pending_review: { label: "Uploaded by traveller · needs review", tone: "border-[#f1e0a9] bg-[#fff6dc] text-[#8a6500]" },
+  verified: { label: "Verified", tone: "border-[#cfeee0] bg-[#eaf9f3] text-[#0c6b50]" },
+  needs_new_copy: { label: "New copy requested", tone: "border-[#f4d0ca] bg-[#fff0ee] text-[#a43229]" },
+  expired: { label: "Expired", tone: "border-[#f4d0ca] bg-[#fff0ee] text-[#a43229]" },
+  expires_too_soon: { label: "Expires too soon", tone: "border-[#f4d0ca] bg-[#fff0ee] text-[#a43229]" },
+  to_be_issued: { label: "Will be issued later", tone: "border-[#cfe0f5] bg-[#eef5fd] text-[#1d4ed8]" },
+}
 
 const visaStatusOptions = [
   "NOT_STARTED", "DOCUMENTS_REQUESTED", "DOCUMENTS_RECEIVED", "SUBMITTED_TO_OPERATOR",
@@ -215,6 +242,9 @@ const visaStatusOptions = [
 
 const travelerDocTypes = [
   { type: "PASSPORT", label: "Passport" },
+  { type: "PASSPORT_PHOTO", label: "Passport photos" },
+  { type: "RELATIONSHIP_PROOF", label: "Proof of relationship" },
+  { type: "SHAHADAH", label: "Shahadah certificate" },
   { type: "VISA", label: "Visa" },
   { type: "HEALTH_CARD", label: "Health card" },
 ]
@@ -455,6 +485,8 @@ export default function JourneyDetailPage() {
   const [savingVisa, setSavingVisa] = useState(false)
 
   const [docSaving, setDocSaving] = useState<string | null>(null)
+  const [checklist, setChecklist] = useState<DocumentChecklist | null>(null)
+  const [checklistLoading, setChecklistLoading] = useState(false)
 
   const [payments, setPayments] = useState<PaymentBreakdown | null>(null)
   const [paymentsLoading, setPaymentsLoading] = useState(false)
@@ -586,6 +618,7 @@ export default function JourneyDetailPage() {
 
   useEffect(() => {
     if (activeTab === "travelers" && id) void loadTravelers()
+    if (activeTab === "documents" && id) void loadChecklist()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, id])
 
@@ -694,6 +727,41 @@ export default function JourneyDetailPage() {
     }
   }
 
+  async function loadChecklist() {
+    setChecklistLoading(true)
+    try {
+      const response = await fetch(`/api/admin/bookings/${id}/document-checklist`, { cache: "no-store" })
+      const payload = await response.json().catch(() => null)
+      setChecklist(response.ok ? (payload as DocumentChecklist) : null)
+    } finally {
+      setChecklistLoading(false)
+    }
+  }
+
+  async function reviewTravelDocument(docId: string, decision: "verify" | "reject") {
+    let note: string | undefined
+    if (decision === "reject") {
+      note = window.prompt("What should the traveller fix? This is sent to them.")?.trim()
+      if (!note) return
+    }
+    setDocSaving(docId)
+    try {
+      const response = await fetch(`/api/admin/bookings/travel-documents/${docId}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, note }),
+      })
+      if (!response.ok) throw new Error("Unable to save review")
+      showToast("success", decision === "verify" ? "Document verified. Traveller notified." : "New copy requested. Traveller notified.")
+      await loadChecklist()
+      if (travelers.length) await Promise.all(travelers.map((t) => loadTravelerDocs(t.id)))
+    } catch (requestError) {
+      showToast("error", requestError instanceof Error ? requestError.message : "Failed to review document.")
+    } finally {
+      setDocSaving(null)
+    }
+  }
+
   async function saveDocumentReview(documentType: string, status: string) {
     setDocSaving(documentType)
     try {
@@ -704,7 +772,8 @@ export default function JourneyDetailPage() {
       })
       if (!response.ok) throw new Error("Unable to save")
       await refreshBookingSilently()
-      showToast("success", "Document status updated.")
+      await loadChecklist()
+      showToast("success", "Trip requirement updated.")
     } catch (requestError) {
       showToast("error", requestError instanceof Error ? requestError.message : "Failed to update document status.")
     } finally {
@@ -712,16 +781,18 @@ export default function JourneyDetailPage() {
     }
   }
 
-  async function uploadDocument(documentType: string, file: File) {
-    setDocSaving(documentType)
+  async function uploadDocument(documentType: string, file: File, travelerId?: string) {
+    setDocSaving(`${documentType}:${travelerId || "self"}`)
     try {
       const form = new FormData()
       form.append("documentType", documentType)
+      if (travelerId) form.append("travelerId", travelerId)
       form.append("file", file)
       const response = await fetch(`/api/admin/bookings/${id}/upload-document`, { method: "POST", body: form })
       if (!response.ok) throw new Error("Unable to upload document")
       await refreshBookingSilently()
-      showToast("success", "Document uploaded.")
+      await loadChecklist()
+      showToast("success", "Saved to the traveller's vault. They have been notified.")
     } catch (requestError) {
       showToast("error", requestError instanceof Error ? requestError.message : "Failed to upload document.")
     } finally {
@@ -1074,47 +1145,105 @@ export default function JourneyDetailPage() {
 
       {activeTab === "documents" && (
         <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
-          <h2 className="font-brand text-lg font-bold text-[#17201c]">Document checklist</h2>
-          <p className="mt-1 text-sm text-[#68716d]">Track concierge review status for each required travel document, or upload it directly if the customer shared it with you.</p>
-          <div className="mt-5 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="font-brand text-lg font-bold text-[#17201c]">Document checklist</h2>
+              <p className="mt-1 text-sm text-[#68716d]">
+                Documents are stored in each traveller&apos;s secure Travel Docs vault and reused on future trips. Uploads here go straight into the vault as verified. Open the Travelers tab to view files.
+              </p>
+            </div>
+            {checklist && (
+              <span className="inline-flex shrink-0 rounded-full border border-[#dbe2de] bg-[#f7faf9] px-3 py-1 text-xs font-bold text-[#36413d]">
+                {checklist.ready} of {checklist.total} ready
+              </span>
+            )}
+          </div>
+
+          <h3 className="mt-6 text-sm font-bold text-[#17201c]">What this trip needs</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {documentRequirements.map((req) => {
-              const status = review[req.key]?.status || "missing"
-              const uploading = docSaving === req.key
+              const flag = review[req.key]?.status || ""
+              const value = ["not_applicable", "to_be_issued"].includes(flag) ? flag : req.alwaysRequired || flag ? "required" : "not_applicable"
               return (
-                <div key={req.key} className="flex flex-col gap-3 rounded-xl border border-[#dbe2de] p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="font-bold text-[#17201c]">{req.label}</p>
-                    <p className="mt-0.5 text-xs text-[#7b8580]">{req.hint}</p>
-                    {review[req.key]?.url && <a href={review[req.key]?.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-bold text-[#0d7d5f] hover:underline">View uploaded file</a>}
-                  </div>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <label className={`inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-xs font-bold text-[#35443e] hover:bg-[#edf3f0] ${uploading ? "pointer-events-none opacity-60" : ""}`}>
-                      {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-                      {review[req.key]?.url ? "Replace file" : "Upload file"}
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        className="sr-only"
-                        disabled={uploading}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0]
-                          event.target.value = ""
-                          if (file) void uploadDocument(req.key, file)
-                        }}
-                      />
-                    </label>
-                    <AppSelect
-                      value={status}
-                      onValueChange={(next) => void saveDocumentReview(req.key, next)}
-                      disabled={docSaving === req.key}
-                      className="h-10 sm:w-52"
-                      options={documentStatusOptions.map((option) => ({ value: option, label: option.replaceAll("_", " ") }))}
-                    />
-                  </div>
+                <div key={req.key} className="rounded-xl border border-[#dbe2de] p-3">
+                  <p className="text-sm font-bold text-[#17201c]">{req.label}</p>
+                  <p className="mt-0.5 text-xs text-[#7b8580]">{req.hint}</p>
+                  <AppSelect
+                    value={value}
+                    onValueChange={(next) => void saveDocumentReview(req.key, next)}
+                    disabled={docSaving === req.key}
+                    className="mt-2 h-10"
+                    options={requirementOptions(req.alwaysRequired)}
+                  />
                 </div>
               )
             })}
           </div>
+
+          <h3 className="mt-6 text-sm font-bold text-[#17201c]">Status per traveller</h3>
+          {checklistLoading && !checklist ? (
+            <div className="mt-4"><Loader2 className="size-5 animate-spin text-[#0d7d5f]" /></div>
+          ) : !checklist ? (
+            <p className="mt-3 text-sm text-[#a43229]">Could not load the checklist.</p>
+          ) : (
+            <div className="mt-3 space-y-4">
+              {checklist.travelersNotAddedYet > 0 && (
+                <p className="rounded-lg border border-[#f1e0a9] bg-[#fff6dc] px-3 py-2 text-xs font-semibold text-[#7a5400]">
+                  {checklist.travelersNotAddedYet} traveller{checklist.travelersNotAddedYet === 1 ? "" : "s"} on this booking not added yet. Add them in the Travelers tab to track their documents.
+                </p>
+              )}
+              {checklist.travelers.map((traveler) => (
+                <div key={traveler.travelerId} className="rounded-xl border border-[#dbe2de]">
+                  <div className="border-b border-[#edf1ef] px-4 py-3">
+                    <p className="font-bold text-[#17201c]">{traveler.fullName}</p>
+                    <p className="text-xs text-[#7b8580]">{traveler.isAccountHolder ? "Account holder" : traveler.relationship || "Companion"}</p>
+                  </div>
+                  <div className="divide-y divide-[#edf1ef]">
+                    {traveler.items.map((item) => {
+                      const view = checklistStatusView[item.status]
+                      const savingKey = `${item.key}:${traveler.isAccountHolder ? "self" : traveler.travelerId}`
+                      const busy = docSaving === savingKey || (item.documentId !== null && docSaving === item.documentId)
+                      return (
+                        <div key={item.key} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-[#17201c]">{item.label}</p>
+                            <span className={`mt-1 inline-flex rounded-full border px-2.5 py-0.5 text-xs font-bold ${view.tone}`}>{view.label}</span>
+                            {item.note && <p className="mt-1 text-xs text-[#a43229]">{item.note}</p>}
+                            {item.expiryDate && <p className="mt-1 text-xs text-[#7b8580]">Expires {item.expiryDate}</p>}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {item.status === "pending_review" && item.documentId && (
+                              <>
+                                <button type="button" disabled={busy} onClick={() => void reviewTravelDocument(item.documentId!, "verify")} className="inline-flex h-9 items-center rounded-lg bg-[#0d7d5f] px-3 text-xs font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">Verify</button>
+                                <button type="button" disabled={busy} onClick={() => void reviewTravelDocument(item.documentId!, "reject")} className="inline-flex h-9 items-center rounded-lg border border-[#f4d0ca] bg-white px-3 text-xs font-bold text-[#a43229] hover:bg-[#fff0ee] disabled:opacity-50">Needs new copy</button>
+                              </>
+                            )}
+                            {item.status !== "to_be_issued" && (
+                              <label className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#d3dad7] bg-[#f8faf9] px-3 text-xs font-bold text-[#35443e] hover:bg-[#edf3f0] ${busy ? "pointer-events-none opacity-60" : ""}`}>
+                                {busy ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                                {item.documentId ? "Replace in vault" : "Upload to vault"}
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/png,.pdf"
+                                  className="sr-only"
+                                  disabled={busy}
+                                  onChange={(event) => {
+                                    const file = event.target.files?.[0]
+                                    event.target.value = ""
+                                    if (file) void uploadDocument(item.key, file, traveler.isAccountHolder ? undefined : traveler.travelerId)
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -1217,9 +1346,21 @@ export default function JourneyDetailPage() {
                           <div key={type} className="rounded-lg border border-[#dbe2de] p-3 text-sm">
                             <p className="mb-2 font-semibold text-[#17201c]">{label}</p>
                             {doc ? (
-                              <div className="flex items-center justify-between gap-2">
-                                <a href={doc.viewUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0d7d5f] hover:underline">View file</a>
-                                <button type="button" onClick={() => void removeTravelerDocument(traveler.id, doc.id)} className="text-[#a43229]"><Trash2 className="size-4" /></button>
+                              <div className="space-y-2">
+                                <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${doc.status === "VERIFIED" ? checklistStatusView.verified.tone : doc.status === "REJECTED" ? checklistStatusView.needs_new_copy.tone : doc.status === "EXPIRED" ? checklistStatusView.expired.tone : checklistStatusView.pending_review.tone}`}>
+                                  {doc.status === "VERIFIED" ? "Verified" : doc.status === "REJECTED" ? "New copy requested" : doc.status === "EXPIRED" ? "Expired" : "Needs review"}
+                                </span>
+                                {doc.status === "REJECTED" && doc.reviewNote && <p className="text-xs text-[#a43229]">{doc.reviewNote}</p>}
+                                <div className="flex items-center justify-between gap-2">
+                                  <a href={doc.viewUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#0d7d5f] hover:underline">View file</a>
+                                  <button type="button" onClick={() => void removeTravelerDocument(traveler.id, doc.id)} className="text-[#a43229]"><Trash2 className="size-4" /></button>
+                                </div>
+                                {doc.status === "PENDING_REVIEW" && (
+                                  <div className="flex gap-2">
+                                    <button type="button" disabled={docSaving === doc.id} onClick={() => void reviewTravelDocument(doc.id, "verify")} className="rounded-md bg-[#0d7d5f] px-2 py-1 text-[11px] font-bold text-white disabled:opacity-50">Verify</button>
+                                    <button type="button" disabled={docSaving === doc.id} onClick={() => void reviewTravelDocument(doc.id, "reject")} className="rounded-md border border-[#f4d0ca] px-2 py-1 text-[11px] font-bold text-[#a43229] disabled:opacity-50">Needs new copy</button>
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               <label className="inline-flex cursor-pointer items-center gap-1 text-xs font-bold text-[#0d7d5f]">
