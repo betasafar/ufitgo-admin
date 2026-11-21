@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
+import { HelpButton, TitleWithHelp, travelersHelp, visaHelp } from "./staff-help"
 import { TravelerDetailsForm, detailsFromTraveler, emptyTravelerDetails, type TravelerDetails } from "./traveler-details-form"
 import { AppSelect } from "@/components/ui/app-select"
 import { ConciergeCallWidget } from "@/components/calls/concierge-call-widget"
@@ -1368,7 +1369,7 @@ export default function JourneyDetailPage() {
 
       {activeTab === "visa" && (
         <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
-          <h2 className="font-brand text-lg font-bold text-[#17201c]">Visa progress</h2>
+          <TitleWithHelp guide={visaHelp}>Visa progress</TitleWithHelp>
           {!visaFeatureEnabled ? (
             <p className="mt-3 text-sm text-[#7b8580]">Visa progress tracking is currently disabled platform-wide.</p>
           ) : (
@@ -1454,7 +1455,7 @@ export default function JourneyDetailPage() {
 
       {activeTab === "travelers" && (
         <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-sm">
-          <h2 className="font-brand text-lg font-bold text-[#17201c]">Travelers & travel documents</h2>
+          <TitleWithHelp guide={travelersHelp}>Travelers & travel documents</TitleWithHelp>
           <p className="mt-1 text-sm text-[#68716d]">Fill each traveller from their passport data page. Only the main applicant&apos;s documents go to their personal Travel Docs vault; everyone else&apos;s stay on this booking.</p>
           {travelersMeta && (
             <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -1569,7 +1570,7 @@ export default function JourneyDetailPage() {
           )}
 
           <div className="mt-4 rounded-xl border border-dashed border-[#d9dfdc] p-4">
-            <p className="mb-1 flex items-center gap-2 text-sm font-bold text-[#17201c]"><UserPlus className="size-4" /> Add a co-traveller</p>
+            <div className="mb-1 flex items-center gap-1 text-sm font-bold text-[#17201c]"><UserPlus className="size-4" /> <span className="ml-1">Add a co-traveller</span><HelpButton guide={travelersHelp} label="What each field means" /></div>
             <TravelerDetailsForm mode="add" initial={emptyTravelerDetails} onSubmit={addTraveler} />
           </div>
         </section>
