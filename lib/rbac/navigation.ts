@@ -90,6 +90,7 @@ export const ADMIN_NAVIGATION: AdminNavigationGroup[] = [
     permissions: ["payments.read", "reconciliation.manage", "sandbox.wallet.fund"],
     mode: "any",
     items: [
+      { label: "Emergency alerts", href: "/dashboard/alerts", icon: BellRing, permissions: ["payments.read"], available: true },
       { label: "Float & Revenue", href: "/dashboard/treasury/float", icon: Database, permissions: ["payments.read", "reconciliation.manage"], mode: "any", available: true },
       { label: "BaaS Routing & Health", href: "/dashboard/treasury/providers", icon: ShieldAlert, permissions: ["payments.read", "reconciliation.manage"], mode: "any", available: true },
       { label: "DVA & Ledger Recon", href: "/dashboard/treasury/reconciliation", icon: ListChecks, permissions: ["payments.read", "reconciliation.manage"], mode: "any", available: true },
