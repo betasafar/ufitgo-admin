@@ -144,6 +144,7 @@ type SystemConfig = {
     gracePeriodDays?: number
     dropThresholdDays?: number
     scheduleEnforcement?: "report" | "notify" | "enforce"
+    autoSaveMinMove?: number
     intelligence?: IntelligenceConfig
     hajjSeasonCampaign?: HajjSeasonCampaignConfig
     halalLock?: HalalLockConfig
@@ -163,7 +164,7 @@ type SystemConfig = {
 type PlatformSetting = { key: string; value?: string; description?: string }
 type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit"
 type TierLimitDraft = Partial<Record<TierLimitKey, string>>
-const feeCardIds = ["early-exit", "ufitflex-withdrawals", "wefit-save", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "plan-check", "grace-period", "drop-threshold"] as const
+const feeCardIds = ["early-exit", "ufitflex-withdrawals", "wefit-save", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "plan-check", "auto-save", "grace-period", "drop-threshold"] as const
 type FeeCardId = (typeof feeCardIds)[number]
 
 const featureToggles: Array<{
@@ -186,6 +187,7 @@ const featureToggles: Array<{
   { key: "enableTravelDocs", badgeId: "docs", label: "Travel documents", desc: "Enable visa processing and travel document services." },
   { key: "enableTargetSavings", badgeId: "savings", label: "Plan & Save (Target Savings)", desc: "Enable the Plan & Save feature (UfitFlex, UfitSave, and WefitSave plans) for travel." },
   { key: "enableWefitSave", badgeId: "wefit-save", label: "WeFitSave (Group Savings)", desc: "Enable WeFitSave group savings pools, group invite codes, and shared Hajj/Umrah goals. Turn off to pause or hide WeFitSave if not launching it yet." },
+  { key: "enableAutoSave", label: "Auto-save rules", desc: "Let customers save part of every bank transfer into a UfitSave goal or WeFitSave group automatically (set up once with their PIN). Turning this off pauses all rules; nothing is deleted." },
   { key: "enableHalalLock", badgeId: "halal-lock", label: "Halal Lock (Fixed Tenor)", desc: "Enable fixed-tenor Halal lump-sum locks (90–365 days) with Mudarabah profit or 0% Wadiah safekeeping." },
   { key: "enableTravelIntelligence", badgeId: "intelligence", label: "Plan Open Slot (Hajj Intelligence)", desc: "Enable the Plan Open Slot banner/card on Home, availability alerts, and Hajj package comparison." },
   { key: "enableProactiveAdvisorNudge", label: "Proactive AI nudge", desc: "Show a bottom-sheet inviting users to chat with the AI Advisor after repeated zero-result searches." },
@@ -1185,6 +1187,7 @@ export default function SettingsPage() {
   const gracePeriodDays = useMemo(() => Number(config?.savingsConfig?.gracePeriodDays ?? 3), [config])
   const dropThresholdDays = useMemo(() => Number(config?.savingsConfig?.dropThresholdDays ?? 30), [config])
   const scheduleEnforcement = config?.savingsConfig?.scheduleEnforcement ?? "report"
+  const autoSaveMinMove = Number(config?.savingsConfig?.autoSaveMinMove ?? 500)
   const earlyExitChargeHasChanges =
     (earlyExitChargePercentDraft !== null && Number(earlyExitChargePercentDraft) !== earlyExitChargePercent) ||
     (earlyExitChargeCapDraft !== null && Number(earlyExitChargeCapDraft) !== earlyExitChargeCap)
@@ -2611,6 +2614,29 @@ export default function SettingsPage() {
                 <span className="max-w-md text-[11px] text-[#7b8580] sm:text-right">
                   Dropping only unlinks the package and stops the plan. The customer&apos;s money stays in the goal and can be withdrawn.
                 </span>
+              </div>
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard
+              title="Auto-save minimum per move"
+              description="Auto-save skips any move smaller than this, so customers don't get many tiny transfers into their goals. Turn auto-save on or off under Features."
+              isExpanded={!collapsedFeeCards.includes("auto-save")}
+              onToggle={() => toggleFeeCard("auto-save")}
+            >
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <input
+                  type="number"
+                  min="100"
+                  step="100"
+                  aria-label="Auto-save minimum per move"
+                  defaultValue={autoSaveMinMove}
+                  key={`autosave-min-${autoSaveMinMove}`}
+                  onBlur={(event) => {
+                    const val = Number(event.target.value)
+                    if (Number.isFinite(val) && val >= 100 && val !== autoSaveMinMove) void saveFeeField("savingsConfig", "autoSaveMinMove", val)
+                  }}
+                  className="h-10 w-28 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]"
+                />
+                <span className="text-sm font-bold text-[#68716d]">NGN (min ₦100)</span>
               </div>
             </CollapsibleFeeCard>
             <CollapsibleFeeCard title="Missed payment grace period" description="Days before a missed savings milestone is flagged for restructuring." isExpanded={!collapsedFeeCards.includes("grace-period")} onToggle={() => toggleFeeCard("grace-period")}>
