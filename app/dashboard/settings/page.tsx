@@ -143,6 +143,7 @@ type SystemConfig = {
   savingsConfig?: {
     gracePeriodDays?: number
     dropThresholdDays?: number
+    scheduleEnforcement?: "report" | "notify" | "enforce"
     intelligence?: IntelligenceConfig
     hajjSeasonCampaign?: HajjSeasonCampaignConfig
     halalLock?: HalalLockConfig
@@ -162,7 +163,7 @@ type SystemConfig = {
 type PlatformSetting = { key: string; value?: string; description?: string }
 type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit"
 type TierLimitDraft = Partial<Record<TierLimitKey, string>>
-const feeCardIds = ["early-exit", "ufitflex-withdrawals", "wefit-save", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
+const feeCardIds = ["early-exit", "ufitflex-withdrawals", "wefit-save", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "plan-check", "grace-period", "drop-threshold"] as const
 type FeeCardId = (typeof feeCardIds)[number]
 
 const featureToggles: Array<{
@@ -769,7 +770,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function saveFeeField(field: "fees" | "savingsConfig", key: string, value: number): Promise<boolean> {
+  async function saveFeeField(field: "fees" | "savingsConfig", key: string, value: number | string): Promise<boolean> {
     try {
       const response = await fetch("/api/admin/customers/system/config", {
         method: "PATCH",
@@ -1183,6 +1184,7 @@ export default function SettingsPage() {
   const wefitGroupAdminMinFloor = useMemo(() => Math.max(10000, Number(config?.fees?.wefitGroupAdminMinFloor ?? 10000)), [config])
   const gracePeriodDays = useMemo(() => Number(config?.savingsConfig?.gracePeriodDays ?? 3), [config])
   const dropThresholdDays = useMemo(() => Number(config?.savingsConfig?.dropThresholdDays ?? 30), [config])
+  const scheduleEnforcement = config?.savingsConfig?.scheduleEnforcement ?? "report"
   const earlyExitChargeHasChanges =
     (earlyExitChargePercentDraft !== null && Number(earlyExitChargePercentDraft) !== earlyExitChargePercent) ||
     (earlyExitChargeCapDraft !== null && Number(earlyExitChargeCapDraft) !== earlyExitChargeCap)
@@ -2587,6 +2589,28 @@ export default function SettingsPage() {
                     </div>
                   )
                 })}
+              </div>
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard
+              title="Savings plan check (missed payments)"
+              description="What the daily savings plan check does when a UfitSave goal misses a saving cycle. Start with Report only for a week and review the job's results in Scheduler before moving up. The check itself runs from Admin > Scheduler (Savings plan check)."
+              isExpanded={!collapsedFeeCards.includes("plan-check")}
+              onToggle={() => toggleFeeCard("plan-check")}
+            >
+              <div className="flex flex-col gap-2 sm:items-end">
+                <select
+                  aria-label="Savings plan check mode"
+                  value={scheduleEnforcement}
+                  onChange={(event) => void saveFeeField("savingsConfig", "scheduleEnforcement", event.target.value)}
+                  className="h-10 rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                >
+                  <option value="report">Report only (no changes, no messages)</option>
+                  <option value="notify">Notify customers (count missed cycles, never drop)</option>
+                  <option value="enforce">Enforce (also drop goals 3 cycles behind)</option>
+                </select>
+                <span className="max-w-md text-[11px] text-[#7b8580] sm:text-right">
+                  Dropping only unlinks the package and stops the plan. The customer&apos;s money stays in the goal and can be withdrawn.
+                </span>
               </div>
             </CollapsibleFeeCard>
             <CollapsibleFeeCard title="Missed payment grace period" description="Days before a missed savings milestone is flagged for restructuring." isExpanded={!collapsedFeeCards.includes("grace-period")} onToggle={() => toggleFeeCard("grace-period")}>
