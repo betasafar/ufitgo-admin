@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { CreditCard, Database, ListChecks, Radio, RefreshCw, ShieldAlert } from "lucide-react"
+import { Banknote, CreditCard, Database, ListChecks, Radio, RefreshCw, ShieldAlert } from "lucide-react"
 import { useCan } from "@/components/auth/permission-gate"
 import type { Permission } from "@/lib/rbac/permissions"
 
@@ -15,6 +15,7 @@ const TREASURY_TABS: Array<{
   { label: "Float & Revenue", href: "/dashboard/treasury/float", icon: Database },
   { label: "BaaS Routing & Health", href: "/dashboard/treasury/providers", icon: ShieldAlert },
   { label: "DVA & Ledger Recon", href: "/dashboard/treasury/reconciliation", icon: ListChecks },
+  { label: "Stuck Withdrawals", href: "/dashboard/treasury/withdrawals", icon: Banknote },
   { label: "Webhooks & Sandbox", href: "/dashboard/treasury/webhooks", icon: Radio },
   {
     label: "Sandbox Wallet Funder",
