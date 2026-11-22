@@ -18,7 +18,9 @@ type StuckWithdrawal = {
   provider: string | null
   createdAt: string
   ageMinutes: number
-  autoRetryStopped: boolean
+  customerNotified: boolean
+  needsStaff: boolean
+  autoChecksStopped: boolean
 }
 
 type Resolution = { row: StuckWithdrawal; outcome: "SUCCESSFUL" | "FAILED" }
@@ -169,11 +171,16 @@ export default function StuckWithdrawalsPage() {
                 </td>
                 <td className="px-4 py-3">
                   <div>{formatAge(row.ageMinutes)}</div>
-                  {row.autoRetryStopped && (
+                  {row.autoChecksStopped ? (
+                    <span className="mt-1 inline-block rounded-full border border-[#f1c4bd] bg-[#fff0ee] px-2 py-0.5 text-[11px] font-bold text-[#a83b31]">
+                      Urgent · auto-checks stopped
+                    </span>
+                  ) : row.needsStaff ? (
                     <span className="mt-1 inline-block rounded-full border border-[#ecd68a] bg-[#fff8de] px-2 py-0.5 text-[11px] font-bold text-[#806000]">
                       Needs staff
                     </span>
-                  )}
+                  ) : null}
+                  {row.customerNotified && <div className="mt-1 text-[11px] text-[#63736b]">Customer told it&apos;s delayed</div>}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-[#33463d]">{row.reference}</td>
                 <td className="px-4 py-3">
@@ -232,7 +239,14 @@ export default function StuckWithdrawalsPage() {
         <h2 className="font-bold text-[#18241f]">How this works</h2>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>The money has already left the customer&apos;s UfitFlex balance and is held until the withdrawal is settled.</li>
-          <li>The system checks each one automatically every 5 minutes for the first 6 hours. After that it stops and waits for you.</li>
+          <li>
+            The system re-checks each one every 5 minutes for the first hour, then every 30 minutes. After 30 minutes the customer is told
+            the withdrawal is taking longer than usual.
+          </li>
+          <li>
+            <strong>Needs staff</strong> (after 1 hour): contact the provider. <strong>Urgent</strong> (after 24 hours): automatic checks
+            have stopped, so it must be resolved here.
+          </li>
           <li><strong>Check again</strong> is always safe. It never sends the money twice.</li>
           <li>
             Only use <strong>Mark as paid</strong> or <strong>Refund</strong> after confirming with the provider (Providus, Paystack or FCMB)
