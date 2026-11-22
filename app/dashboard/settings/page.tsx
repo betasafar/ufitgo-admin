@@ -136,6 +136,9 @@ type SystemConfig = {
     savingsBreakPenaltyPercent?: number
     wefitSystemMinContribution?: number
     wefitGroupAdminMinFloor?: number
+    ufitflexMinWithdrawal?: number
+    ufitflexFreeWithdrawalsPerMonth?: number
+    ufitflexExcessWithdrawalFee?: number
   }
   savingsConfig?: {
     gracePeriodDays?: number
@@ -159,7 +162,7 @@ type SystemConfig = {
 type PlatformSetting = { key: string; value?: string; description?: string }
 type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit"
 type TierLimitDraft = Partial<Record<TierLimitKey, string>>
-const feeCardIds = ["early-exit", "wefit-save", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
+const feeCardIds = ["early-exit", "ufitflex-withdrawals", "wefit-save", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "grace-period", "drop-threshold"] as const
 type FeeCardId = (typeof feeCardIds)[number]
 
 const featureToggles: Array<{
@@ -356,6 +359,10 @@ export default function SettingsPage() {
   const [wefitSystemMinDraft, setWefitSystemMinDraft] = useState<string | null>(null)
   const [wefitGroupFloorDraft, setWefitGroupFloorDraft] = useState<string | null>(null)
   const [savingWefitConfig, setSavingWefitConfig] = useState(false)
+  const [flexMinDraft, setFlexMinDraft] = useState<string | null>(null)
+  const [flexFreeDraft, setFlexFreeDraft] = useState<string | null>(null)
+  const [flexFeeDraft, setFlexFeeDraft] = useState<string | null>(null)
+  const [savingFlexRules, setSavingFlexRules] = useState(false)
   const [intelligenceDraft, setIntelligenceDraft] = useState<IntelligenceConfig | null>(null)
   const [savingIntelligence, setSavingIntelligence] = useState(false)
   const [campaignDraft, setCampaignDraft] = useState<HajjSeasonCampaignConfig | null>(null)
@@ -872,6 +879,57 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveFlexWithdrawalRules() {
+    const minAmount = Number(flexMinDraft ?? flexMinWithdrawal)
+    const freePerMonth = Number(flexFreeDraft ?? flexFreeWithdrawals)
+    const excessFee = Number(flexFeeDraft ?? flexExcessFee)
+    if (!Number.isFinite(minAmount) || minAmount < 100) {
+      showToast("error", "The minimum withdrawal must be at least ₦100.")
+      return
+    }
+    if (!Number.isInteger(freePerMonth) || freePerMonth < 0 || freePerMonth > 100) {
+      showToast("error", "Free withdrawals per month must be a whole number from 0 to 100.")
+      return
+    }
+    if (!Number.isFinite(excessFee) || excessFee < 0 || excessFee > 1000) {
+      showToast("error", "The fee must be between ₦0 and ₦1,000.")
+      return
+    }
+
+    setSavingFlexRules(true)
+    try {
+      const response = await fetch("/api/admin/customers/system/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fees: {
+            ufitflexMinWithdrawal: minAmount,
+            ufitflexFreeWithdrawalsPerMonth: freePerMonth,
+            ufitflexExcessWithdrawalFee: excessFee,
+          },
+        }),
+      })
+      if (!response.ok) throw new Error()
+      setConfig((previous) => ({
+        ...previous,
+        fees: {
+          ...previous?.fees,
+          ufitflexMinWithdrawal: minAmount,
+          ufitflexFreeWithdrawalsPerMonth: freePerMonth,
+          ufitflexExcessWithdrawalFee: excessFee,
+        },
+      }))
+      setFlexMinDraft(null)
+      setFlexFreeDraft(null)
+      setFlexFeeDraft(null)
+      showToast("success", "UfitFlex withdrawal rules saved.")
+    } catch {
+      showToast("error", "Failed to save the UfitFlex withdrawal rules.")
+    } finally {
+      setSavingFlexRules(false)
+    }
+  }
+
   async function saveWefitConfig() {
     const sysMin = Number(wefitSystemMinDraft ?? wefitSystemMinContribution)
     const groupFloor = Number(wefitGroupFloorDraft ?? wefitGroupAdminMinFloor)
@@ -1114,6 +1172,13 @@ export default function SettingsPage() {
 
   const earlyExitChargePercent = useMemo(() => Number(config?.fees?.savingsEarlyExitChargePercent ?? config?.fees?.savingsBreakPenaltyPercent ?? 0), [config])
   const earlyExitChargeCap = useMemo(() => Number(config?.fees?.savingsEarlyExitChargeCap ?? 0), [config])
+  const flexMinWithdrawal = useMemo(() => Number(config?.fees?.ufitflexMinWithdrawal ?? 500), [config])
+  const flexFreeWithdrawals = useMemo(() => Number(config?.fees?.ufitflexFreeWithdrawalsPerMonth ?? 4), [config])
+  const flexExcessFee = useMemo(() => Number(config?.fees?.ufitflexExcessWithdrawalFee ?? 100), [config])
+  const flexRulesHaveChanges =
+    (flexMinDraft !== null && Number(flexMinDraft) !== flexMinWithdrawal) ||
+    (flexFreeDraft !== null && Number(flexFreeDraft) !== flexFreeWithdrawals) ||
+    (flexFeeDraft !== null && Number(flexFeeDraft) !== flexExcessFee)
   const wefitSystemMinContribution = useMemo(() => Number(config?.fees?.wefitSystemMinContribution ?? 500), [config])
   const wefitGroupAdminMinFloor = useMemo(() => Math.max(10000, Number(config?.fees?.wefitGroupAdminMinFloor ?? 10000)), [config])
   const gracePeriodDays = useMemo(() => Number(config?.savingsConfig?.gracePeriodDays ?? 3), [config])
@@ -1672,6 +1737,71 @@ export default function SettingsPage() {
                 <input aria-label="Early exit charge cap" type="number" min="0" value={earlyExitChargeCapDraft ?? String(earlyExitChargeCap)} onChange={(event) => setEarlyExitChargeCapDraft(event.target.value)} className="h-10 w-28 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">NGN cap</span>
                 {earlyExitChargeHasChanges && <button type="button" onClick={() => void saveEarlyExitCharge()} disabled={savingEarlyExitCharge} className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50">{savingEarlyExitCharge ? "Saving..." : "Save"}</button>}
+              </div>
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard
+              title="UfitFlex Bank Withdrawals (Free Allowance & Fee)"
+              description="Applies only when a customer withdraws from UfitFlex to their own bank account. Moving money between UfitFlex, UfitSave, WeFitSave and Halal Lock never counts. Customers see these numbers in the app straight away. The fee is added on top of the amount withdrawn."
+              isExpanded={!collapsedFeeCards.includes("ufitflex-withdrawals")}
+              onToggle={() => toggleFeeCard("ufitflex-withdrawals")}
+              action={
+                flexRulesHaveChanges ? (
+                  <button
+                    type="button"
+                    onClick={() => void saveFlexWithdrawalRules()}
+                    disabled={savingFlexRules}
+                    className="h-10 rounded-lg bg-[#0d7d5f] px-4 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50"
+                  >
+                    {savingFlexRules ? "Saving..." : "Save"}
+                  </button>
+                ) : undefined
+              }
+            >
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="text-xs font-semibold text-[#68716d]">
+                  Free withdrawals per month
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={flexFreeDraft ?? String(flexFreeWithdrawals)}
+                    onChange={(event) => setFlexFreeDraft(event.target.value)}
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                  <span className="mt-1 block text-[11px] font-normal text-[#7b8580]">
+                    Each customer gets this many free bank withdrawals every calendar month (current default 4).
+                  </span>
+                </label>
+                <label className="text-xs font-semibold text-[#68716d]">
+                  Fee after the free ones (NGN)
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000"
+                    step="1"
+                    value={flexFeeDraft ?? String(flexExcessFee)}
+                    onChange={(event) => setFlexFeeDraft(event.target.value)}
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                  <span className="mt-1 block text-[11px] font-normal text-[#7b8580]">
+                    Charged per withdrawal once the free ones are used. Set 0 to make bank withdrawals always free. Compare with what your payment provider charges you per payout.
+                  </span>
+                </label>
+                <label className="text-xs font-semibold text-[#68716d]">
+                  Minimum withdrawal (NGN)
+                  <input
+                    type="number"
+                    min="100"
+                    step="100"
+                    value={flexMinDraft ?? String(flexMinWithdrawal)}
+                    onChange={(event) => setFlexMinDraft(event.target.value)}
+                    className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                  />
+                  <span className="mt-1 block text-[11px] font-normal text-[#7b8580]">
+                    Smallest amount a customer can send to their bank (current default ₦500).
+                  </span>
+                </label>
               </div>
             </CollapsibleFeeCard>
             <CollapsibleFeeCard
