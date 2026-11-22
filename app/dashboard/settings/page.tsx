@@ -1339,7 +1339,7 @@ export default function SettingsPage() {
                           </p>
                         </div>
                         <p className="mt-1 text-xs leading-5 text-[#49584f]">
-                          When set to <strong>Live</strong> (or <strong>Dev Only</strong> for whitelisted tester emails), this superimposes the Arabian Heritage parchment, gold &amp; skyline theme across Travel FX, Home, and supported screens for all users — regardless of their current theme — until a user intentionally switches back in their personal Settings.
+                          When set to <strong>Live</strong> (or <strong>Dev Only</strong> for whitelisted tester emails), this superimposes the Arabian Heritage parchment, gold &amp; skyline theme across Travel FX, Home, and supported screens for all users — regardless of their current theme — until a user intentionally switches back in their personal Settings. While <strong>Off</strong>, Festival is hidden from every user&apos;s Settings, and anyone who picked it earlier is moved back to the Modern design. Their choice is kept, so it returns when you switch Festival on again.
                         </p>
                         <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-[#5c6b62]">
                           <span>
