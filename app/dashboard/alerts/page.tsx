@@ -27,7 +27,7 @@ type OpsAlert = {
   resolutionNote: string | null
 }
 
-type Recipient = { email: string; categories: Category[] }
+type Recipient = { id: string; email: string; categories: Category[] }
 
 const CATEGORIES: Array<{ value: Category; label: string; hint: string }> = [
   { value: "money", label: "Money & payments", hint: "Withdrawals, card charges, refunds, transfers" },
@@ -81,7 +81,7 @@ export default function EmergencyAlertsPage() {
     if (!canManageRecipients) return
     try {
       const rows = await api<Recipient[]>("/recipients")
-      setRecipients(rows.map((r) => ({ email: r.email, categories: r.categories })))
+      setRecipients(rows.map((r) => ({ id: crypto.randomUUID(), email: r.email, categories: r.categories })))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load alert recipients.")
     }
@@ -138,7 +138,7 @@ export default function EmergencyAlertsPage() {
         method: "PUT",
         body: JSON.stringify({ recipients: recipients.filter((r) => r.email.trim()) }),
       })
-      setRecipients(saved.map((r) => ({ email: r.email, categories: r.categories })))
+      setRecipients(saved.map((r) => ({ id: crypto.randomUUID(), email: r.email, categories: r.categories })))
       setNotice("Alert recipients saved. Anyone newly added has been sent a test email.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save recipients.")
@@ -339,7 +339,7 @@ export default function EmergencyAlertsPage() {
 
           <div className="mt-4 space-y-3">
             {recipients.map((recipient, index) => (
-              <div key={index} className="flex flex-col gap-3 rounded-lg border border-[#e3ebe6] p-3 lg:flex-row lg:items-center">
+              <div key={recipient.id} className="flex flex-col gap-3 rounded-lg border border-[#e3ebe6] p-3 lg:flex-row lg:items-center">
                 <input
                   type="email"
                   value={recipient.email}
@@ -383,7 +383,7 @@ export default function EmergencyAlertsPage() {
             <button
               type="button"
               disabled={recipients.length >= 10}
-              onClick={() => setRecipients((rows) => [...rows, { email: "", categories: ["money", "systems"] }])}
+              onClick={() => setRecipients((rows) => [...rows, { id: crypto.randomUUID(), email: "", categories: ["money", "systems"] }])}
               className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-[#b9ccc2] bg-white px-4 text-sm font-bold text-[#204236] hover:bg-[#edf5f0] disabled:opacity-50"
             >
               <Plus className="size-4" /> Add person
