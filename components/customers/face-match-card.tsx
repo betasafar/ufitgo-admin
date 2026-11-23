@@ -11,7 +11,16 @@ export type FaceCheckRecord = {
   at: string
 }
 
+export type FaceConsentRecord = {
+  accepted: boolean
+  acceptedVersion?: string | null
+  currentVersion?: string | null
+  acceptedAt?: string | null
+  withdrawnAt?: string | null
+}
+
 export type FaceMatchData = {
+  consent?: FaceConsentRecord | null
   done?: boolean
   matchedAt?: string | null
   hasReferenceSelfie?: boolean
@@ -54,7 +63,7 @@ function formatDateTime(value?: string | null) {
  * and lets staff with KYC permission open the saved selfie. The selfie is fetched only on click, as a
  * link that expires in two minutes, and every view is recorded in Audit Logs.
  */
-export function FaceMatchCard({ customerId, faceMatch }: { customerId: string | number; faceMatch?: FaceMatchData | null }) {
+export function FaceMatchCard({ customerId, faceMatch }: { readonly customerId: string | number; readonly faceMatch?: FaceMatchData | null }) {
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -81,13 +90,13 @@ export function FaceMatchCard({ customerId, faceMatch }: { customerId: string | 
       const response = await fetch(`/api/admin/customers/${customerId}/face-match/selfie`, { cache: "no-store" })
       const payload = await response.json().catch(() => null)
       if (!response.ok) {
-        setError(
-          response.status === 403
-            ? "You do not have permission to view face-match selfies."
-            : response.status === 404
-              ? "No selfie is saved for this customer."
-              : "Could not open the selfie. Please try again.",
-        )
+        let errorMessage = "Could not open the selfie. Please try again."
+        if (response.status === 403) {
+          errorMessage = "You do not have permission to view face-match selfies."
+        } else if (response.status === 404) {
+          errorMessage = "No selfie is saved for this customer."
+        }
+        setError(errorMessage)
         return
       }
       setSelfieUrl(payload.url)
@@ -132,6 +141,21 @@ export function FaceMatchCard({ customerId, faceMatch }: { customerId: string | 
           </div>
         </div>
       )}
+
+      <div className="rounded-lg border border-[#e4ebe7] bg-white p-2.5 text-xs text-[#32443d]">
+        <span className="font-semibold text-[#17201c]">Consent to face verification: </span>
+        {faceMatch?.consent?.accepted ? (
+          <>
+            Agreed on {formatDateTime(faceMatch.consent.acceptedAt)} (wording {faceMatch.consent.acceptedVersion})
+          </>
+        ) : faceMatch?.consent?.withdrawnAt ? (
+          <>Withdrawn on {formatDateTime(faceMatch.consent.withdrawnAt)}. The saved selfie was deleted.</>
+        ) : faceMatch?.consent?.acceptedVersion ? (
+          <>Agreed to older wording ({faceMatch.consent.acceptedVersion}); they will be asked again.</>
+        ) : (
+          <>Not recorded. Customers who matched before consent was added will be asked the next time a face check is needed.</>
+        )}
+      </div>
 
       {!done && <p className="text-sm text-[#5d6762]">This customer has not completed the face match to their BVN or NIN photo yet.</p>}
 
