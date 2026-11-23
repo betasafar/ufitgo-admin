@@ -24,6 +24,7 @@ const actionLabels: Record<string, string> = {
   VIEW_DOCUMENTS: "Viewed documents",
   UPLOAD_DOCUMENT: "Uploaded document",
   DELETE_DOCUMENT: "Deleted document",
+  VIEW_FACE_SELFIE: "Viewed face-match selfie",
 }
 
 const actionIcons: Record<string, React.ElementType> = {
@@ -34,6 +35,7 @@ const actionIcons: Record<string, React.ElementType> = {
   VIEW_DOCUMENTS: FileSearch,
   UPLOAD_DOCUMENT: Upload,
   DELETE_DOCUMENT: Trash2,
+  VIEW_FACE_SELFIE: FileSearch,
 }
 
 const actionOptions = [

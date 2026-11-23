@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react"
 import { ConciergeCallWidget } from "@/components/calls/concierge-call-widget"
 import { CallHistoryAndCtaPanel } from "@/components/calls/call-history-and-cta-panel"
 import { useAdminSession } from "@/components/auth/session-provider"
+import { FaceMatchCard, type FaceMatchData } from "@/components/customers/face-match-card"
 import {
   ArrowLeft,
   ArrowRight,
@@ -124,6 +125,7 @@ type KycData = {
   utilityBillUrl?: string | null
   livenessSelfieUrl?: string | null
   livenessConfidence?: number | null
+  faceMatch?: FaceMatchData | null
   securityQuestion?: string | null
   approvedDevices?: ApprovedDeviceRecord[]
   withdrawalBanks?: WithdrawalBankRecord[]
@@ -485,6 +487,7 @@ export default function CustomerDetailPage() {
           utilityBillUrl: pick(kycPayload?.utilityBillUrl),
           livenessSelfieUrl: pick(kycPayload?.livenessSelfieUrl),
           livenessConfidence: typeof kycPayload?.livenessConfidence === "number" ? kycPayload.livenessConfidence : null,
+          faceMatch: kycPayload?.faceMatch ?? null,
           securityQuestion: pick(kycPayload?.securityQuestion),
           approvedDevices: Array.isArray(kycPayload?.approvedDevices) ? kycPayload.approvedDevices : [],
           withdrawalBanks: Array.isArray(kycPayload?.withdrawalBanks) ? kycPayload.withdrawalBanks : [],
@@ -893,6 +896,8 @@ export default function CustomerDetailPage() {
                   )}
                 </div>
               </div>
+
+              <FaceMatchCard customerId={customerId} faceMatch={kyc?.faceMatch} />
 
               {/* Temporary Super-Admin-Only Setup Stage Reset Controls (matches Mobile "Complete your setup") */}
               {isSuperAdmin && (
