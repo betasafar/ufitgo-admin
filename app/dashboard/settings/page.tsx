@@ -145,6 +145,10 @@ type SystemConfig = {
     dropThresholdDays?: number
     scheduleEnforcement?: "report" | "notify" | "enforce"
     autoSaveMinMove?: number
+    faceCheckThreshold?: number
+    postChangeCapEnabled?: boolean
+    postChangeCapAmount?: number
+    postChangeCapHours?: number
     intelligence?: IntelligenceConfig
     hajjSeasonCampaign?: HajjSeasonCampaignConfig
     halalLock?: HalalLockConfig
@@ -164,7 +168,7 @@ type SystemConfig = {
 type PlatformSetting = { key: string; value?: string; description?: string }
 type TierLimitKey = "maxBalanceLimit" | "singleTransactionLimit" | "dailyTransactionLimit"
 type TierLimitDraft = Partial<Record<TierLimitKey, string>>
-const feeCardIds = ["early-exit", "ufitflex-withdrawals", "wefit-save", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "plan-check", "auto-save", "grace-period", "drop-threshold"] as const
+const feeCardIds = ["early-exit", "ufitflex-withdrawals", "wefit-save", "pilgrim-fx", "halal-lock", "intelligence", "kyc-tiers", "plan-check", "auto-save", "face-check", "post-change-cap", "grace-period", "drop-threshold"] as const
 type FeeCardId = (typeof feeCardIds)[number]
 
 const featureToggles: Array<{
@@ -187,6 +191,7 @@ const featureToggles: Array<{
   { key: "enableTravelDocs", badgeId: "docs", label: "Travel documents", desc: "Enable visa processing and travel document services." },
   { key: "enableTargetSavings", badgeId: "savings", label: "Plan & Save (Target Savings)", desc: "Enable the Plan & Save feature (UfitFlex, UfitSave, and WefitSave plans) for travel." },
   { key: "enableWefitSave", badgeId: "wefit-save", label: "WeFitSave (Group Savings)", desc: "Enable WeFitSave group savings pools, group invite codes, and shared Hajj/Umrah goals. Turn off to pause or hide WeFitSave if not launching it yet." },
+  { key: "enableSensitiveFaceCheck", label: "Face check for PIN and secret-question changes", desc: "Before a customer can change their PIN or secret question, they must pass a live face check against the selfie from their BVN face match. Needs the face match service to be deployed first (see Face check strictness below). Customers below Tier 2 are not asked." },
   { key: "enableAutoSave", label: "Auto-save rules", desc: "Let customers save part of every bank transfer into a UfitSave goal or WeFitSave group automatically (set up once with their PIN). Turning this off pauses all rules; nothing is deleted." },
   { key: "enableHalalLock", badgeId: "halal-lock", label: "Halal Lock (Fixed Tenor)", desc: "Enable fixed-tenor Halal lump-sum locks (90–365 days) with Mudarabah profit or 0% Wadiah safekeeping." },
   { key: "enableTravelIntelligence", badgeId: "intelligence", label: "Plan Open Slot (Hajj Intelligence)", desc: "Enable the Plan Open Slot banner/card on Home, availability alerts, and Hajj package comparison." },
@@ -772,7 +777,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function saveFeeField(field: "fees" | "savingsConfig", key: string, value: number | string): Promise<boolean> {
+  async function saveFeeField(field: "fees" | "savingsConfig", key: string, value: number | string | boolean): Promise<boolean> {
     try {
       const response = await fetch("/api/admin/customers/system/config", {
         method: "PATCH",
@@ -1188,6 +1193,10 @@ export default function SettingsPage() {
   const dropThresholdDays = useMemo(() => Number(config?.savingsConfig?.dropThresholdDays ?? 30), [config])
   const scheduleEnforcement = config?.savingsConfig?.scheduleEnforcement ?? "report"
   const autoSaveMinMove = Number(config?.savingsConfig?.autoSaveMinMove ?? 500)
+  const faceCheckThreshold = Number(config?.savingsConfig?.faceCheckThreshold ?? 0.45)
+  const postChangeCapEnabled = config?.savingsConfig?.postChangeCapEnabled === true
+  const postChangeCapAmount = Number(config?.savingsConfig?.postChangeCapAmount ?? 50000)
+  const postChangeCapHours = Number(config?.savingsConfig?.postChangeCapHours ?? 24)
   const earlyExitChargeHasChanges =
     (earlyExitChargePercentDraft !== null && Number(earlyExitChargePercentDraft) !== earlyExitChargePercent) ||
     (earlyExitChargeCapDraft !== null && Number(earlyExitChargeCapDraft) !== earlyExitChargeCap)
@@ -2637,6 +2646,78 @@ export default function SettingsPage() {
                   className="h-10 w-28 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]"
                 />
                 <span className="text-sm font-bold text-[#68716d]">NGN (min ₦100)</span>
+              </div>
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard
+              title="Face check strictness"
+              description="How closely a live selfie must match the customer's saved BVN selfie before they can change their PIN or secret question. Higher is stricter: fewer wrong people pass, but more real customers are asked to retry. In our tests the same person scored about 0.74 and different people 0.13 to 0.26. Turn the check on or off under Features."
+              isExpanded={!collapsedFeeCards.includes("face-check")}
+              onToggle={() => toggleFeeCard("face-check")}
+            >
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <input
+                  type="number"
+                  min="0.2"
+                  max="0.9"
+                  step="0.05"
+                  aria-label="Face check strictness"
+                  defaultValue={faceCheckThreshold}
+                  key={`face-threshold-${faceCheckThreshold}`}
+                  onBlur={(event) => {
+                    const val = Number(event.target.value)
+                    if (Number.isFinite(val) && val >= 0.2 && val <= 0.9 && val !== faceCheckThreshold) void saveFeeField("savingsConfig", "faceCheckThreshold", val)
+                  }}
+                  className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]"
+                />
+                <span className="text-sm font-bold text-[#68716d]">score (0.2 to 0.9, suggested 0.45)</span>
+              </div>
+            </CollapsibleFeeCard>
+            <CollapsibleFeeCard
+              title="Bank withdrawal cap after a PIN or secret-question change"
+              description="An extra guard, off by default. When on, for the set hours after a customer changes their PIN or secret question, their bank withdrawals are capped in total. Paying for bookings and moving money inside UfitGo are not affected."
+              isExpanded={!collapsedFeeCards.includes("post-change-cap")}
+              onToggle={() => toggleFeeCard("post-change-cap")}
+            >
+              <div className="flex flex-col gap-2 sm:items-end">
+                <select
+                  aria-label="Withdrawal cap after a security change"
+                  value={postChangeCapEnabled ? "on" : "off"}
+                  onChange={(event) => void saveFeeField("savingsConfig", "postChangeCapEnabled", event.target.value === "on")}
+                  className="h-10 rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-semibold text-[#17201c] outline-none focus:border-[#0d7d5f]"
+                >
+                  <option value="off">Off</option>
+                  <option value="on">On</option>
+                </select>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <input
+                    type="number"
+                    min="1000"
+                    step="1000"
+                    aria-label="Cap amount"
+                    defaultValue={postChangeCapAmount}
+                    key={`cap-amount-${postChangeCapAmount}`}
+                    onBlur={(event) => {
+                      const val = Number(event.target.value)
+                      if (Number.isFinite(val) && val >= 1000 && val !== postChangeCapAmount) void saveFeeField("savingsConfig", "postChangeCapAmount", val)
+                    }}
+                    className="h-10 w-28 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]"
+                  />
+                  <span className="text-sm font-bold text-[#68716d]">NGN in total, for</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="168"
+                    aria-label="Cap hours"
+                    defaultValue={postChangeCapHours}
+                    key={`cap-hours-${postChangeCapHours}`}
+                    onBlur={(event) => {
+                      const val = parseInt(event.target.value, 10)
+                      if (Number.isFinite(val) && val >= 1 && val <= 168 && val !== postChangeCapHours) void saveFeeField("savingsConfig", "postChangeCapHours", val)
+                    }}
+                    className="h-10 w-20 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]"
+                  />
+                  <span className="text-sm font-bold text-[#68716d]">hours</span>
+                </div>
               </div>
             </CollapsibleFeeCard>
             <CollapsibleFeeCard title="Missed payment grace period" description="Days before a missed savings milestone is flagged for restructuring." isExpanded={!collapsedFeeCards.includes("grace-period")} onToggle={() => toggleFeeCard("grace-period")}>
