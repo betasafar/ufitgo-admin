@@ -28,6 +28,12 @@ type IntelligenceConfig = {
   ramadanEndsOn?: string | null
   openSlotPasses?: Partial<Record<"hajj" | "ramadan" | "umrah", OpenSlotPassConfig>>
   earlyAccess?: Partial<Record<"hajj" | "ramadan" | "umrah", number>>
+  intro?: OpenSlotIntroConfig
+}
+
+type OpenSlotIntroConfig = {
+  enabled?: boolean
+  journeys?: Partial<Record<"hajj" | "ramadan" | "umrah", { enabled?: boolean; imageUrl?: string; title?: string; body?: string }>>
 }
 
 type OpenSlotPassConfig = {
@@ -998,6 +1004,17 @@ export default function SettingsPage() {
       showToast("error", "Set both Ramadan dates or leave both empty.")
       return
     }
+    for (const journey of ["hajj", "ramadan", "umrah"] as const) {
+      const intro = value.intro?.journeys?.[journey]
+      if (intro?.imageUrl && !/^https:\/\/\S+$/i.test(intro.imageUrl.trim())) {
+        showToast("error", `The ${journey} popup image must be a full https:// link.`)
+        return
+      }
+      if ((intro?.title ?? "").length > 60 || (intro?.body ?? "").length > 160) {
+        showToast("error", `The ${journey} popup headline must be 60 characters or fewer and the message 160 or fewer.`)
+        return
+      }
+    }
     const earlyHours = Object.values(value.earlyAccess ?? {})
     if (earlyHours.some((hours) => !Number.isInteger(Number(hours)) || Number(hours) < 0 || Number(hours) > 168)) {
       showToast("error", "Early access hours must be whole numbers from 0 to 168 (7 days).")
@@ -1218,8 +1235,11 @@ export default function SettingsPage() {
     ramadanEndsOn: null,
     openSlotPasses: defaultOpenSlotPasses,
     earlyAccess: { hajj: 0, ramadan: 0, umrah: 0 },
+    intro: { enabled: true, journeys: {} },
   }
   const earlyAccessHours = { hajj: 0, ramadan: 0, umrah: 0, ...intelligenceConfig.earlyAccess }
+  const introConfig = intelligenceConfig.intro ?? { enabled: true, journeys: {} }
+  const updateIntro = (next: OpenSlotIntroConfig) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, intro: next }))
   const openSlotPasses = { ...defaultOpenSlotPasses, ...intelligenceConfig.openSlotPasses }
   const campaignConfig = campaignDraft ?? config?.savingsConfig?.hajjSeasonCampaign ?? {
     mode: "planning" as const,
@@ -2540,6 +2560,61 @@ export default function SettingsPage() {
                             </label>
                           </div>
                         )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="mt-4 rounded-lg border border-[#d9dfdc] bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-[#17201c]">Open Slot introduction popup</p>
+                    <p className="mt-1 max-w-3xl text-xs leading-5 text-[#68716d]">
+                      A friendly one-time popup that introduces Open Slot to customers and sends them to the Slot Finder. It is designed not to annoy: customers see it at most twice per journey, at least 14 days apart, and never more than once a week across all journeys.
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs font-bold text-[#17201c]">
+                    <input type="checkbox" checked={introConfig.enabled !== false} onChange={(event) => updateIntro({ ...introConfig, enabled: event.target.checked })} className="h-4 w-4 accent-[#0d7d5f]" />
+                    Show the popup
+                  </label>
+                </div>
+                <ul className="mt-2 max-w-3xl list-disc space-y-1 pl-5 text-xs leading-5 text-[#68716d]">
+                  <li><strong>Who sees it:</strong> signed-in customers who have used the app on at least 2 different days and do not already have a pass for that journey. Never in a customer's first session.</li>
+                  <li><strong>When:</strong> only on Home or Explore after they have stayed a few seconds, a bit sooner when a search has very few results. Never during checkout, payment or while the app is locked, and never on top of another popup.</li>
+                  <li><strong>When it cannot show:</strong> if the Slot Finder is Disabled or the Plan Open Slot feature is off, or the journey's pass is not set to Paid (for Hajj, the season campaign must be Live). It then stays hidden everywhere, whatever is set here.</li>
+                  <li><strong>The button</strong> opens the Slot Finder for that journey. Customers see real results before they buy anything. "Not now" closes it.</li>
+                  <li>Leave the image and wording empty to use the built-in text, which already shows the pass price and what it includes. Changes reach customers within a minute of clicking <strong>Save Intelligence</strong>.</li>
+                </ul>
+                <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                  {(["umrah", "ramadan", "hajj"] as const).map((journey) => {
+                    const label = journey === "hajj" ? "Hajj" : journey === "ramadan" ? "Ramadan Umrah" : "Regular Umrah"
+                    const item = introConfig.journeys?.[journey] ?? {}
+                    const setItem = (patch: Partial<NonNullable<OpenSlotIntroConfig["journeys"]>["hajj"]>) => updateIntro({ ...introConfig, journeys: { ...introConfig.journeys, [journey]: { ...item, ...patch } } })
+                    const imageValid = !!item.imageUrl && /^https:\/\/\S+$/i.test(item.imageUrl.trim())
+                    return (
+                      <div key={journey} className="rounded-lg border border-[#dbe2de] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-bold text-[#17201c]">{label}</p>
+                          <label className="flex items-center gap-1.5 text-xs font-semibold text-[#68716d]">
+                            <input type="checkbox" aria-label={`Show the ${label} popup`} checked={item.enabled !== false} onChange={(event) => setItem({ enabled: event.target.checked })} className="h-4 w-4 accent-[#0d7d5f]" />
+                            Show
+                          </label>
+                        </div>
+                        <label className="mt-3 block text-xs font-semibold text-[#68716d]">Image link (optional)
+                          <input aria-label={`${label} popup image link`} type="url" placeholder="https://..." value={item.imageUrl ?? ""} onChange={(event) => setItem({ imageUrl: event.target.value })} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-normal outline-none focus:border-[#0d7d5f]" />
+                          <span className="mt-1 block text-xs font-normal leading-5">Use a landscape picture, about 1200 x 630 pixels, hosted on https. If it fails to load, customers simply see an icon instead.</span>
+                        </label>
+                        {imageValid && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={item.imageUrl?.trim()} alt={`${label} popup preview`} className="mt-2 aspect-[1.91/1] w-full rounded-lg border border-[#dbe2de] object-cover" />
+                        )}
+                        <label className="mt-3 block text-xs font-semibold text-[#68716d]">Headline (optional, up to 60 characters)
+                          <input aria-label={`${label} popup headline`} maxLength={60} placeholder={journey === "umrah" ? "Never miss an Umrah seat" : journey === "ramadan" ? "Secure your Ramadan Umrah seat" : "Find your Hajj seat early"} value={item.title ?? ""} onChange={(event) => setItem({ title: event.target.value })} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm font-normal outline-none focus:border-[#0d7d5f]" />
+                        </label>
+                        <label className="mt-3 block text-xs font-semibold text-[#68716d]">Message (optional, up to 160 characters)
+                          <textarea aria-label={`${label} popup message`} maxLength={160} rows={3} placeholder="Open Slot shows verified packages that still have seats for your whole group." value={item.body ?? ""} onChange={(event) => setItem({ body: event.target.value })} className="mt-1 block w-full rounded-lg border border-[#d3dad7] bg-white px-3 py-2 text-sm font-normal outline-none focus:border-[#0d7d5f]" />
+                        </label>
+                        <p className="mt-2 text-xs leading-5 text-[#68716d]">Only claim what is true. The popup already lists the pass benefits and price automatically.</p>
                       </div>
                     )
                   })}
