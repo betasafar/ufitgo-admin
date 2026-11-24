@@ -27,6 +27,7 @@ type IntelligenceConfig = {
   ramadanStartsOn?: string | null
   ramadanEndsOn?: string | null
   openSlotPasses?: Partial<Record<"hajj" | "ramadan" | "umrah", OpenSlotPassConfig>>
+  earlyAccess?: Partial<Record<"hajj" | "ramadan" | "umrah", number>>
 }
 
 type OpenSlotPassConfig = {
@@ -997,6 +998,11 @@ export default function SettingsPage() {
       showToast("error", "Set both Ramadan dates or leave both empty.")
       return
     }
+    const earlyHours = Object.values(value.earlyAccess ?? {})
+    if (earlyHours.some((hours) => !Number.isInteger(Number(hours)) || Number(hours) < 0 || Number(hours) > 168)) {
+      showToast("error", "Early access hours must be whole numbers from 0 to 168 (7 days).")
+      return
+    }
     const passConfigs = { ...defaultOpenSlotPasses, ...value.openSlotPasses }
     if (Object.values(passConfigs).some((pass) => !Number.isFinite(Number(pass.basePrice)) || Number(pass.basePrice) < 0 || !Number.isFinite(Number(pass.plusPrice)) || Number(pass.plusPrice) < Number(pass.basePrice))) {
       showToast("error", "Set valid Base and Plus pass prices. Plus cannot cost less than Base.")
@@ -1211,7 +1217,9 @@ export default function SettingsPage() {
     ramadanStartsOn: null,
     ramadanEndsOn: null,
     openSlotPasses: defaultOpenSlotPasses,
+    earlyAccess: { hajj: 0, ramadan: 0, umrah: 0 },
   }
+  const earlyAccessHours = { hajj: 0, ramadan: 0, umrah: 0, ...intelligenceConfig.earlyAccess }
   const openSlotPasses = { ...defaultOpenSlotPasses, ...intelligenceConfig.openSlotPasses }
   const campaignConfig = campaignDraft ?? config?.savingsConfig?.hajjSeasonCampaign ?? {
     mode: "planning" as const,
@@ -2536,6 +2544,36 @@ export default function SettingsPage() {
                     )
                   })}
                 </div>
+              </div>
+              <div className="mt-4 rounded-lg border border-[#d9dfdc] bg-white p-4">
+                <p className="text-sm font-bold text-[#17201c]">Early access for Open Slot Pass holders</p>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-[#68716d]">
+                  Give paying customers a head start. When you set hours here, every <strong>new</strong> package for that journey is shown only to customers with an active Open Slot Pass for the first few hours. After that it appears for everyone. Customers without a pass are told how many new packages are waiting, so they know what the pass offers, but cannot open them.
+                </p>
+                <ul className="mt-2 max-w-3xl list-disc space-y-1 pl-5 text-xs leading-5 text-[#68716d]">
+                  <li><strong>0 hours turns it off.</strong> New packages are public immediately, exactly as today. This is the starting setting.</li>
+                  <li>Only packages created from now on are affected. Packages that are already live stay visible to everyone.</li>
+                  <li>The wait starts when the operator creates the package. It applies to the app and the website lists. A direct link to a package always opens, and booking is never blocked.</li>
+                  <li>Pass holders also get availability alerts for these packages as soon as they appear.</li>
+                  <li>Choose a short window first (for example 24 hours) and check bookings before making it longer. The maximum is 168 hours (7 days).</li>
+                </ul>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  {(["hajj", "ramadan", "umrah"] as const).map((journey) => {
+                    const label = journey === "hajj" ? "Hajj" : journey === "ramadan" ? "Ramadan Umrah" : "Regular Umrah"
+                    const hours = Number(earlyAccessHours[journey] ?? 0)
+                    return (
+                      <label key={journey} className="text-xs font-semibold text-[#68716d]">{label}: hours before everyone else sees new packages
+                        <input aria-label={`${label} early access hours`} type="number" min="0" max="168" step="1" value={String(hours)} onChange={(event) => setIntelligenceDraft((current: IntelligenceConfig | null) => ({ ...intelligenceConfig, ...current, earlyAccess: { ...earlyAccessHours, [journey]: event.target.value === "" ? 0 : Number(event.target.value) } }))} className="mt-1 block h-10 w-full rounded-lg border border-[#d3dad7] bg-white px-3 text-sm outline-none focus:border-[#0d7d5f]" />
+                        <span className={`mt-1 block text-xs font-normal leading-5 ${hours > 0 ? "text-[#0d7d5f]" : "text-[#68716d]"}`}>
+                          {hours > 0
+                            ? `New ${label} packages are visible only to pass holders for ${hours} hour${hours === 1 ? "" : "s"}${hours >= 24 ? ` (about ${Math.round((hours / 24) * 10) / 10} day${hours === 24 ? "" : "s"})` : ""}, then to everyone.`
+                            : `Off: new ${label} packages are public immediately.`}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+                <p className="mt-3 text-xs leading-5 text-[#68716d]">Click <strong>Save Intelligence</strong> at the top of this card to apply. The app picks the change up within a minute.</p>
               </div>
               <div className="mt-4 rounded-lg border border-[#d9dfdc] bg-white p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
