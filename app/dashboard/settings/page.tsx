@@ -2552,6 +2552,7 @@ export default function SettingsPage() {
                 </p>
                 <ul className="mt-2 max-w-3xl list-disc space-y-1 pl-5 text-xs leading-5 text-[#68716d]">
                   <li><strong>0 hours turns it off.</strong> New packages are public immediately, exactly as today. This is the starting setting.</li>
+                  <li>It only takes effect for a journey whose Open Slot Pass is set to <strong>Paid</strong> above (and, for Hajj, when the Hajj season campaign is <strong>Live</strong>). Otherwise nobody could buy a pass to see the new packages, so they stay public.</li>
                   <li>Only packages created from now on are affected. Packages that are already live stay visible to everyone.</li>
                   <li>The wait starts when the operator creates the package. It applies to the app and the website lists. A direct link to a package always opens, and booking is never blocked.</li>
                   <li>Pass holders also get availability alerts for these packages as soon as they appear.</li>
