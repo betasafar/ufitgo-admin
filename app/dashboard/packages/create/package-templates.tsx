@@ -68,7 +68,7 @@ export function PackageTemplates({ onApply }: {
     <section className="rounded-2xl border border-[#dbe2de] bg-white p-6 shadow-sm">
       <h2 className="font-brand text-lg font-bold text-[#17201c]">Package templates</h2>
       <p className="mt-1 text-sm text-[#68716d]">Maintain reusable wording for Standard and Premium. Do not include unconfirmed trip-specific facts. Applying a template requires review and does not publish a package.</p>
-      <p className="mt-1 text-sm text-[#68716d]">Enter tentative departure ranges and expected hotel standards in the package fields, not as confirmed facts. Child-specific checkout discounts are not yet supported; do not promise a discount in template wording.</p>
+      <p className="mt-1 text-sm text-[#68716d]">Enter tentative departure ranges and expected hotel standards in the package fields, not as confirmed facts. {process.env.NEXT_PUBLIC_ENABLE_AGE_PRICING === "true" ? "Age discounts require a confirmed departure and passport verification." : "Child-specific checkout discounts are not enabled; do not promise a discount in template wording."}</p>
       <p className="mt-1 text-sm text-[#68716d]">Payment defaults are optional and never set a price or registration fee amount. Choose &quot;Leave unchanged&quot; to keep the current setting.</p>
       {message && <p role="status" className="mt-3 text-sm text-[#52605a]">{message}</p>}
       {loaded && (["standard", "premium"] as const).map((level) => (
