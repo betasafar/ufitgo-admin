@@ -12,6 +12,7 @@ type UpgradeRequest = {
   requestedTier: number
   status: "PENDING" | "APPROVED" | "REJECTED"
   createdAt: string
+  submittedDocuments?: { reviewType?: string }
   user?: { firstName?: string; lastName?: string; email?: string }
 }
 
@@ -152,6 +153,9 @@ export default function VerificationsPage() {
                     <td className="px-5 py-4">
                       <span className="block font-bold text-[#17201c]">{[request.user?.firstName, request.user?.lastName].filter(Boolean).join(" ") || "Unknown user"}</span>
                       <span className="mt-0.5 block text-xs text-[#72807b]">{request.user?.email || "No email"}</span>
+                      {request.submittedDocuments?.reviewType === "NIN_BVN_MISMATCH" && (
+                        <span className="mt-1 block text-xs font-bold text-[#a43229]">NIN/BVN identity mismatch</span>
+                      )}
                     </td>
                     <td className="px-5 py-4">
                       <span className="inline-flex items-center rounded-md border border-[#dfe7e3] bg-[#f7faf9] px-2.5 py-1 font-mono text-xs font-bold text-[#36413d]">

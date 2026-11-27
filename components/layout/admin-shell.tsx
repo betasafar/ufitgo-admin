@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import {
   ChevronDown,
   ChevronRight,
@@ -32,6 +33,37 @@ import { cn } from "@/lib/utils"
 
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "UA"
+}
+
+function KycReviewNotifications() {
+  const { can } = useAdminSession()
+  const enabled = can(["kyc.manage"])
+  const { data, error } = useQuery({
+    queryKey: ["kyc-review-notifications"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/kyc/upgrades?status=PENDING&page=1&limit=1", { cache: "no-store" })
+      const payload: unknown = await response.json()
+      if (!response.ok) throw new Error("Unable to load KYC review notifications")
+      if (!payload || typeof payload !== "object" || !("total" in payload) ||
+          typeof payload.total !== "number" || !Number.isInteger(payload.total) || payload.total < 0) {
+        throw new Error("Invalid KYC review notification response")
+      }
+      return payload.total
+    },
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+  if (!enabled || (!error && !data)) return null
+  return (
+    <Link href="/dashboard/verifications" role={error ? "alert" : undefined}
+      aria-label={error ? "KYC review notifications unavailable. Open verifications." : `${data} pending KYC reviews`}
+      className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-[#f1e0a9] bg-[#fff6dc] px-3 py-2 text-xs font-bold text-[#8a6500]">
+      <ShieldCheck className="size-4" />
+      <span className="hidden sm:inline">{error ? "KYC alerts unavailable" : "KYC reviews"}</span>
+      {!error && <span aria-live="polite">{data}</span>}
+    </Link>
+  )
 }
 
 function isActive(pathname: string, href: string) {
@@ -175,6 +207,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <button type="button" aria-label={desktopCollapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => setDesktopCollapsed((collapsed) => !collapsed)} className="hidden size-9 place-items-center rounded-lg text-[#66716c] hover:bg-[#edf3f0] lg:grid">{desktopCollapsed ? <PanelLeftOpen className="size-[18px]" /> : <PanelLeftClose className="size-[18px]" />}</button>
           <div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-[#89918d]">Admin workspace</p><h1 className="truncate text-base font-bold text-[#17201c]">{currentPage?.label || "UfitGo Admin"}</h1></div>
           <div className="relative hidden min-w-0 max-w-md flex-1 xl:block"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#8b9490]" /><input value={bookingSearch} onChange={(event) => setBookingSearch(event.target.value)} placeholder="Search bookings" aria-label="Search bookings" className="h-10 w-full rounded-lg border border-[#d9dfdc] bg-[#f7faf9] pl-9 pr-3 text-sm outline-none focus:border-[#0d7d5f]" />{bookingSearch && <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-xl border border-[#d9dfdc] bg-white shadow-xl">{bookingSearching ? <p className="p-4 text-sm text-[#68716d]">Searching…</p> : bookingResults.length ? bookingResults.map((booking) => <button key={booking.id} type="button" onClick={() => { setBookingSearch(""); router.push(`/dashboard/journeys/${booking.id}`) }} className="flex w-full items-center justify-between gap-3 border-b border-[#edf1ef] px-4 py-3 text-left last:border-0 hover:bg-[#f7faf9]"><span><span className="block text-sm font-semibold text-[#17201c]">{booking.bookingRef || `Booking #${booking.id}`}</span><span className="block text-xs text-[#68716d]">{booking.pilgrimName || "Applicant"}</span></span><span className="text-xs font-bold text-[#0d7d5f]">Open</span></button>) : <p className="p-4 text-sm text-[#68716d]">No bookings found.</p>}</div>}</div>
+          <KycReviewNotifications />
           <UserMenu />
         </header>
         <AdminIncomingCallBanner />

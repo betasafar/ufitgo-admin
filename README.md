@@ -10,6 +10,20 @@ This repository is linked to a [v0](https://v0.app) project. You can continue de
 
 ## Getting Started
 
+### Identity mismatch reviews
+
+Verification requests flag NIN/BVN mismatches and show the two provider-returned
+names and DOB in the protected detail view. Approval requires a resolution
+reason describing supporting evidence; missing provider records cannot be
+approved. Resolving identity alone does not waive the remaining Tier 3 checks.
+The admin API enforces `kyc.manage` and records the authenticated reviewer.
+Configure compliance email recipients in Alerts; the same Ops Alerts system
+provides in-app alerts linking to the review. Deploy the corresponding user API
+identity-evidence migration and admin API before enabling this UI.
+The admin header also polls the pending KYC review count every minute for
+`kyc.manage` reviewers, linking to the review queue without requiring payment
+permissions. Notification lookup failures are shown explicitly.
+
 First, run the development server:
 
 ```bash

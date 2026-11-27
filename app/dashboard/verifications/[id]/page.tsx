@@ -27,7 +27,14 @@ type UpgradeRequest = {
   approvedAt?: string | null
   rejectedAt?: string | null
   rejectionReason?: string | null
-  submittedDocuments?: { livenessImageUrl?: string; utilityBillUrl?: string; utilityBillImageUrl?: string }
+  submittedDocuments?: {
+    livenessImageUrl?: string; utilityBillUrl?: string; utilityBillImageUrl?: string
+    reviewType?: string
+    mismatchedFields?: string[]
+    ninIdentity?: { firstName: string; lastName: string; dateOfBirth: string; provider: string; verifiedAt: string } | null
+    bvnIdentity?: { firstName: string; lastName: string; dateOfBirth: string; provider: string; verifiedAt: string } | null
+    resolutionReason?: string
+  }
   user?: { id?: string; firstName?: string; lastName?: string; email?: string }
 }
 
@@ -68,6 +75,7 @@ export default function VerificationDetailPage() {
 
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [rejectionReason, setRejectionReason] = useState("")
+  const [resolutionReason, setResolutionReason] = useState("")
 
   const { data: request, isLoading, error } = useQuery<UpgradeRequest>({
     queryKey: ["kyc-upgrade", id],
@@ -87,14 +95,16 @@ export default function VerificationDetailPage() {
       fetch(`/api/admin/kyc/upgrades/${id}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ resolutionReason: resolutionReason.trim() }),
       }).then(async (response) => {
-        if (!response.ok) throw new Error("Unable to approve request")
-        return response.json()
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload?.details?.message || payload?.message || "Unable to approve request")
+        return payload
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["kyc-upgrade", id] })
       void queryClient.invalidateQueries({ queryKey: ["kyc-upgrades"] })
+      void queryClient.invalidateQueries({ queryKey: ["kyc-review-notifications"] })
     },
   })
 
@@ -111,6 +121,7 @@ export default function VerificationDetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["kyc-upgrade", id] })
       void queryClient.invalidateQueries({ queryKey: ["kyc-upgrades"] })
+      void queryClient.invalidateQueries({ queryKey: ["kyc-review-notifications"] })
       setShowRejectForm(false)
       setRejectionReason("")
     },
@@ -136,6 +147,7 @@ export default function VerificationDetailPage() {
   }
 
   const documents = request.submittedDocuments || {}
+  const isIdentityReview = documents.reviewType === "NIN_BVN_MISMATCH"
   const resolvedUtilityBillUrl = documents.utilityBillUrl || documents.utilityBillImageUrl
   const hasDocuments = Boolean(documents.livenessImageUrl || resolvedUtilityBillUrl)
 
@@ -159,6 +171,25 @@ export default function VerificationDetailPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="space-y-6">
+          {isIdentityReview && (
+            <section className="rounded-2xl border border-[#f1e0a9] bg-[#fff6dc] p-6">
+              <h2 className="flex items-center gap-2 font-bold text-[#8a6500]"><AlertCircle className="size-5" /> NIN/BVN identity mismatch</h2>
+              <p className="mt-2 text-sm">The upgrade is blocked. Review the provider records and obtain evidence resolving: {documents.mismatchedFields?.join(", ") || "missing identity details"}.</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {(["ninIdentity", "bvnIdentity"] as const).map((key) => (
+                  <div key={key} className="rounded-xl bg-white p-4 text-sm">
+                    <h3 className="font-bold">{key === "ninIdentity" ? "Verified NIN record" : "BVN face-match record"}</h3>
+                    {documents[key] ? <>
+                      <p className="mt-2">{documents[key].firstName} {documents[key].lastName}</p>
+                      <p>DOB: {documents[key].dateOfBirth}</p>
+                      <p className="mt-2 text-xs text-[#68716d]">{documents[key].provider} · {documents[key].verifiedAt}</p>
+                    </> : <p className="mt-2">Provider identity details missing. Do not approve until verified evidence is available.</p>}
+                  </div>
+                ))}
+              </div>
+              {documents.resolutionReason && <p className="mt-4 text-sm">Resolution: {documents.resolutionReason}</p>}
+            </section>
+          )}
           <section className="rounded-2xl border border-[#dbe2de] bg-white p-6 shadow-sm">
             <h2 className="font-brand text-lg font-bold text-[#17201c]">Personal profile information</h2>
             <div className="mt-5 grid gap-5 sm:grid-cols-2">
@@ -172,7 +203,7 @@ export default function VerificationDetailPage() {
           <section className="rounded-2xl border border-dashed border-[#cfeee0] bg-[#f7faf9] p-6">
             <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[#78817d]"><CreditCard className="size-4 text-[#0d7d5f]" /> Identity records for validation (Tier {request.requestedTier})</h2>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              {request.requestedTier === 2 && documents.livenessImageUrl && (
+              {(request.requestedTier === 2 || isIdentityReview) && documents.livenessImageUrl && (
                 <div className="rounded-2xl border border-[#dbe2de] bg-white p-5 text-center shadow-sm">
                   <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[#9aa39e]">Liveness selfie</p>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -232,10 +263,19 @@ export default function VerificationDetailPage() {
                     <AlertCircle className="size-4 shrink-0" />
                     <p>Verification is manual. Confirm the credentials against the relevant national database before proceeding.</p>
                   </div>
+                  {isIdentityReview && (
+                    <>
+                      <label htmlFor="identity-resolution" className="block text-xs font-bold">Evidence resolving the identity discrepancy</label>
+                      <textarea id="identity-resolution" value={resolutionReason} onChange={(event) => setResolutionReason(event.target.value)}
+                        placeholder="Record the evidence establishing that both records belong to this user."
+                        className="h-28 w-full rounded-lg border border-[#d3dad7] px-3 py-2 text-sm" />
+                      <p className="text-xs text-[#68716d]">Approval resolves identity only. Remaining Tier 3 requirements must still pass.</p>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => approveMutation.mutate()}
-                    disabled={approveMutation.isPending}
+                    disabled={approveMutation.isPending || rejectMutation.isPending || (isIdentityReview && (!resolutionReason.trim() || !documents.ninIdentity || !documents.bvnIdentity))}
                     className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#0d7d5f] px-4 py-3 text-sm font-bold text-white hover:bg-[#0b6b51] disabled:opacity-50"
                   >
                     {approveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <><CheckCircle2 className="size-4" /> Approve verification</>}
@@ -263,6 +303,11 @@ export default function VerificationDetailPage() {
               </div>
             )}
           </section>
+          {(approveMutation.error || rejectMutation.error) && (
+            <p role="alert" className="rounded-lg bg-[#fff0ee] p-4 text-sm text-[#a43229]">
+              {(approveMutation.error || rejectMutation.error)?.message}
+            </p>
+          )}
         </div>
       </div>
     </main>
