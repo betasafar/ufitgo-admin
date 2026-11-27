@@ -15,6 +15,7 @@ type PackageRecord = {
   capacity?: number | string
   booked?: number | string
   status?: string
+  reviewStatus?: string
   departureDate?: string
   returnDate?: string
   operatorId?: string | number
@@ -57,6 +58,7 @@ function normalizePackage(raw: any): PackageRecord {
     capacity: pick(raw?.capacity, 0),
     booked: pick(raw?.booked, 0),
     status: pick(raw?.status, "draft"),
+    reviewStatus: raw?.reviewStatus,
     departureDate: pick(raw?.departureDate, raw?.departure_date),
     returnDate: pick(raw?.returnDate, raw?.return_date),
     operatorId: pick(raw?.operator?.id, raw?.operatorId),
@@ -256,6 +258,7 @@ export default function PackagesPage() {
                 { value: "active", label: "Active" },
                 { value: "past", label: "Past" },
                 { value: "draft", label: "Draft" },
+                { value: "pending_review", label: "Pending review" },
                 { value: "inactive", label: "Inactive" },
                 { value: "all", label: "All statuses" },
               ]}

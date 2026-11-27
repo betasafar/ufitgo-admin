@@ -196,7 +196,7 @@ const featureToggles: Array<{
   { key: "enableVisaProgress", label: "Visa progress", desc: "Enable internal visa status updates, customer timeline, and the official Saudi portal link." },
   { key: "enablePassportAssist", badgeId: "passport", label: "Passport assist", desc: "Enable passport application and renewal services." },
   { key: "enableTravelDocs", badgeId: "docs", label: "Travel documents", desc: "Enable visa processing and travel document services." },
-  { key: "enableTargetSavings", badgeId: "savings", label: "Plan & Save (Target Savings)", desc: "Enable the Plan & Save feature (UfitFlex, UfitSave, and WefitSave plans) for travel." },
+  { key: "enableTargetSavings", badgeId: "savings", label: "Target Savings (Target Savings)", desc: "Enable the Target Savings feature (UfitFlex, UfitSave, and WefitSave plans) for travel." },
   { key: "enableWefitSave", badgeId: "wefit-save", label: "WeFitSave (Group Savings)", desc: "Enable WeFitSave group savings pools, group invite codes, and shared Hajj/Umrah goals. Turn off to pause or hide WeFitSave if not launching it yet." },
   { key: "enableSensitiveFaceCheck", label: "Face check for PIN and secret-question changes", desc: "Before a customer can change their PIN or secret question, they must pass a live face check against the selfie from their BVN face match. Needs the face match service to be deployed first (see Face check strictness below). Customers below Tier 2 are not asked." },
   { key: "enableAutoSave", label: "Auto-save rules", desc: "Let customers save part of every bank transfer into a UfitSave goal or WeFitSave group automatically (set up once with their PIN). Turning this off pauses all rules; nothing is deleted." },
@@ -220,7 +220,7 @@ const toolkitModulesMeta: Record<
 > = {
   savings: {
     id: "savings",
-    label: "Plan & Save",
+    label: "Target Savings",
     desc: "Direct savings deposits (UfitFlex, UfitSave & WefitSave), TVL growth, and package lock-in.",
     featureKey: "enableTargetSavings",
     commercialTier: "Revenue Driver",
@@ -1772,7 +1772,7 @@ export default function SettingsPage() {
           <h2 className="font-brand text-lg font-bold text-[#17201c]">Fees & savings automation</h2>
           <p className="mt-1 text-sm text-[#68716d]">Numbers that drive early-exit service charges and savings-plan enforcement.</p>
           <div className="mt-5 space-y-3">
-            <CollapsibleFeeCard title="Plan & Save Platform Service Charge (UfitSave & WefitSave)" description="Applied per individual early cash withdrawal from UfitSave or WefitSave before maturity, up to the configured NGN cap. Moving matured funds to UfitFlex or booking an Umrah, Hajj, or Tour package on UfitGo is always 0% (Free)." isExpanded={!collapsedFeeCards.includes("early-exit")} onToggle={() => toggleFeeCard("early-exit")}>
+            <CollapsibleFeeCard title="Target Savings Platform Service Charge (UfitSave & WefitSave)" description="Applied per individual early cash withdrawal from UfitSave or WefitSave before maturity, up to the configured NGN cap. Moving matured funds to UfitFlex or booking an Umrah, Hajj, or Tour package on UfitGo is always 0% (Free)." isExpanded={!collapsedFeeCards.includes("early-exit")} onToggle={() => toggleFeeCard("early-exit")}>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <input aria-label="Early exit charge percentage" type="number" step="0.01" min="0" max="100" value={earlyExitChargePercentDraft ?? earlyExitChargePercent.toFixed(2)} onChange={(event) => setEarlyExitChargePercentDraft(event.target.value)} className="h-10 w-24 rounded-lg border border-[#d3dad7] bg-white px-3 text-right text-sm outline-none focus:border-[#0d7d5f]" />
                 <span className="text-sm font-bold text-[#68716d]">%</span>

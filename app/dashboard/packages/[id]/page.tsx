@@ -36,6 +36,36 @@ type PackageDetailRecord = {
   capacity?: number | string
   booked?: number | string
   status?: string
+  reviewStatus?: string
+  reviewToken?: string
+  reviewReason?: string
+  reviewSubmittedAt?: string
+  itinerary?: string
+  accommodation?: string
+  accommodationDetails?: Array<{ city?: string; status?: string; hotelName?: string; expectedStandard?: string; nights?: number; roomSharing?: string; substitution?: string }>
+  servicesDisclosure?: string
+  priceBasis?: string
+  exclusions?: string
+  requiredDocuments?: string
+  childPolicy?: string
+  agePricingRule?: { adultAge: number; infantAge: number; childDiscountPercent: number | null; infantDiscountPercent: number | null } | null
+  operatorPolicyVersionId?: string
+  expectedDepartureStart?: string
+  expectedDepartureEnd?: string
+  bookingCloseDate?: string
+  registrationFeeEnabled?: boolean
+  registrationFeeAmount?: number | string
+  registrationFeeBasis?: string
+  installmentEligible?: boolean
+  initialDeposit?: number | string
+  finalBalance?: number | string
+  installmentSplitPercent?: number | null
+  groupDiscountEnabled?: boolean
+  groupDiscountThreshold?: number
+  groupDiscountPercentage?: number | string
+  priceOnRequest?: boolean
+  duration?: number
+  extensions?: Array<{ id?: number; name?: string; price?: number | string }>
   salesStatus?: string
   departureDate?: string
   returnDate?: string
@@ -114,6 +144,10 @@ export default function PackageDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [statusSaving, setStatusSaving] = useState(false)
+  const [reviewSaving, setReviewSaving] = useState(false)
+  const [reviewReason, setReviewReason] = useState("")
+  const [reviewPolicy, setReviewPolicy] = useState<{ id: string; title: string; content: string; status: string } | null>(null)
+  const [reviewPolicyError, setReviewPolicyError] = useState("")
   const [salesStatusSaving, setSalesStatusSaving] = useState(false)
   const [commissionSaving, setCommissionSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -157,6 +191,26 @@ export default function PackageDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
+  useEffect(() => {
+    if (pkg?.reviewStatus !== "pending" || !pkg.operator?.id || !pkg.operatorPolicyVersionId) {
+      setReviewPolicy(null)
+      return
+    }
+    let active = true
+    setReviewPolicy(null)
+    setReviewPolicyError("")
+    fetch(`/api/admin/operator-policies?operatorId=${encodeURIComponent(String(pkg.operator.id))}`, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json()
+        if (!response.ok || !Array.isArray(payload?.data)) throw new Error("Unable to load the assigned policy.")
+        const policy = payload.data.find((item: { id: string; status: string }) => item.id === pkg.operatorPolicyVersionId && item.status === "published")
+        if (!policy) throw new Error("The assigned published policy is no longer available.")
+        if (active) setReviewPolicy(policy)
+      })
+      .catch((error: unknown) => { if (active) setReviewPolicyError(error instanceof Error ? error.message : "Unable to load the assigned policy.") })
+    return () => { active = false }
+  }, [pkg?.reviewStatus, pkg?.operator?.id, pkg?.operatorPolicyVersionId])
+
   const stats = useMemo(() => {
     const totalPilgrims = bookings.reduce((sum, b) => sum + Number(b.numberOfPilgrims || 1), 0)
     const totalRevenue = bookings.reduce((sum, b) => sum + Number(b.paymentBreakdown?.totalPaid ?? b.totalPaid ?? b.amountPaid ?? 0), 0)
@@ -173,12 +227,39 @@ export default function PackageDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: nextStatus }),
       })
-      if (!response.ok) throw new Error("Unable to update status")
+      if (!response.ok) {
+        const payload = await response.json()
+        throw new Error(payload?.details?.message || payload?.message || "Unable to update status")
+      }
       setPkg((current) => (current ? { ...current, status: nextStatus } : current))
-    } catch {
-      window.alert("Failed to update package status.")
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to update package status.")
     } finally {
       setStatusSaving(false)
+    }
+  }
+
+  async function decideReview(decision: "approve" | "reject") {
+    if (!pkg?.reviewToken) return
+    if (decision === "reject" && !reviewReason.trim()) {
+      window.alert("Enter the changes required before rejecting this submission.")
+      return
+    }
+    if (!window.confirm(decision === "approve" ? "Approve and publish this reviewed package?" : "Return this package to the operator with the reason entered?")) return
+    setReviewSaving(true)
+    try {
+      const response = await fetch(`/api/admin/operator-auth/packages/${id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: pkg.reviewToken, decision, reason: reviewReason }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload?.details?.message || payload?.message || "Unable to decide review")
+      await load()
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to decide review")
+    } finally {
+      setReviewSaving(false)
     }
   }
 
@@ -285,7 +366,7 @@ export default function PackageDetailPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <Link href={`/dashboard/packages/${id}/edit`} className="inline-flex items-center gap-2 rounded-lg border border-[#d9dfdc] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0]">Edit package</Link>
-          <button type="button" onClick={() => void toggleStatus()} disabled={statusSaving} className="inline-flex items-center gap-2 rounded-lg border border-[#d9dfdc] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0] disabled:opacity-50">
+          <button type="button" onClick={() => void toggleStatus()} disabled={statusSaving || pkg.reviewStatus === "pending" || (!isActive && !["approved", "legacy"].includes(pkg.reviewStatus || ""))} className="inline-flex items-center gap-2 rounded-lg border border-[#d9dfdc] bg-white px-4 py-2.5 text-sm font-bold text-[#32443d] hover:bg-[#edf3f0] disabled:opacity-50">
             {statusSaving ? <Loader2 className="size-4 animate-spin" /> : null}
             {isActive ? "Deactivate" : "Activate"}
           </button>
@@ -299,6 +380,44 @@ export default function PackageDetailPage() {
           </button>
         </div>
       </header>
+
+      {pkg.reviewStatus === "pending" && <section className="rounded-2xl border border-[#e4c96b] bg-[#fffdf3] p-5">
+        <h2 className="text-lg font-bold">Publication review</h2>
+        <p className="mt-2 text-sm">Submitted {formatDate(pkg.reviewSubmittedAt)}. Review the details below and the assigned cancellation policy before approving. The package is locked during review.</p>
+        <dl className="mt-4 grid gap-3 md:grid-cols-2">
+          {([
+            ["Description", pkg.description], ["Itinerary", pkg.itinerary], ["Accommodation", pkg.accommodation],
+            ["Services", pkg.servicesDisclosure], ["Inclusions", pkg.inclusions?.join(", ")], ["Exclusions", pkg.exclusions],
+            ["Required documents", pkg.requiredDocuments], ["Child and infant policy", pkg.childPolicy],
+            ["Price", pkg.priceOnRequest ? "On request" : formatNaira(pkg.price)], ["Price basis", pkg.priceBasis],
+            ["Registration fee", pkg.registrationFeeEnabled ? `${formatNaira(pkg.registrationFeeAmount)} ${pkg.registrationFeeBasis === "per_booking" ? "per booking" : "per traveller"}` : "None"],
+            ["Installments", pkg.installmentEligible ? `${formatNaira(pkg.initialDeposit)} initially, ${formatNaira(pkg.finalBalance)} final${pkg.installmentSplitPercent ? ` (${pkg.installmentSplitPercent}%)` : ""}` : "Full payment"],
+            ["Group discount", pkg.groupDiscountEnabled ? `${pkg.groupDiscountPercentage}% for ${pkg.groupDiscountThreshold}+ travellers` : "None"],
+            ["Age discounts", pkg.agePricingRule ? `Adult ${pkg.agePricingRule.adultAge}+, child ${pkg.agePricingRule.infantAge}–${pkg.agePricingRule.adultAge - 1}: ${pkg.agePricingRule.childDiscountPercent === null ? "not offered" : `${pkg.agePricingRule.childDiscountPercent}%`}; infant under ${pkg.agePricingRule.infantAge}: ${pkg.agePricingRule.infantDiscountPercent === null ? "not offered" : `${pkg.agePricingRule.infantDiscountPercent}%`}` : "Not enabled"],
+            ["Departure", pkg.departureDate || (pkg.expectedDepartureStart && pkg.expectedDepartureEnd ? `${pkg.expectedDepartureStart} to ${pkg.expectedDepartureEnd} (unconfirmed)` : "Not confirmed")],
+            ["Return", pkg.returnDate || "Not confirmed"], ["Route", `${pkg.departingFrom || "Unconfirmed"} to ${pkg.goingTo || "Unconfirmed"}`],
+            ["Duration and capacity", `${pkg.duration || "Not set"} days; ${pkg.capacity || "Not set"} places`],
+            ["Booking closes", pkg.bookingCloseDate || "Not set"], ["Policy version", pkg.operatorPolicyVersionId],
+            ["Optional add-ons", pkg.extensions?.map((item) => `${item.name || "Add-on"} (${formatNaira(item.price)})`).join(", ") || "None"],
+          ] as Array<[string, string | undefined]>).map(([label, value]) => <div key={label}>
+            <dt className="text-xs font-bold uppercase text-[#68716d]">{label}</dt>
+            <dd className="mt-1 whitespace-pre-wrap text-sm">{value || "Not provided"}</dd>
+          </div>)}
+        </dl>
+        {pkg.accommodationDetails?.map((hotel, index) => <p key={index} className="mt-3 text-sm">{hotel.city}: {hotel.status === "confirmed" ? hotel.hotelName : "Not confirmed"} {hotel.expectedStandard && `(${hotel.expectedStandard}, expected)`} {hotel.nights && `— ${hotel.nights} nights`} {hotel.roomSharing && `; ${hotel.roomSharing}`} {hotel.substitution && `; ${hotel.substitution}`}</p>)}
+        <div className="mt-4 rounded-lg border border-[#d9dfdc] bg-white p-4">
+          <h3 className="font-bold">Assigned policy: {reviewPolicy?.title || "Loading"}</h3>
+          {reviewPolicyError ? <p className="mt-2 text-sm text-[#b2382f]">{reviewPolicyError} Return the package for changes or retry.</p> :
+            <p className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap text-sm">{reviewPolicy?.content || "Loading policy..."}</p>}
+        </div>
+        <label className="mt-4 block text-sm font-bold">Reason if returning for changes
+          <textarea value={reviewReason} maxLength={2000} onChange={(event) => setReviewReason(event.target.value)} className="mt-2 block w-full rounded-lg border border-[#d9dfdc] p-3" />
+        </label>
+        <div className="mt-4 flex gap-3">
+          <button type="button" disabled={reviewSaving || !reviewPolicy} onClick={() => void decideReview("approve")} className="rounded-lg bg-[#0d7d5f] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Approve and publish</button>
+          <button type="button" disabled={reviewSaving || !reviewReason.trim()} onClick={() => void decideReview("reject")} className="rounded-lg border border-[#b2382f] px-4 py-2 text-sm font-bold text-[#b2382f] disabled:opacity-50">Return for changes</button>
+        </div>
+      </section>}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-[#dbe2de] bg-white p-4">

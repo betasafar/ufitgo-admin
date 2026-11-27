@@ -94,7 +94,7 @@ function formatDate(value: string) {
 }
 
 function purposeLabel(purpose: AlertPurpose) {
-  return purpose === "HAJJ_OPENING" ? "Hajj opening" : "Plan & Save"
+  return purpose === "HAJJ_OPENING" ? "Hajj opening" : "Target Savings"
 }
 
 function createDraft(purpose: AlertPurpose): CampaignDraft {
@@ -102,14 +102,14 @@ function createDraft(purpose: AlertPurpose): CampaignDraft {
   return {
     purpose,
     audience: "ALL_ACTIVE",
-    title: isHajj ? "Hajj packages are now available" : "Plan & Save is now available",
+    title: isHajj ? "Hajj packages are now available" : "Target Savings is now available",
     message: isHajj
       ? "Verified Hajj packages are now available. View current options and compare departures from your city."
-      : "Plan & Save is now available. Start planning and building towards your journey today.",
-    emailSubject: isHajj ? "Hajj packages are now available on UfitGo" : "Plan & Save is now available on UfitGo",
+      : "Target Savings is now available. Start planning and building towards your journey today.",
+    emailSubject: isHajj ? "Hajj packages are now available on UfitGo" : "Target Savings is now available on UfitGo",
     emailBody: isHajj
       ? "Verified Hajj packages are now available on UfitGo. View current options and compare departures from your city."
-      : "Plan & Save is now available on UfitGo. Start planning and building towards your journey today.",
+      : "Target Savings is now available on UfitGo. Start planning and building towards your journey today.",
     actionUrl: isHajj ? "ufitgo://intelligence?type=hajj" : "ufitgo://wallet/target-savings",
     scheduledAt: "",
   }
@@ -233,7 +233,7 @@ export default function JourneyAlertsPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-1.5 text-sm font-medium text-[#36413d]">Audience
-              <AppSelect value={draft.purpose} onValueChange={(value) => setDraft(createDraft(value as AlertPurpose))} options={[{ value: "HAJJ_OPENING", label: "Active Hajj-opening subscribers" }, { value: "TARGET_SAVINGS", label: "Active Plan & Save subscribers" }]} />
+              <AppSelect value={draft.purpose} onValueChange={(value) => setDraft(createDraft(value as AlertPurpose))} options={[{ value: "HAJJ_OPENING", label: "Active Hajj-opening subscribers" }, { value: "TARGET_SAVINGS", label: "Active Target Savings subscribers" }]} />
             </label>
             <label className="space-y-1.5 text-sm font-medium text-[#36413d]">Recipients
               <AppSelect value={draft.audience} onValueChange={(value) => setDraft({ ...draft, audience: value as CampaignAudience })} options={[{ value: "ALL_ACTIVE", label: "All active subscribers" }, { value: "UNNOTIFIED", label: "Only subscribers not yet notified" }]} />
@@ -265,7 +265,7 @@ export default function JourneyAlertsPage() {
       <section className="space-y-4">
         <div className="flex flex-col gap-4 rounded-xl border border-[#d9dfdc] bg-white p-4 lg:flex-row">
           <form onSubmit={handleSearch} className="flex flex-1 gap-2"><Input aria-label="Search alerts by customer name or email" type="search" maxLength={254} placeholder="Search name or email" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} /><Button type="submit" className="bg-[#07845f] text-white hover:bg-[#0c6b50]"><Search className="size-4" /> Search</Button></form>
-          <div className="flex items-center gap-2 sm:w-56"><span className="text-sm text-[#68716d]">Alert</span><AppSelect value={purpose} onValueChange={(value) => { setPurpose(value); setPage(1) }} options={[{ value: "all", label: "All alerts" }, { value: "HAJJ_OPENING", label: "Hajj opening" }, { value: "TARGET_SAVINGS", label: "Plan & Save" }]} /></div>
+          <div className="flex items-center gap-2 sm:w-56"><span className="text-sm text-[#68716d]">Alert</span><AppSelect value={purpose} onValueChange={(value) => { setPurpose(value); setPage(1) }} options={[{ value: "all", label: "All alerts" }, { value: "HAJJ_OPENING", label: "Hajj opening" }, { value: "TARGET_SAVINGS", label: "Target Savings" }]} /></div>
           <div className="flex items-center gap-2 sm:w-52"><span className="text-sm text-[#68716d]">Status</span><AppSelect value={status} onValueChange={(value) => { setStatus(value); setPage(1) }} options={[{ value: "all", label: "All subscribers" }, { value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} /></div>
         </div>
         {alertsQuery.isError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-[#f4c7c3] bg-[#fff4f2] px-4 py-3 text-sm text-[#9f261f]"><p>{alertsQuery.error.message}</p><Button variant="outline" onClick={() => alertsQuery.refetch()} disabled={alertsQuery.isFetching}>Retry</Button></div>}

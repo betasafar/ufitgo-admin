@@ -1721,9 +1721,9 @@ export default function ConciergeCallDeskPage() {
                 )}
               </section>
 
-              {/* 3. Plan & Save Goals & Travel Docs Readiness Row */}
+              {/* 3. Target Savings Goals & Travel Docs Readiness Row */}
               <div className="grid gap-6 lg:grid-cols-2">
-                {/* Plan & Save Goals */}
+                {/* Target Savings Goals */}
                 <section className="rounded-2xl border border-[#dbe2de] bg-white p-5 shadow-xs">
                   <h3 className="font-brand text-base font-bold text-[#17201c]">
                     Active Plan &amp; Save Goals ({savings.length})

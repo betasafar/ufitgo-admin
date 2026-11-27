@@ -566,7 +566,7 @@ export default function CustomerDetailPage() {
   const tabs = [
     { id: "overview", label: "Overview", icon: User },
     { id: "kyc", label: "KYC & Docs", icon: ShieldCheck },
-    { id: "financials", label: "Plan & Save", icon: Wallet },
+    { id: "financials", label: "Target Savings", icon: Wallet },
     { id: "audit", label: "Account & Audit", icon: Building },
     { id: "bookings", label: "Bookings", icon: Map },
   ]
