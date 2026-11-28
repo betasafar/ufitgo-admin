@@ -23,6 +23,8 @@ export type CustomerSentiment =
   | "UNHAPPY"
   | "FRUSTRATED_URGENT"
 
+type CallActionPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
+
 export interface CallActionItem {
   id: string
   title: string
@@ -35,7 +37,7 @@ export interface CallActionItem {
     | "CALLBACK_REQUEST"
     | "TRAVEL_PREFERENCE"
     | "GENERAL_FOLLOWUP"
-  priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
+  priority: CallActionPriority
   dueHint?: string | null
   status: "PENDING" | "DONE"
   completedAt?: string | null
@@ -148,7 +150,7 @@ export function CallHistoryAndCtaPanel({
   refreshKey = 0,
   activeCallId,
   isPreparingCallId,
-}: CallHistoryAndCtaPanelProps) {
+}: Readonly<CallHistoryAndCtaPanelProps>) {
   const [logs, setLogs] = useState<ConciergeCallLogRecord[]>([])
   const [pendingCtas, setPendingCtas] = useState<CallActionItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -156,9 +158,7 @@ export function CallHistoryAndCtaPanel({
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [newTaskTitle, setNewTaskTitle] = useState("")
-  const [newTaskPriority, setNewTaskPriority] = useState<
-    "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
-  >("HIGH")
+  const [newTaskPriority, setNewTaskPriority] = useState<CallActionPriority>("HIGH")
   const [newTaskCategory, setNewTaskCategory] = useState<
     CallActionItem["category"]
   >("GENERAL_FOLLOWUP")
@@ -247,7 +247,7 @@ export function CallHistoryAndCtaPanel({
     }
   }
 
-  const handleAddActionItem = async (e: React.FormEvent) => {
+  const handleAddActionItem = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     const targetCallId = logs[0]?.id
     if (!targetCallId || !newTaskTitle.trim()) return
@@ -473,7 +473,7 @@ export function CallHistoryAndCtaPanel({
               value={newTaskPriority}
               onChange={(e) =>
                 setNewTaskPriority(
-                  e.target.value as "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+                  e.target.value as CallActionPriority,
                 )
               }
               className="h-9 rounded-lg border border-[#d3dad7] bg-white px-2.5 text-xs font-bold text-[#35443e] outline-none focus:border-[#0d7d5f]"
@@ -519,11 +519,12 @@ export function CallHistoryAndCtaPanel({
           )}
         </div>
 
-        {logs.length === 0 && !historyError ? (
+        {logs.length === 0 && !historyError && (
           <div className="mt-4 rounded-xl border border-dashed border-[#d3dad7] bg-[#f8faf9] p-6 text-center text-xs text-[#68716d]">
             No in-app concierge voice calls have been recorded for this pilgrim yet.
           </div>
-        ) : logs.length > 0 ? (
+        )}
+        {logs.length > 0 && (
           <div className="mt-4 space-y-3">
             {logs.map((log, index) => {
               const isExpanded =
@@ -688,7 +689,8 @@ export function CallHistoryAndCtaPanel({
                         <track kind="captions" srcLang="en" label="English" />
                       </audio>
                     </div>
-                  ) : isPreparingThisCall ? (
+                  ) : null}
+                  {!log.recordingUrl && isPreparingThisCall && (
                     <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-3 py-2.5 text-xs font-semibold text-[#92400e]">
                       <Loader2 className="size-4 shrink-0 animate-spin text-[#d97706]" />
                       <span>
@@ -697,7 +699,8 @@ export function CallHistoryAndCtaPanel({
                         few seconds.
                       </span>
                     </div>
-                  ) : (
+                  )}
+                  {!log.recordingUrl && !isPreparingThisCall && (
                     <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-[#e3e9e6] bg-white px-3 py-2 text-xs text-[#68716d]">
                       <span className="flex items-center gap-1.5">
                         <Headphones className="size-3.5 text-[#8d9692]" />
@@ -728,13 +731,15 @@ export function CallHistoryAndCtaPanel({
                             {log.transcript}
                           </pre>
                         </div>
-                      ) : isPreparingThisCall ? (
+                      ) : null}
+                      {!log.transcript && isPreparingThisCall && (
                         <div className="flex items-center gap-2 rounded-lg border border-[#fde68a] bg-[#fffbeb] p-3 text-xs font-semibold text-[#92400e]">
                           <Loader2 className="size-4 shrink-0 animate-spin text-[#d97706]" />
                           Preparing speech transcript &amp; AI summary from call
                           audio… It will appear here automatically once ready.
                         </div>
-                      ) : (
+                      )}
+                      {!log.transcript && !isPreparingThisCall && (
                         <p className="flex items-center gap-1.5 text-xs italic text-[#78817d]">
                           <AlertCircle className="size-3.5" /> No speech
                           transcript was captured yet. Speak during a call or
@@ -811,7 +816,7 @@ export function CallHistoryAndCtaPanel({
               )
             })}
           </div>
-        ) : null}
+        )}
       </section>
     </div>
   )

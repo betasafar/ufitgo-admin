@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { stopCallRecorder } from "@/lib/stop-call-recorder"
+import { runCallRtcSetup } from "@/lib/run-call-rtc-setup"
 import { uploadCallRecording, type CallRecordingPayload } from "@/lib/upload-call-recording"
 import {
   ArrowLeft,
@@ -915,7 +916,7 @@ export default function ConciergeCallDeskPage() {
       void endCallOnServer(callData.callId)
     })
 
-    try {
+    const setupComplete = await runCallRtcSetup(async () => {
       await client.join(
         callData.appId,
         callData.channelName,
@@ -947,14 +948,13 @@ export default function ConciergeCallDeskPage() {
       await client.publish([micTrack])
       if (mediaRecorderRef.current) attachLocalAudioToRecorder(micTrack)
       console.info("[ConciergeAudio] ADMIN_LOCAL_AUDIO_PUBLISHED")
-    } catch (err) {
+    }, isAborted, async () => {
       console.warn("[ConciergeAudio] ADMIN_RTC_SETUP_FAILED")
       // e.g. mic permission denied — don't leave the pilgrim ringing / connected to an empty channel
       await cleanupRtc()
       void endCallOnServer(callData.callId)
-      throw err
-    }
-    if (isAborted()) return
+    })
+    if (!setupComplete) return
 
     pollTimerRef.current = window.setInterval(async () => {
       try {
