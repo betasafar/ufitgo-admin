@@ -10,6 +10,7 @@ interface CallServiceStatusData {
   periodEnd: string
   completedCallCount: number
   recordedDurationSeconds: number
+  excludedDurationCount?: number
 }
 
 export function CallServiceStatus() {
@@ -68,6 +69,11 @@ export function CallServiceStatusView({ status, error, loading, onRefresh }: {
             <strong>{(status.recordedDurationSeconds / 60).toFixed(1)} minutes</strong>.
             This excludes ongoing calls and is not Agora billable participant minutes or remaining credit.
           </p>
+          {typeof status.excludedDurationCount === "number" && status.excludedDurationCount > 0 && (
+            <p role="alert" className="font-semibold text-amber-800">
+              {status.excludedDurationCount} call duration(s) exceeded the one-hour call limit or were invalid and were excluded from the total. Review call logs; this total is incomplete.
+            </p>
+          )}
           <p>
             Check billing and usage in{" "}
             <a href="https://console.agora.io/" target="_blank" rel="noopener noreferrer" className="font-bold text-[#07845f] underline">Agora Console</a>.

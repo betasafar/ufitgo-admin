@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { stopCallRecorder } from "@/lib/stop-call-recorder"
 import { runCallRtcSetup } from "@/lib/run-call-rtc-setup"
+import { getCallRtcConnection } from "@/lib/call-rtc-connection"
+import { requestCallEnd } from "@/lib/request-call-end"
 import { uploadCallRecording, type CallRecordingPayload } from "@/lib/upload-call-recording"
 import {
   ArrowLeft,
@@ -32,6 +34,7 @@ import {
 } from "lucide-react"
 import { CallHistoryAndCtaPanel } from "@/components/calls/call-history-and-cta-panel"
 import { CallServiceStatus } from "@/components/calls/call-service-status"
+import { CallCustomerSearch } from "@/components/calls/call-customer-search"
 
 interface ConciergeCallSession {
   callId: string
@@ -264,17 +267,36 @@ function formatDate(val?: string) {
   })
 }
 
+function SlowAudioWarning() {
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), 20000)
+    return () => window.clearTimeout(timer)
+  }, [])
+  if (!slow) return null
+  return (
+    <p role="alert" className="mt-2 text-xs text-[#fde68a]">
+      Audio is taking longer than expected to connect. Check the connection or end the call and try again.
+    </p>
+  )
+}
+
 export default function ConciergeCallDeskPage() {
   const params = useParams()
-  const router = useRouter()
   const callId = String(params?.callId ?? "")
+  return <CallDeskWorkspace key={callId} callId={callId} />
+}
 
+function CallDeskWorkspace({ callId }: { callId: string }) {
+  const router = useRouter()
   const [session, setSession] = useState<ConciergeCallSession | null>(null)
+  const [workspaceReady, setWorkspaceReady] = useState(false)
   const [callStage, setCallStage] = useState<
     "standby" | "connecting" | "calling" | "ringing" | "connected" | "declined" | "ended" | "error"
   >("standby")
   const [isStartingCall, setIsStartingCall] = useState(false)
   const [callError, setCallError] = useState("")
+  const [pendingEndId, setPendingEndId] = useState<string | null>(null)
   const [isMuted, setIsMuted] = useState(false)
   const [isOnHold, setIsOnHold] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -288,6 +310,7 @@ export default function ConciergeCallDeskPage() {
   const [uploadingRecording, setUploadingRecording] = useState(false)
   const [recordingSaveError, setRecordingSaveError] = useState("")
   const [remoteAudioReady, setRemoteAudioReady] = useState(false)
+  const [rtcConnection, setRtcConnection] = useState<"connected" | "reconnecting" | "failed" | null>(null)
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   // Right-Side Pilgrim Dossier & Booking Record Sheet state
@@ -304,24 +327,33 @@ export default function ConciergeCallDeskPage() {
   const remoteAudioTrackRef = useRef<any>(null)
   const pollTimerRef = useRef<number | null>(null)
   const durationTimerRef = useRef<number | null>(null)
+  const rtcConnectedRef = useRef(false)
   const hasJoinedRtcRef = useRef(false)
   // Set once a call is being torn down so late async callbacks (poll, user-published) cannot re-open the mic
   const callTeardownRef = useRef(true)
   const unmountedRef = useRef(false)
   // Call ID the server still considers live; ended via keepalive on unmount / tab close so Agora minutes stop
   const serverLiveCallIdRef = useRef<string | null>(null)
+  const endRequestRef = useRef<{ id: string; promise: Promise<void> } | null>(null)
 
   const endCallOnServer = (id: string | null | undefined) => {
     if (!id) return Promise.resolve()
-    if (serverLiveCallIdRef.current === id) serverLiveCallIdRef.current = null
-    return fetch(`/api/admin/customers/call/${encodeURIComponent(id)}/respond`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "end" }),
-      keepalive: true,
-    })
-      .then(() => undefined)
-      .catch(() => undefined)
+    if (endRequestRef.current?.id === id) return endRequestRef.current.promise
+    if (!unmountedRef.current) setPendingEndId(id)
+    const promise = requestCallEnd(id)
+      .then(() => {
+        if (serverLiveCallIdRef.current === id) serverLiveCallIdRef.current = null
+        if (!unmountedRef.current) setPendingEndId((pending) => pending === id ? null : pending)
+      })
+      .catch((error: unknown) => {
+        console.warn("[ConciergeAudio] END_CALL_SYNC_FAILED", error instanceof Error ? error.message : "unknown")
+        if (!unmountedRef.current) setPendingEndId(id)
+      })
+      .finally(() => {
+        if (endRequestRef.current?.promise === promise) endRequestRef.current = null
+      })
+    endRequestRef.current = { id, promise }
+    return promise
   }
 
   // WebAudio Mixer + MediaRecorder + Web Speech API refs
@@ -342,6 +374,7 @@ export default function ConciergeCallDeskPage() {
   const hasPilgrimAnsweredRef = useRef(false)
   const liveTranscriptRef = useRef<string[]>([])
   const notesRef = useRef("")
+  const savedNotesRef = useRef("")
   const elapsedSecondsRef = useRef(0)
 
   useEffect(() => {
@@ -649,6 +682,8 @@ export default function ConciergeCallDeskPage() {
 
   const cleanupRtc = async () => {
     callTeardownRef.current = true
+    rtcConnectedRef.current = false
+    setRtcConnection(null)
     if (pollTimerRef.current) {
       window.clearInterval(pollTimerRef.current)
       pollTimerRef.current = null
@@ -879,9 +914,15 @@ export default function ConciergeCallDeskPage() {
       unmountedRef.current || callTeardownRef.current || rtcClientRef.current !== client
 
     client.on("connection-state-change", (state: string) => {
+      if (isAborted()) return
       if (["DISCONNECTED", "CONNECTING", "CONNECTED", "RECONNECTING", "DISCONNECTING"].includes(state)) {
         console.info(`[ConciergeAudio] ADMIN_RTC_${state}`)
       }
+      const connection = getCallRtcConnection(state, rtcConnectedRef.current)
+      if (connection === "connected") {
+        rtcConnectedRef.current = true
+      }
+      if (connection) setRtcConnection(connection)
     })
     client.on("user-published", async (remoteUser: any, mediaType: string) => {
       if (isAborted()) return
@@ -911,7 +952,10 @@ export default function ConciergeCallDeskPage() {
     })
 
     client.on("user-left", () => {
+      if (isAborted()) return
       remoteAudioTrackRef.current = null
+      setRemoteAudioReady(false)
+      setCallError("The other participant disconnected.")
       setCallStage("ended")
       void finalizeAndUploadRecording(callData.callId)
       void endCallOnServer(callData.callId)
@@ -996,7 +1040,7 @@ export default function ConciergeCallDeskPage() {
   }
 
   const handleStartLiveCall = async () => {
-    if (!session?.userId || isStartingCall || finalizingRecordingRef.current || pendingRecordingRef.current) return
+    if (!session?.userId || isStartingCall || pendingEndId || finalizingRecordingRef.current || pendingRecordingRef.current) return
     setIsStartingCall(true)
     setCallError("")
     setCallStage("connecting")
@@ -1057,6 +1101,7 @@ export default function ConciergeCallDeskPage() {
         if (callData.callNotes) {
           setNotes(callData.callNotes)
         }
+        savedNotesRef.current = callData.callNotes || ""
         void loadPilgrimDossier(callData.userId)
 
         // Only auto-connect if this is an active inbound call from the pilgrim
@@ -1095,6 +1140,8 @@ export default function ConciergeCallDeskPage() {
             err instanceof Error ? err.message : "Could not load call desk.",
           )
         }
+      } finally {
+        if (!disposed) setWorkspaceReady(true)
       }
     }
 
@@ -1176,14 +1223,18 @@ export default function ConciergeCallDeskPage() {
     setSavingNotes(true)
     setNotesSavedNotice("")
     try {
-      await fetch(`/api/admin/customers/call/${encodeURIComponent(activeId)}/notes`, {
+      const response = await fetch(`/api/admin/customers/call/${encodeURIComponent(activeId)}/notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes }),
       })
+      if (!response.ok) throw new Error("Could not save call notes.")
+      savedNotesRef.current = notes
       setNotesSavedNotice("Call notes & AI Call-to-Actions updated.")
       setHistoryRefreshKey((k) => k + 1)
       window.setTimeout(() => setNotesSavedNotice(""), 4000)
+    } catch (error) {
+      setCallError(error instanceof Error ? error.message : "Could not save call notes.")
     } finally {
       setSavingNotes(false)
     }
@@ -1268,6 +1319,15 @@ export default function ConciergeCallDeskPage() {
         )}
       </header>
 
+      <CallCustomerSearch
+        disabled={!workspaceReady || isStartingCall || ["connecting", "calling", "ringing", "connected"].includes(callStage) || Boolean(serverLiveCallIdRef.current) || Boolean(pendingEndId) || uploadingRecording || savingNotes || Boolean(pendingRecordingRef.current)}
+        onSelect={(id) => {
+          if (!workspaceReady || isStartingCall || ["connecting", "calling", "ringing", "connected"].includes(callStage) || finalizingRecordingRef.current || pendingRecordingRef.current || serverLiveCallIdRef.current || pendingEndId || savingNotes) return
+          if (notes !== savedNotesRef.current && !window.confirm("You have unsaved call notes. Switch customers and discard them?")) return
+          router.push(`/dashboard/calls/${encodeURIComponent(id)}`)
+        }}
+      />
+
       {/* 2-Column Split Screen: Left Call Console | Right Booking & Payment Record Sheet */}
       <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
         {/* ===================================================================
@@ -1337,7 +1397,11 @@ export default function ConciergeCallDeskPage() {
                           isOnHold ? "animate-pulse bg-[#fbbf24]" : "bg-[#34d399]"
                         }`}
                       />
-                      {isOnHold
+                      {rtcConnection === "reconnecting"
+                        ? "Connection interrupted · reconnecting…"
+                        : rtcConnection === "failed"
+                          ? "Connection lost · end the call and try again"
+                          : isOnHold
                         ? `Call on Hold (Quran Playing for Pilgrim) · ${formatDuration(elapsedSeconds)}`
                         : remoteAudioReady
                           ? `Connected · ${formatDuration(elapsedSeconds)}`
@@ -1384,6 +1448,17 @@ export default function ConciergeCallDeskPage() {
                 )}
                 {callError && (
                   <p role="alert" className="mt-2 text-xs text-[#fca5a5]">{callError}</p>
+                )}
+                {pendingEndId && (
+                  <p role="alert" className="mt-2 text-xs text-[#fca5a5]">
+                    Call end is not yet confirmed by the server.{" "}
+                    <button type="button" className="underline" onClick={() => void endCallOnServer(pendingEndId)}>
+                      Retry
+                    </button>
+                  </p>
+                )}
+                {callStage === "connected" && !remoteAudioReady && rtcConnection !== "reconnecting" && rtcConnection !== "failed" && (
+                  <SlowAudioWarning key={session?.callId} />
                 )}
               </div>
 
@@ -1445,7 +1520,7 @@ export default function ConciergeCallDeskPage() {
                   session?.userId && (
                     <button
                       type="button"
-                      disabled={isStartingCall || uploadingRecording || Boolean(pendingRecordingRef.current) || callStage === "connecting"}
+                      disabled={isStartingCall || uploadingRecording || Boolean(pendingEndId) || Boolean(pendingRecordingRef.current) || callStage === "connecting"}
                       onClick={() => void handleStartLiveCall()}
                       className="flex h-11 items-center gap-2 rounded-full bg-[#10b981] px-5 text-xs font-bold text-white shadow-lg transition hover:bg-[#059669] disabled:opacity-60"
                     >

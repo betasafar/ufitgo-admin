@@ -44,3 +44,9 @@ test("does not claim configured and enabled means Agora is available", () => {
   assert.match(html, /Configured/)
   assert.match(html, /availability: unknown/)
 })
+
+test("warns when invalid stored call durations were excluded", () => {
+  const html = render({ status: { ...status, excludedDurationCount: 2 }, loading: false, error: "" })
+  assert.match(html, /2 call duration/)
+  assert.match(html, /total is incomplete/)
+})
