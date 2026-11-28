@@ -152,6 +152,7 @@ export function CallHistoryAndCtaPanel({
   const [logs, setLogs] = useState<ConciergeCallLogRecord[]>([])
   const [pendingCtas, setPendingCtas] = useState<CallActionItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [historyError, setHistoryError] = useState("")
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [newTaskTitle, setNewTaskTitle] = useState("")
@@ -174,12 +175,15 @@ export function CallHistoryAndCtaPanel({
       )
       const payload = await res.json().catch(() => null)
       const data = payload?.data ?? payload
-      setLogs(Array.isArray(data?.logs) ? data.logs : [])
-      setPendingCtas(
-        Array.isArray(data?.pendingActionItems) ? data.pendingActionItems : [],
-      )
-    } catch {
-      // ignore
+      if (!res.ok || !Array.isArray(data?.logs) || !Array.isArray(data?.pendingActionItems)) {
+        throw new Error(`Call history unavailable (HTTP ${res.status})`)
+      }
+      setLogs(data.logs)
+      setPendingCtas(data.pendingActionItems)
+      setHistoryError("")
+    } catch (error) {
+      console.warn("[ConciergeAudio] HISTORY_LOAD_FAILED", error instanceof Error ? error.message : "unknown")
+      setHistoryError("Could not load call history and transcripts. Please retry.")
     } finally {
       setLoading(false)
     }
@@ -290,6 +294,12 @@ export function CallHistoryAndCtaPanel({
 
   return (
     <div className="space-y-4">
+      {historyError && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {historyError}{" "}
+          <button type="button" onClick={() => void loadHistory()} className="font-bold underline">Retry</button>
+        </div>
+      )}
       {/* 0. Urgent Unhappy Customer / Failed Transaction Escalation Banner */}
       {(latestUnhappyLog || hasFailedTxDispute) && (
         <div className="flex flex-col justify-between gap-3 rounded-2xl border-2 border-[#dc2626] bg-[#fef2f2] p-4 shadow-xs sm:flex-row sm:items-center">
@@ -509,11 +519,11 @@ export function CallHistoryAndCtaPanel({
           )}
         </div>
 
-        {logs.length === 0 ? (
+        {logs.length === 0 && !historyError ? (
           <div className="mt-4 rounded-xl border border-dashed border-[#d3dad7] bg-[#f8faf9] p-6 text-center text-xs text-[#68716d]">
             No in-app concierge voice calls have been recorded for this pilgrim yet.
           </div>
-        ) : (
+        ) : logs.length > 0 ? (
           <div className="mt-4 space-y-3">
             {logs.map((log, index) => {
               const isExpanded =
@@ -535,11 +545,14 @@ export function CallHistoryAndCtaPanel({
               const startDate = new Date(
                 log.acceptedAt || log.createdAt,
               )
-              const computedEndDate = log.endedAt
-                ? new Date(log.endedAt)
-                : log.durationSeconds > 0
-                  ? new Date(startDate.getTime() + log.durationSeconds * 1000)
-                  : null
+              let computedEndDate: Date | null = null
+              if (log.endedAt) {
+                computedEndDate = new Date(log.endedAt)
+              } else if (log.durationSeconds > 0) {
+                computedEndDate = new Date(
+                  startDate.getTime() + log.durationSeconds * 1000,
+                )
+              }
               const dateStr = startDate.toLocaleDateString("en-GB", {
                 day: "2-digit",
                 month: "2-digit",
@@ -671,7 +684,9 @@ export function CallHistoryAndCtaPanel({
                         preload="metadata"
                         src={log.recordingUrl}
                         className="h-10 w-full"
-                      />
+                      >
+                        <track kind="captions" srcLang="en" label="English" />
+                      </audio>
                     </div>
                   ) : isPreparingThisCall ? (
                     <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-3 py-2.5 text-xs font-semibold text-[#92400e]">
@@ -796,7 +811,7 @@ export function CallHistoryAndCtaPanel({
               )
             })}
           </div>
-        )}
+        ) : null}
       </section>
     </div>
   )

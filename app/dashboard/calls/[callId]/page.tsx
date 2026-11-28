@@ -3,6 +3,8 @@
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { stopCallRecorder } from "@/lib/stop-call-recorder"
+import { uploadCallRecording, type CallRecordingPayload } from "@/lib/upload-call-recording"
 import {
   ArrowLeft,
   Building,
@@ -323,10 +325,18 @@ export default function ConciergeCallDeskPage() {
   // WebAudio Mixer + MediaRecorder + Web Speech API refs
   const audioCtxRef = useRef<AudioContext | null>(null)
   const mixDestRef = useRef<MediaStreamAudioDestinationNode | null>(null)
+  const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const remoteSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
   const speechRecRef = useRef<any>(null)
   const hasUploadedRecordingRef = useRef(false)
+  const finalizingRecordingRef = useRef<Promise<void> | null>(null)
+  const pendingRecordingRef = useRef<{
+    callId: string
+    payload: CallRecordingPayload
+    expectedAudio: boolean
+  } | null>(null)
   const hasPilgrimAnsweredRef = useRef(false)
   const liveTranscriptRef = useRef<string[]>([])
   const notesRef = useRef("")
@@ -360,6 +370,8 @@ export default function ConciergeCallDeskPage() {
         ])
         const micSource =
           audioCtxRef.current.createMediaStreamSource(micStream)
+        micSourceRef.current?.disconnect()
+        micSourceRef.current = micSource
         micSource.connect(mixDestRef.current)
       }
     } catch {
@@ -485,6 +497,8 @@ export default function ConciergeCallDeskPage() {
         ])
         const remoteSource =
           audioCtxRef.current.createMediaStreamSource(remoteStream)
+        remoteSourceRef.current?.disconnect()
+        remoteSourceRef.current = remoteSource
         remoteSource.connect(mixDestRef.current)
       }
     } catch {
@@ -492,122 +506,126 @@ export default function ConciergeCallDeskPage() {
     }
   }
 
-  const finalizeAndUploadRecording = async () => {
-    if (!callId || hasUploadedRecordingRef.current) return
+  const uploadPendingRecording = async () => {
+    const pending = pendingRecordingRef.current
+    if (!pending) return
+    const result = await uploadCallRecording(pending.callId, pending.payload)
+    if (result === "saved") {
+      pendingRecordingRef.current = null
+      setRecordingSaveError(pending.expectedAudio && !pending.payload.audioBase64
+        ? "No audio recording was captured; available captions and notes were saved."
+        : "")
+    } else if (result === "captions-only") {
+      setRecordingSaveError("Audio recording could not be saved. Available captions and notes were saved; retry before leaving.")
+    } else {
+      setRecordingSaveError("Call recording and captions could not be saved. Retry before leaving this page.")
+    }
+    setHistoryRefreshKey((k) => k + 1)
+  }
+
+  const retryRecording = async () => {
+    if (!pendingRecordingRef.current || finalizingRecordingRef.current) return
+    setUploadingRecording(true)
+    const pending = uploadPendingRecording()
+    finalizingRecordingRef.current = pending
+    try {
+      await pending
+    } finally {
+      finalizingRecordingRef.current = null
+      setUploadingRecording(false)
+    }
+  }
+
+  const finalizeAndUploadRecording = (activeId: string): Promise<void> => {
+    if (finalizingRecordingRef.current) return finalizingRecordingRef.current
+    if (!activeId || hasUploadedRecordingRef.current) return Promise.resolve()
     hasUploadedRecordingRef.current = true
     callTeardownRef.current = true
     setIsRecordingAudio(false)
+    setUploadingRecording(true)
 
-    try {
-      stopSpeechRecognition()
+    const finalize = async () => {
+      try {
+        stopSpeechRecognition()
 
-      let audioBase64: string | undefined
-      let mimeType = mediaRecorderRef.current?.mimeType || "audio/webm"
+        let audioBase64: string | undefined
+        let mimeType = mediaRecorderRef.current?.mimeType || "audio/webm"
 
-      if (
-        mediaRecorderRef.current &&
-        mediaRecorderRef.current.state !== "inactive"
-      ) {
-        await new Promise<void>((resolve) => {
-          const rec = mediaRecorderRef.current!
-          rec.onstop = () => resolve()
+        let incompleteRecording = false
+        if (mediaRecorderRef.current) {
           try {
-            rec.requestData()
-          } catch {
-            // ignore
+            await stopCallRecorder(mediaRecorderRef.current)
+          } catch (error) {
+            incompleteRecording = true
+            console.warn("[ConciergeAudio] RECORDING_FLUSH_FAILED", error instanceof Error ? error.message : "unknown")
           }
-          try {
-            rec.stop()
-          } catch {
-            resolve()
-          }
-        })
-      }
-      mediaRecorderRef.current = null
-
-      if (audioCtxRef.current) {
-        await audioCtxRef.current.close().catch(() => undefined)
-        audioCtxRef.current = null
-        mixDestRef.current = null
-      }
-
-      // Release the microphone before the (potentially slow) upload starts
-      await cleanupRtc()
-
-      const wasAnsweredAndSpoken =
-        hasPilgrimAnsweredRef.current && elapsedSecondsRef.current >= 1
-
-      if (wasAnsweredAndSpoken && recordedChunksRef.current.length > 0) {
-        const blob = new Blob(recordedChunksRef.current, { type: mimeType })
-        mimeType = blob.type || "audio/webm"
-        audioBase64 = await new Promise<string>((resolve) => {
-          const reader = new FileReader()
-          reader.onloadend = () => resolve(String(reader.result || ""))
-          reader.onerror = () => resolve("")
-          reader.readAsDataURL(blob)
-        })
-      }
-      if (wasAnsweredAndSpoken && !audioBase64) {
-        setRecordingSaveError("No audio recording was captured. Live captions and notes will still be saved if available.")
-      }
-
-      const activeId = session?.callId || callId
-      const transcriptText = wasAnsweredAndSpoken
-        ? liveTranscriptRef.current.join("\n")
-        : ""
-
-      // Never upload a recording or empty transcript if the pilgrim never picked up the call
-      if (!wasAnsweredAndSpoken && !notesRef.current.trim()) {
-        setHistoryRefreshKey((k) => k + 1)
-        return
-      }
-
-      setUploadingRecording(true)
-      const uploadPayload = {
-        audioBase64: wasAnsweredAndSpoken ? audioBase64 || undefined : undefined,
-        mimeType,
-        transcriptText,
-        notes: notesRef.current,
-        durationSeconds: wasAnsweredAndSpoken ? elapsedSecondsRef.current : 0,
-      }
-      const res = await fetch(
-        `/api/admin/customers/call/${encodeURIComponent(activeId)}/recording`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(uploadPayload),
-        },
-      ).catch(() => null)
-
-      // If audio payload was too large for the proxy, fallback to saving transcript, duration & notes immediately
-      if (!res?.ok) {
-        console.warn("[ConciergeAudio] RECORDING_UPLOAD_FAILED", res?.status ?? "network")
-        const fallback = await fetch(
-          `/api/admin/customers/call/${encodeURIComponent(activeId)}/recording`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              transcriptText,
-              notes: notesRef.current,
-              durationSeconds: wasAnsweredAndSpoken ? elapsedSecondsRef.current : 0,
-            }),
-          },
-        ).catch(() => null)
-        if (fallback?.ok) {
-          setRecordingSaveError("Audio recording could not be saved. Live captions and notes were saved.")
-        } else {
-          console.warn("[ConciergeAudio] CAPTION_SAVE_FAILED", fallback?.status ?? "network")
-          setRecordingSaveError("Call recording and captions could not be saved. Keep this page open and copy the captions.")
         }
+        mediaRecorderRef.current = null
+        micSourceRef.current = null
+        remoteSourceRef.current = null
+
+        if (audioCtxRef.current) {
+          await audioCtxRef.current.close().catch(() => undefined)
+          audioCtxRef.current = null
+          mixDestRef.current = null
+        }
+
+        // Release the microphone before the (potentially slow) upload starts
+        await cleanupRtc()
+
+        const wasAnsweredAndSpoken = hasPilgrimAnsweredRef.current
+
+        if (wasAnsweredAndSpoken && recordedChunksRef.current.length > 0) {
+          const blob = new Blob(recordedChunksRef.current, { type: mimeType })
+          mimeType = blob.type || "audio/webm"
+          audioBase64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader()
+            reader.onloadend = () => resolve(String(reader.result || ""))
+            reader.onerror = () => resolve("")
+            reader.readAsDataURL(blob)
+          })
+        }
+        if (wasAnsweredAndSpoken && !audioBase64) {
+          setRecordingSaveError("No audio recording was captured. Live captions and notes will still be saved if available.")
+        }
+
+        const transcriptText = wasAnsweredAndSpoken
+          ? liveTranscriptRef.current.join("\n")
+          : ""
+
+        if (!wasAnsweredAndSpoken && !notesRef.current.trim()) {
+          setHistoryRefreshKey((k) => k + 1)
+          return
+        }
+
+        pendingRecordingRef.current = {
+          callId: activeId,
+          expectedAudio: wasAnsweredAndSpoken,
+          payload: {
+            audioBase64: wasAnsweredAndSpoken ? audioBase64 || undefined : undefined,
+            mimeType,
+            transcriptText,
+            notes: notesRef.current,
+            durationSeconds: wasAnsweredAndSpoken ? elapsedSecondsRef.current : 0,
+          },
+        }
+        await uploadPendingRecording()
+        if (incompleteRecording && !pendingRecordingRef.current) {
+          setRecordingSaveError("The recorder did not finish normally. The saved audio may be incomplete.")
+        }
+      } catch {
+        console.warn("[ConciergeAudio] RECORDING_FINALIZE_FAILED")
+        setRecordingSaveError("Call recording and captions could not be saved. Keep this page open and copy the captions.")
+      } finally {
+        setUploadingRecording(false)
       }
-      setUploadingRecording(false)
-      setHistoryRefreshKey((k) => k + 1)
-    } catch {
-      console.warn("[ConciergeAudio] RECORDING_FINALIZE_FAILED")
-      setRecordingSaveError("Call recording and captions could not be saved. Keep this page open and copy the captions.")
-      setUploadingRecording(false)
     }
+    const pending = finalize()
+    finalizingRecordingRef.current = pending
+    void pending.finally(() => {
+      if (finalizingRecordingRef.current === pending) finalizingRecordingRef.current = null
+    })
+    return pending
   }
 
   const stopSpeechRecognition = () => {
@@ -684,6 +702,8 @@ export default function ConciergeCallDeskPage() {
       const ctx = audioCtxRef.current
       audioCtxRef.current = null
       mixDestRef.current = null
+      micSourceRef.current = null
+      remoteSourceRef.current = null
       void ctx.close().catch(() => undefined)
     }
   }
@@ -692,23 +712,28 @@ export default function ConciergeCallDeskPage() {
     unmountedRef.current = false
     // Tab close / reload does not run React unmount, so end the live call explicitly
     const handlePageHide = () => {
+      if (serverLiveCallIdRef.current) {
+        void finalizeAndUploadRecording(serverLiveCallIdRef.current)
+      }
       void endCallOnServer(serverLiveCallIdRef.current)
     }
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!serverLiveCallIdRef.current && !finalizingRecordingRef.current && !pendingRecordingRef.current) return
+      event.preventDefault()
+    }
     window.addEventListener("pagehide", handlePageHide)
+    window.addEventListener("beforeunload", warnBeforeUnload)
     return () => {
       window.removeEventListener("pagehide", handlePageHide)
+      window.removeEventListener("beforeunload", warnBeforeUnload)
       unmountedRef.current = true
-      void endCallOnServer(serverLiveCallIdRef.current)
-      const recorder = mediaRecorderRef.current
-      mediaRecorderRef.current = null
-      if (recorder && recorder.state !== "inactive") {
-        try {
-          recorder.stop()
-        } catch {
-          // ignore
-        }
+      const id = serverLiveCallIdRef.current
+      if (id) {
+        void finalizeAndUploadRecording(id)
+        void endCallOnServer(id)
+      } else if (!finalizingRecordingRef.current) {
+        void cleanupRtc()
       }
-      void cleanupRtc()
     }
   }, [])
 
@@ -886,8 +911,7 @@ export default function ConciergeCallDeskPage() {
     client.on("user-left", () => {
       remoteAudioTrackRef.current = null
       setCallStage("ended")
-      void finalizeAndUploadRecording()
-      void cleanupRtc()
+      void finalizeAndUploadRecording(callData.callId)
       void endCallOnServer(callData.callId)
     })
 
@@ -921,6 +945,7 @@ export default function ConciergeCallDeskPage() {
       }
       localAudioTrackRef.current = micTrack
       await client.publish([micTrack])
+      if (mediaRecorderRef.current) attachLocalAudioToRecorder(micTrack)
       console.info("[ConciergeAudio] ADMIN_LOCAL_AUDIO_PUBLISHED")
     } catch (err) {
       console.warn("[ConciergeAudio] ADMIN_RTC_SETUP_FAILED")
@@ -961,8 +986,7 @@ export default function ConciergeCallDeskPage() {
         } else if (latest.status === "ENDED" || latest.status === "MISSED") {
           serverLiveCallIdRef.current = null
           setCallStage("ended")
-          await finalizeAndUploadRecording()
-          await cleanupRtc()
+          await finalizeAndUploadRecording(callData.callId)
         }
       } catch {
         // ignore poll error
@@ -971,7 +995,7 @@ export default function ConciergeCallDeskPage() {
   }
 
   const handleStartLiveCall = async () => {
-    if (!session?.userId || isStartingCall) return
+    if (!session?.userId || isStartingCall || finalizingRecordingRef.current || pendingRecordingRef.current) return
     setIsStartingCall(true)
     setCallError("")
     setCallStage("connecting")
@@ -1135,8 +1159,7 @@ export default function ConciergeCallDeskPage() {
     const activeId = session?.callId || callId
     setCallStage("ended")
     // finalize flushes the recorder synchronously, then releases the mic before uploading
-    const finalizing = finalizeAndUploadRecording()
-    await cleanupRtc()
+    const finalizing = finalizeAndUploadRecording(activeId)
     if (activeId) {
       await endCallOnServer(activeId)
     }
@@ -1205,11 +1228,13 @@ export default function ConciergeCallDeskPage() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() =>
-              session?.userId
-                ? router.push(`/dashboard/customers/${session.userId}`)
-                : router.push("/dashboard/customers")
-            }
+            onClick={() => {
+              if (finalizingRecordingRef.current || pendingRecordingRef.current) {
+                if (!window.confirm("The recording is still saving or needs a retry. Leave and risk losing it?")) return
+              }
+              if (session?.userId) router.push(`/dashboard/customers/${session.userId}`)
+              else router.push("/dashboard/customers")
+            }}
             className="inline-flex size-10 items-center justify-center rounded-lg border border-[#d9dfdc] bg-white text-[#35443e] hover:bg-[#edf3f0]"
           >
             <ArrowLeft className="size-4" />
@@ -1334,6 +1359,17 @@ export default function ConciergeCallDeskPage() {
                     {recordingSaveError}
                   </p>
                 )}
+                {recordingSaveError && pendingRecordingRef.current && (
+                  <div className="mt-2 flex gap-3 text-xs">
+                    <button type="button" disabled={uploadingRecording} onClick={() => void retryRecording()} className="underline disabled:opacity-50">Retry saving</button>
+                    <button type="button" disabled={uploadingRecording} onClick={() => {
+                      if (window.confirm("Discard the unsaved recording? This cannot be undone.")) {
+                        pendingRecordingRef.current = null
+                        setRecordingSaveError("Unsaved recording discarded.")
+                      }
+                    }} className="underline disabled:opacity-50">Discard unsaved recording</button>
+                  </div>
+                )}
                 {callStage === "declined" && (
                   <span className="inline-flex items-center gap-2 rounded-full bg-[#ef4444]/25 px-4 py-1.5 text-xs font-bold text-[#fca5a5]">
                     Pilgrim declined or is unavailable
@@ -1407,7 +1443,7 @@ export default function ConciergeCallDeskPage() {
                   session?.userId && (
                     <button
                       type="button"
-                      disabled={isStartingCall || callStage === "connecting"}
+                      disabled={isStartingCall || uploadingRecording || Boolean(pendingRecordingRef.current) || callStage === "connecting"}
                       onClick={() => void handleStartLiveCall()}
                       className="flex h-11 items-center gap-2 rounded-full bg-[#10b981] px-5 text-xs font-bold text-white shadow-lg transition hover:bg-[#059669] disabled:opacity-60"
                     >
@@ -1613,8 +1649,8 @@ export default function ConciergeCallDeskPage() {
                   bookingId={session.bookingId ?? undefined}
                   compact
                   refreshKey={historyRefreshKey}
-                  activeCallId={callId}
-                  isPreparingCallId={uploadingRecording ? callId : null}
+                  activeCallId={session.callId}
+                  isPreparingCallId={uploadingRecording ? session.callId : null}
                 />
               )}
 
