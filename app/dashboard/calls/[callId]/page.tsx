@@ -31,6 +31,7 @@ import {
   Wallet,
 } from "lucide-react"
 import { CallHistoryAndCtaPanel } from "@/components/calls/call-history-and-cta-panel"
+import { CallServiceStatus } from "@/components/calls/call-service-status"
 
 interface ConciergeCallSession {
   callId: string
@@ -1273,6 +1274,7 @@ export default function ConciergeCallDeskPage() {
             LEFT COLUMN: ACTIVE VOICE CALL CONSOLE + CALL NOTES
            =================================================================== */}
         <div className="space-y-6">
+          <CallServiceStatus />
           {/* Dark Emerald Call Pod */}
           <section className="overflow-hidden rounded-2xl border border-[#0f5338] bg-gradient-to-b from-[#063722] to-[#042215] text-white shadow-xl">
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-3.5">

@@ -1277,6 +1277,12 @@ export default function SettingsPage() {
     }
   }, [config, pilgrimFxDraft])
 
+  const permissionCount = admin.permissions.length
+  const permissionSuffix = permissionCount === 1 ? "" : "s"
+  const accessLevelLabel = admin.permissions.includes("*")
+    ? "Full platform access"
+    : `${permissionCount} permission${permissionSuffix} granted`
+
   return (
     <main className="space-y-6 p-5 sm:p-8">
       <header>
@@ -1334,7 +1340,7 @@ export default function SettingsPage() {
               <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#f7faf9] text-[#66716c]"><ShieldCheck className="size-4" /></span>
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#9aa39e]">Access level</p>
-                <p className="truncate text-sm font-semibold text-[#17201c]">{admin.permissions.includes("*") ? "Full platform access" : `${admin.permissions.length} permission${admin.permissions.length === 1 ? "" : "s"} granted`}</p>
+                <p className="truncate text-sm font-semibold text-[#17201c]">{accessLevelLabel}</p>
               </div>
             </div>
           </div>
@@ -1468,7 +1474,7 @@ export default function SettingsPage() {
                                     },
                                   }),
                                 })
-                                if (!res.ok) throw new Error()
+                                if (!res.ok) throw new Error(`Failed to update Festival Campaign stamp (status ${res.status})`)
                                 setConfig((prev) => ({
                                   ...prev,
                                   features: {
@@ -1506,6 +1512,15 @@ export default function SettingsPage() {
                             ] as const
                           ).map((opt) => {
                             const selected = festivalMode === opt.id
+                            let selectedClass = "bg-white text-[#17201c] shadow-xs"
+                            if (opt.id === "live") {
+                              selectedClass = "bg-[#0d4a2e] text-[#f3dca2] shadow-xs"
+                            } else if (opt.id === "beta") {
+                              selectedClass = "bg-[#d97706] text-white shadow-xs"
+                            }
+                            const stateClass = selected
+                              ? selectedClass
+                              : "text-[#617069] hover:text-[#17201c]"
                             return (
                               <button
                                 key={opt.id}
@@ -1514,15 +1529,7 @@ export default function SettingsPage() {
                                 onClick={() =>
                                   void selectFeatureReleaseMode("enableFestivalMode", opt.id)
                                 }
-                                className={`rounded-md px-2 py-1.5 text-[11px] font-bold transition ${
-                                  selected
-                                    ? opt.id === "live"
-                                      ? "bg-[#0d4a2e] text-[#f3dca2] shadow-xs"
-                                      : opt.id === "beta"
-                                        ? "bg-[#d97706] text-white shadow-xs"
-                                        : "bg-white text-[#17201c] shadow-xs"
-                                    : "text-[#617069] hover:text-[#17201c]"
-                                } disabled:opacity-50`}
+                                className={`rounded-md px-2 py-1.5 text-[11px] font-bold transition ${stateClass} disabled:opacity-50`}
                               >
                                 {opt.label}
                               </button>
@@ -1573,11 +1580,11 @@ export default function SettingsPage() {
                                 onClick={() => void selectFeatureReleaseMode(feature.key, opt.id)}
                                 className={`rounded-md px-2 py-1.5 text-[11px] font-bold transition ${
                                   activeMode === opt.id
-                                    ? opt.id === "beta"
-                                      ? "bg-[#b45309] text-white shadow-2xs"
-                                      : opt.id === "live"
-                                        ? "bg-[#0d7d5f] text-white shadow-2xs"
-                                        : "bg-[#475569] text-white shadow-2xs"
+                                    ? {
+                                        beta: "bg-[#b45309] text-white shadow-2xs",
+                                        live: "bg-[#0d7d5f] text-white shadow-2xs",
+                                        disabled: "bg-[#475569] text-white shadow-2xs",
+                                      }[opt.id]
                                     : "border border-[#d3dad7] bg-[#f7faf9] text-[#35443e] hover:bg-[#eaf9f3]"
                                 } disabled:opacity-50`}
                               >
@@ -1586,15 +1593,20 @@ export default function SettingsPage() {
                             ))}
                           </div>
                           <p className="mt-1.5 text-[10px] text-[#7b8580]">
-                            {activeMode === "beta"
-                              ? "Visible ONLY when signed into a whitelisted Admin / Dev account. Hidden in Guest mode & from public users."
-                              : activeMode === "live"
-                                ? "Visible to all users on Production & Beta."
-                                : "Completely hidden for everyone."}
+                            {(
+                              {
+                                beta: "Visible ONLY when signed into a whitelisted Admin / Dev account. Hidden in Guest mode & from public users.",
+                                live: "Visible to all users on Production & Beta.",
+                              } as Record<string, string>
+                            )[activeMode] ?? "Completely hidden for everyone."}
                           </p>
                         </div>
                         {feature.key === "enableConciergeCalls" && (
                           <div className="mt-3 rounded-lg border border-[#d6e4dd] bg-white p-2.5">
+                            <p className="mb-3 text-xs leading-5 text-[#52605a]">
+                              Turn this Off to prevent new calls from both admins and pilgrims if Agora service is unavailable. Calls already in progress are not ended, but call discovery is disabled. Check usage and billing in{" "}
+                              <a href="https://console.agora.io/" target="_blank" rel="noopener noreferrer" className="font-bold underline">Agora Console</a>; this switch is manual.
+                            </p>
                             <p className="text-[10px] font-bold uppercase tracking-wider text-[#52605a]">
                               Call Transcript &amp; Summary AI Priority
                             </p>
@@ -1633,14 +1645,16 @@ export default function SettingsPage() {
                         )}
                       </div>
                       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-[#dbe2de] pt-3">
-                        {feature.badgeId && isActive ? (
+                        {feature.badgeId && isActive && (
                           <label className="flex items-center gap-2 text-xs font-bold text-[#a62b2b]">
                             <span>Show NEW badge</span>
                             <ToggleSwitch checked={showNewBadge} disabled={savingFeature === `badge-${feature.badgeId}`} onChange={() => void toggleNewBadge(feature.badgeId!, showNewBadge)} />
                           </label>
-                        ) : lockedForRole ? (
+                        )}
+                        {!(feature.badgeId && isActive) && lockedForRole && (
                           <span className="text-[11px] font-semibold text-[#7b8580]">Super Admin required</span>
-                        ) : <span />}
+                        )}
+                        {!(feature.badgeId && isActive) && !lockedForRole && <span />}
                         <ToggleSwitch
                           checked={isActive}
                           disabled={savingFeature === feature.key || lockedForRole}
