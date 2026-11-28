@@ -282,6 +282,8 @@ export default function ConciergeCallDeskPage() {
   const [isRecordingAudio, setIsRecordingAudio] = useState(false)
   const [liveTranscriptLines, setLiveTranscriptLines] = useState<string[]>([])
   const [uploadingRecording, setUploadingRecording] = useState(false)
+  const [recordingSaveError, setRecordingSaveError] = useState("")
+  const [remoteAudioReady, setRemoteAudioReady] = useState(false)
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   // Right-Side Pilgrim Dossier & Booking Record Sheet state
@@ -442,7 +444,7 @@ export default function ConciergeCallDeskPage() {
                     minute: "2-digit",
                     second: "2-digit",
                   })
-                  const line = `[${stamp}] Concierge: ${text}`
+                  const line = `[${stamp}] Admin microphone: ${text}`
                   liveTranscriptRef.current = [...liveTranscriptRef.current, line]
                   setLiveTranscriptLines([...liveTranscriptRef.current])
                 }
@@ -500,7 +502,7 @@ export default function ConciergeCallDeskPage() {
       stopSpeechRecognition()
 
       let audioBase64: string | undefined
-      let mimeType = "audio/webm"
+      let mimeType = mediaRecorderRef.current?.mimeType || "audio/webm"
 
       if (
         mediaRecorderRef.current &&
@@ -536,7 +538,7 @@ export default function ConciergeCallDeskPage() {
         hasPilgrimAnsweredRef.current && elapsedSecondsRef.current >= 1
 
       if (wasAnsweredAndSpoken && recordedChunksRef.current.length > 0) {
-        const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" })
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType })
         mimeType = blob.type || "audio/webm"
         audioBase64 = await new Promise<string>((resolve) => {
           const reader = new FileReader()
@@ -544,6 +546,9 @@ export default function ConciergeCallDeskPage() {
           reader.onerror = () => resolve("")
           reader.readAsDataURL(blob)
         })
+      }
+      if (wasAnsweredAndSpoken && !audioBase64) {
+        setRecordingSaveError("No audio recording was captured. Live captions and notes will still be saved if available.")
       }
 
       const activeId = session?.callId || callId
@@ -576,7 +581,8 @@ export default function ConciergeCallDeskPage() {
 
       // If audio payload was too large for the proxy, fallback to saving transcript, duration & notes immediately
       if (!res?.ok) {
-        await fetch(
+        console.warn("[ConciergeAudio] RECORDING_UPLOAD_FAILED", res?.status ?? "network")
+        const fallback = await fetch(
           `/api/admin/customers/call/${encodeURIComponent(activeId)}/recording`,
           {
             method: "POST",
@@ -587,11 +593,19 @@ export default function ConciergeCallDeskPage() {
               durationSeconds: wasAnsweredAndSpoken ? elapsedSecondsRef.current : 0,
             }),
           },
-        ).catch(() => undefined)
+        ).catch(() => null)
+        if (fallback?.ok) {
+          setRecordingSaveError("Audio recording could not be saved. Live captions and notes were saved.")
+        } else {
+          console.warn("[ConciergeAudio] CAPTION_SAVE_FAILED", fallback?.status ?? "network")
+          setRecordingSaveError("Call recording and captions could not be saved. Keep this page open and copy the captions.")
+        }
       }
       setUploadingRecording(false)
       setHistoryRefreshKey((k) => k + 1)
     } catch {
+      console.warn("[ConciergeAudio] RECORDING_FINALIZE_FAILED")
+      setRecordingSaveError("Call recording and captions could not be saved. Keep this page open and copy the captions.")
       setUploadingRecording(false)
     }
   }
@@ -804,6 +818,8 @@ export default function ConciergeCallDeskPage() {
     hasJoinedRtcRef.current = true
     hasUploadedRecordingRef.current = false
     hasPilgrimAnsweredRef.current = false
+    setRemoteAudioReady(false)
+    setRecordingSaveError("")
     recordedChunksRef.current = []
     liveTranscriptRef.current = []
     setLiveTranscriptLines([])
@@ -835,17 +851,30 @@ export default function ConciergeCallDeskPage() {
     const isAborted = () =>
       unmountedRef.current || callTeardownRef.current || rtcClientRef.current !== client
 
+    client.on("connection-state-change", (state: string) => {
+      if (["DISCONNECTED", "CONNECTING", "CONNECTED", "RECONNECTING", "DISCONNECTING"].includes(state)) {
+        console.info(`[ConciergeAudio] ADMIN_RTC_${state}`)
+      }
+    })
     client.on("user-published", async (remoteUser: any, mediaType: string) => {
       if (isAborted()) return
-      await client.subscribe(remoteUser, mediaType)
+      try {
+        await client.subscribe(remoteUser, mediaType)
+      } catch {
+        console.warn("[ConciergeAudio] ADMIN_SUBSCRIBE_FAILED")
+        return
+      }
       if (isAborted()) return
       if (mediaType === "audio" && remoteUser.audioTrack) {
         hasPilgrimAnsweredRef.current = true
         remoteAudioTrackRef.current = remoteUser.audioTrack
         remoteUser.audioTrack.play()
+        console.info("[ConciergeAudio] ADMIN_REMOTE_AUDIO_CONNECTED")
+        setRemoteAudioReady(true)
         setCallStage("connected")
+        const recorderWasRunning = Boolean(mediaRecorderRef.current)
         startAutoRecordingAndTranscriber()
-        attachRemoteAudioToRecorder(remoteUser.audioTrack)
+        if (recorderWasRunning) attachRemoteAudioToRecorder(remoteUser.audioTrack)
         if (!durationTimerRef.current) {
           durationTimerRef.current = window.setInterval(() => {
             setElapsedSeconds((prev) => prev + 1)
@@ -869,6 +898,7 @@ export default function ConciergeCallDeskPage() {
         callData.adminToken || null,
         callData.adminUid,
       )
+      console.info("[ConciergeAudio] ADMIN_RTC_JOINED")
       if (isAborted()) {
         await client.leave().catch(() => undefined)
         return
@@ -891,7 +921,9 @@ export default function ConciergeCallDeskPage() {
       }
       localAudioTrackRef.current = micTrack
       await client.publish([micTrack])
+      console.info("[ConciergeAudio] ADMIN_LOCAL_AUDIO_PUBLISHED")
     } catch (err) {
+      console.warn("[ConciergeAudio] ADMIN_RTC_SETUP_FAILED")
       // e.g. mic permission denied — don't leave the pilgrim ringing / connected to an empty channel
       await cleanupRtc()
       void endCallOnServer(callData.callId)
@@ -1267,12 +1299,14 @@ export default function ConciergeCallDeskPage() {
                       />
                       {isOnHold
                         ? `Call on Hold (Quran Playing for Pilgrim) · ${formatDuration(elapsedSeconds)}`
-                        : `Connected · ${formatDuration(elapsedSeconds)}`}
+                        : remoteAudioReady
+                          ? `Connected · ${formatDuration(elapsedSeconds)}`
+                          : `Answered · connecting audio · ${formatDuration(elapsedSeconds)}`}
                     </span>
                     {isRecordingAudio && (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ef4444]/25 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#fecaca]">
                         <span className="size-2 animate-pulse rounded-full bg-[#ef4444]" />
-                        Auto-Recording &amp; AI Transcriber Active
+                        Recording active
                       </span>
                     )}
                   </div>
@@ -1280,6 +1314,11 @@ export default function ConciergeCallDeskPage() {
                 {uploadingRecording && (
                   <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#fde68a]">
                     <Loader2 className="size-3.5 animate-spin" /> Saving call recording &amp; extracting Call-to-Actions…
+                  </p>
+                )}
+                {recordingSaveError && (
+                  <p role="alert" className="mt-2 text-xs font-semibold text-[#fca5a5]">
+                    {recordingSaveError}
                   </p>
                 )}
                 {callStage === "declined" && (
@@ -1390,12 +1429,13 @@ export default function ConciergeCallDeskPage() {
             <section className="rounded-2xl border border-[#cfeee0] bg-[#f4fbf8] p-4 shadow-xs">
               <div className="flex items-center justify-between">
                 <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#0d7d5f]">
-                  <Sparkles className="size-3.5" /> Live Conversation Transcript
+                  <Sparkles className="size-3.5" /> Live Admin Microphone Captions
                 </h3>
                 <span className="text-[10px] font-bold text-[#5d6b65]">
                   {liveTranscriptLines.length} line(s)
                 </span>
               </div>
+              <p className="mt-2 text-xs text-[#68716d]">Live captions are from the admin microphone and do not identify speakers. The saved audio transcript may include both sides when audio is available.</p>
               <div className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-[#dbeee4] bg-white p-2.5 text-xs text-[#17201c]">
                 {liveTranscriptLines.map((line, idx) => (
                   <p key={idx} className="leading-5">
