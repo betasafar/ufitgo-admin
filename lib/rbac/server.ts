@@ -1,6 +1,6 @@
 import "server-only"
 
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { getAdminApiUrl } from "@/lib/auth/config"
 import { AUTH_COOKIES } from "@/lib/auth/cookies"
@@ -10,13 +10,16 @@ import { hasAllPermissions, hasAnyPermission, type Permission } from "@/lib/rbac
 export async function getCurrentAdmin(): Promise<AdminProfile> {
   const cookieStore = await cookies()
   const accessToken = cookieStore.get(AUTH_COOKIES.access)?.value
-  if (!accessToken) redirect("/login")
+  const destination = (await headers()).get("x-admin-destination") || "/dashboard"
+  const resumeUrl = `/api/auth/resume?next=${encodeURIComponent(destination)}`
+  if (!accessToken) redirect(resumeUrl)
 
   const response = await fetch(getAdminApiUrl("/admin/auth/me"), {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   })
-  if (!response.ok) redirect("/login?reason=session-expired")
+  if (response.status === 401) redirect(resumeUrl)
+  if (!response.ok) throw new Error(`Unable to load admin session (HTTP ${response.status}).`)
   return response.json() as Promise<AdminProfile>
 }
 

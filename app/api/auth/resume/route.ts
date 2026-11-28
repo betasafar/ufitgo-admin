@@ -25,8 +25,9 @@ export async function GET(request: NextRequest) {
     return response
   } catch (error) {
     console.error("Admin session resume error", error)
-    const response = NextResponse.redirect(new URL("/login?reason=session-expired", request.url))
-    clearAuthCookies(response)
-    return response
+    return new NextResponse("Unable to resume your session right now. Please reload this page to retry.", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "2" },
+    })
   }
 }

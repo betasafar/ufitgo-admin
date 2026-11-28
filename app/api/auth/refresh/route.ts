@@ -1,7 +1,7 @@
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { AUTH_COOKIES, clearAuthCookies, setAuthCookies } from "@/lib/auth/cookies"
-import { refreshAdminSession } from "@/lib/auth/server-refresh"
+import { refreshAdminSession, RefreshUnavailableError } from "@/lib/auth/server-refresh"
 
 export async function POST(request: Request) {
   const cookieStore = await cookies()
@@ -25,6 +25,8 @@ export async function POST(request: Request) {
     return response
   } catch (error) {
     console.error("Admin refresh gateway error", error)
-    return NextResponse.json({ message: "Unable to refresh session." }, { status: 503 })
+    return NextResponse.json({ message: "Unable to refresh session. Please try again." }, {
+      status: error instanceof RefreshUnavailableError ? error.status : 503,
+    })
   }
 }

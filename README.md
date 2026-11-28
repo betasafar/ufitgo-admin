@@ -10,6 +10,20 @@ This repository is linked to a [v0](https://v0.app) project. You can continue de
 
 ## Getting Started
 
+### Admin session activity
+
+Admin sessions expire after 15 minutes of inactivity, with a warning two minutes
+before expiry. Pointer movement, clicks, typing, scrolling and touch count as
+activity. Connecting, ringing and active concierge calls count as activity,
+including while the call tab is in the background. Activity is shared between
+admin tabs when browser storage is available. If session updates fail, staff see
+a connection warning and the app retries; a prolonged outage can still cause the
+server session to expire. Absolute limits remain 12 hours, or 30 days when
+Remember Me is selected. A lost refresh response can be retried for 60 seconds
+without issuing a second session; reuse after that window revokes the token
+family. All admin API instances must use the same `ADMIN_JWT_SECRET`. Deploy the
+admin API before this admin web app.
+
 ### Identity mismatch reviews
 
 Verification requests flag NIN/BVN mismatches and show the two provider-returned

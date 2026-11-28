@@ -35,6 +35,7 @@ import {
 import { CallHistoryAndCtaPanel } from "@/components/calls/call-history-and-cta-panel"
 import { CallServiceStatus } from "@/components/calls/call-service-status"
 import { CallCustomerSearch } from "@/components/calls/call-customer-search"
+import { useAdminSession } from "@/components/auth/session-provider"
 
 interface ConciergeCallSession {
   callId: string
@@ -289,11 +290,17 @@ export default function ConciergeCallDeskPage() {
 
 function CallDeskWorkspace({ callId }: { callId: string }) {
   const router = useRouter()
+  const { setCallActive } = useAdminSession()
   const [session, setSession] = useState<ConciergeCallSession | null>(null)
   const [workspaceReady, setWorkspaceReady] = useState(false)
   const [callStage, setCallStage] = useState<
     "standby" | "connecting" | "calling" | "ringing" | "connected" | "declined" | "ended" | "error"
   >("standby")
+  useEffect(() => {
+    const active = ["connecting", "calling", "ringing", "connected"].includes(callStage)
+    setCallActive(active)
+    return () => setCallActive(false)
+  }, [callStage, setCallActive])
   const [isStartingCall, setIsStartingCall] = useState(false)
   const [callError, setCallError] = useState("")
   const [pendingEndId, setPendingEndId] = useState<string | null>(null)
