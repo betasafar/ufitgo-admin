@@ -1039,14 +1039,18 @@ export default function ConciergeCallDeskPage() {
           callData.direction === "PILGRIM_TO_ADMIN" &&
           callData.status === "RINGING"
         ) {
-          await fetch(
+          const answerResponse = await fetch(
             `/api/admin/customers/call/${encodeURIComponent(callData.callId)}/respond`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ action: "accept" }),
             },
-          ).catch(() => undefined)
+          )
+          if (!answerResponse.ok) {
+            const error = await answerResponse.json().catch(() => null)
+            throw new Error(error?.message || "The call is no longer available.")
+          }
           setCallStage("connected")
           await connectLiveCallRtc(callData)
           return
@@ -1093,6 +1097,21 @@ export default function ConciergeCallDeskPage() {
     const activeId = session?.callId || callId
     if (!activeId) return
     const nextHold = !isOnHold
+    try {
+      const response = await fetch(`/api/admin/customers/call/${encodeURIComponent(activeId)}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: nextHold ? "hold" : "resume" }),
+      })
+      if (!response.ok) {
+        const error = await response.json().catch(() => null)
+        throw new Error(error?.message || "Could not update the call.")
+      }
+    } catch (error) {
+      setCallError(error instanceof Error ? error.message : "Could not update the call.")
+      return
+    }
+    setCallError("")
     setIsOnHold(nextHold)
 
     // When on hold: mute admin mic AND pause incoming pilgrim audio so both sides are on hold
@@ -1110,12 +1129,6 @@ export default function ConciergeCallDeskPage() {
         // ignore
       }
     }
-
-    await fetch(`/api/admin/customers/call/${encodeURIComponent(activeId)}/respond`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: nextHold ? "hold" : "resume" }),
-    }).catch(() => undefined)
   }
 
   const handleEndCall = async () => {
@@ -1331,8 +1344,8 @@ export default function ConciergeCallDeskPage() {
                     Call Ended ({formatDuration(elapsedSeconds)})
                   </span>
                 )}
-                {callStage === "error" && (
-                  <p className="mt-2 text-xs text-[#fca5a5]">{callError}</p>
+                {callError && (
+                  <p role="alert" className="mt-2 text-xs text-[#fca5a5]">{callError}</p>
                 )}
               </div>
 
